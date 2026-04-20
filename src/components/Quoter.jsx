@@ -89,8 +89,37 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [bgt, setBgt] = useState(null);
   const [done, setDone] = useState(false);
   const [resultTab, setResultTab] = useState('resumen');
+  const [loadPicker, setLoadPicker] = useState({ open: false, search: '', category: 'all' });
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
   const loadsPresets = (Array.isArray(loadsCatalog) && loadsCatalog.length) ? loadsCatalog : DEFAULT_LOADS_CATALOG;
+  const loadCategories = useMemo(() => {
+    const set = new Set(loadsPresets.map(x => x.category || 'Otros'));
+    return ['all', ...Array.from(set)];
+  }, [loadsPresets]);
+  const filteredLoadPresets = useMemo(() => {
+    const q = (loadPicker.search || '').trim().toLowerCase();
+    return loadsPresets.filter(x => {
+      if (loadPicker.category !== 'all' && (x.category || 'Otros') !== loadPicker.category) return false;
+      if (!q) return true;
+      return (x.name || '').toLowerCase().includes(q) || (x.category || '').toLowerCase().includes(q);
+    });
+  }, [loadsPresets, loadPicker.search, loadPicker.category]);
+  const addLoadFromPreset = (preset) => {
+    const cur = Array.isArray(f.loadItems) ? f.loadItems : [];
+    u('loadItems', [...cur, {
+      id: uuid(),
+      name: preset.name || '',
+      watts: Number(preset.watts || 0),
+      peakWatts: Number(preset.peakWatts || preset.watts || 0),
+      hours: Number(preset.hours || 0),
+      qty: Number(preset.qty || 1),
+      category: preset.category || '',
+    }]);
+  };
+  const addCustomLoad = () => {
+    const cur = Array.isArray(f.loadItems) ? f.loadItems : [];
+    u('loadItems', [...cur, { id: uuid(), name: '', watts: 0, peakWatts: 0, hours: 0, qty: 1 }]);
+  };
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
   const operator = operators[f.operatorId] || operators[0];
@@ -543,17 +572,90 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <label style={{ ...ss.lbl, marginBottom: 0 }}>Cuadro de cargas — off-grid no tiene factura</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 {(!f.loadItems || f.loadItems.length === 0) && (
-                  <button type="button" onClick={() => u('loadItems', loadsPresets.slice(0, 6).map(x => ({ id: uuid(), name: x.name, watts: x.watts, hours: x.hours, qty: x.qty || 1 })))}
+                  <button type="button" onClick={() => u('loadItems', loadsPresets.slice(0, 6).map(x => ({ id: uuid(), name: x.name, watts: x.watts, peakWatts: x.peakWatts || x.watts, hours: x.hours, qty: x.qty || 1, category: x.category })))}
                     style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}66`, color: C.teal, borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
                     + cargas típicas
                   </button>
                 )}
-                <button type="button" onClick={() => u('loadItems', [...(f.loadItems || []), { id: uuid(), name: '', watts: 0, hours: 0, qty: 1 }])}
+                <button type="button" onClick={() => setLoadPicker(s => ({ ...s, open: !s.open }))}
+                  style={{ background: loadPicker.open ? `${C.teal}22` : 'transparent', border: `1px solid ${loadPicker.open ? C.teal : C.border}`, color: loadPicker.open ? C.teal : '#fff', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                  + agregar del catálogo ▾
+                </button>
+                <button type="button" onClick={addCustomLoad}
                   style={{ background: 'transparent', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10 }}>
-                  + agregar
+                  + personalizada
                 </button>
               </div>
             </div>
+            {loadPicker.open && (
+              <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 7, padding: 10, marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Buscar (ej: nevera, ordeñadora, bomba 2 HP)..."
+                    value={loadPicker.search}
+                    onChange={e => setLoadPicker(s => ({ ...s, search: e.target.value }))}
+                    style={{ ...ss.inp, padding: '6px 9px', fontSize: 11, flex: '1 1 220px' }}
+                  />
+                  <button type="button" onClick={() => setLoadPicker({ open: false, search: '', category: 'all' })}
+                    style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 5, padding: '5px 9px', cursor: 'pointer', fontSize: 10 }}>
+                    cerrar
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {loadCategories.map(cat => (
+                    <button key={cat} type="button"
+                      onClick={() => setLoadPicker(s => ({ ...s, category: cat }))}
+                      style={{
+                        background: loadPicker.category === cat ? C.teal : 'transparent',
+                        border: `1px solid ${loadPicker.category === cat ? C.teal : C.border}`,
+                        color: loadPicker.category === cat ? '#001014' : C.muted,
+                        borderRadius: 12, padding: '3px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+                      }}>
+                      {cat === 'all' ? `Todas (${loadsPresets.length})` : cat}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ maxHeight: 260, overflowY: 'auto', border: `1px solid ${C.border}`, borderRadius: 6 }}>
+                  {filteredLoadPresets.length === 0 ? (
+                    <div style={{ padding: '12px', fontSize: 11, color: C.muted, textAlign: 'center' }}>
+                      No hay coincidencias. Prueba otro término o usa "+ personalizada".
+                    </div>
+                  ) : filteredLoadPresets.map((p, idx) => (
+                    <div key={`${p.name}-${idx}`}
+                      onClick={() => addLoadFromPreset(p)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.5fr 60px',
+                        gap: 8, alignItems: 'center',
+                        padding: '7px 10px',
+                        borderBottom: `1px solid ${C.border}`,
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = `${C.teal}18`}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div>
+                        <div style={{ color: '#fff', fontWeight: 600 }}>{p.name}</div>
+                        <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{p.category || 'Otros'}</div>
+                      </div>
+                      <div style={{ color: C.teal, fontWeight: 600 }}>{p.watts} W</div>
+                      <div style={{ color: C.muted }}>{p.hours} h/día</div>
+                      <div style={{ color: C.muted }}>x{p.qty || 1}</div>
+                      <div style={{ textAlign: 'right' }}>
+                        {p.peakWatts && p.peakWatts > p.watts ? (
+                          <span style={{ fontSize: 9, color: C.orange }} title="Potencia de arranque (inductiva)">pico {p.peakWatts}W</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 6, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <span>Click en una fila para agregarla al cuadro. Puedes ajustarla después.</span>
+                  <span>{filteredLoadPresets.length} / {loadsPresets.length} resultados</span>
+                </div>
+              </div>
+            )}
             {(f.loadItems || []).length === 0 ? (
               <div style={{ background: C.dark, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '14px 12px', fontSize: 11, color: C.muted, textAlign: 'center' }}>
                 Agrega las cargas de tu finca/vivienda (nevera, luces, TV, bomba...) o carga la plantilla típica.
@@ -1423,6 +1525,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         </div>
         )}
+
+        {showTecnico && res.inv && (() => {
+          const expected = phasesForAcometida(f.acometida);
+          const phaseOk = expected.includes(res.inv.phase);
+          if (phaseOk) return null;
+          return (
+            <div style={{ ...ss.card, background: `${C.orange}12`, border: `1px solid ${C.orange}55` }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, marginBottom: 6 }}>⚠ Inversor de fase distinta a la acometida</div>
+              <div style={{ fontSize: 11, color: C.text, lineHeight: 1.55 }}>
+                Acometida configurada: <strong style={{ color: C.teal }}>{ACOMETIDA_INFO[f.acometida].label}</strong>
+                {' '}({ACOMETIDA_INFO[f.acometida].hilos} · {ACOMETIDA_INFO[f.acometida].volts}).
+                {' '}Inversor seleccionado: <strong>{res.inv.brand} {res.inv.model}</strong> — <strong style={{ color: C.orange }}>{res.inv.phase === 3 ? 'trifásico' : 'monofásico/bifásico'}</strong>.
+                <br />
+                No hay stock del tipo/fase exactos en el catálogo. Opciones: (a) cambiar la acometida arriba si el operador de red lo permite, (b) agregar un inversor compatible en BackOffice → Inversores, o (c) contactar a ALEBAS para disponibilidad especial.
+              </div>
+            </div>
+          );
+        })()}
 
         {showTecnico && (() => {
           const v = validateLayout(panel, res.inv, res.ppss, res.ns);
