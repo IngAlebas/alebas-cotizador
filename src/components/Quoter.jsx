@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
@@ -252,12 +252,41 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   };
 
   const Prog = () => (
-    <div style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: 18 }}>
+      {/* Mini hero — coherente con el home en pasos 1-4 */}
+      <div style={{
+        background: `linear-gradient(180deg, ${C.teal}10 0%, transparent 100%)`,
+        border: `1px solid ${C.teal}33`, borderRadius: 12,
+        padding: '14px 16px', marginBottom: 14,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      }}>
+        <img src={logo} alt="SolarHub by ALEBAS" style={{ height: 40, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div style={{ fontSize: 10, letterSpacing: 2.4, fontWeight: 700, color: C.teal, marginBottom: 2 }}>SOLARHUB BY ALEBAS</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+            El centro de tu <span style={{ color: C.yellow }}>energía solar</span>
+          </div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
+            {['Dimensiona', 'Cotiza', 'Conecta', 'Instala'].map((t, i) => (
+              <span key={t} style={{ fontSize: 10, fontWeight: 700, color: i % 2 === 0 ? C.teal : C.yellow, letterSpacing: 0.4 }}>
+                {t}{i < 3 ? <span style={{ color: C.muted, margin: '0 3px' }}>•</span> : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="al-step-pills" style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {['Ley 1715', 'CREG 174/2021', 'RETIE'].map(t => (
+            <span key={t} style={{ background: `${C.teal}18`, border: `1px solid ${C.teal}55`, borderRadius: 14, padding: '3px 9px', fontSize: 9, color: C.teal, fontWeight: 600, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>{t}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Progreso */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-        {STEPS.map((_, i) => <div key={i} style={{ flex: 1, height: 3, borderRadius: 3, background: i < step ? C.teal : i === step ? C.teal + '66' : C.border }} />)}
+        {STEPS.map((_, i) => <div key={i} style={{ flex: 1, height: 4, borderRadius: 3, background: i < step ? C.teal : i === step ? C.teal + '88' : C.border, transition: 'background 0.2s' }} />)}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        {STEPS.map((s, i) => <span key={i} style={{ fontSize: 9, color: i <= step ? C.teal : C.muted, fontWeight: i === step ? 700 : 400 }}>{s}</span>)}
+        {STEPS.map((s, i) => <span key={i} style={{ fontSize: 10, color: i <= step ? C.teal : C.muted, fontWeight: i === step ? 700 : 500, letterSpacing: 0.3 }}>{s}</span>)}
       </div>
     </div>
   );
@@ -311,14 +340,30 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
         <div style={ss.h2}>Tipo de sistema</div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          {[['on-grid', '☀', 'On-Grid', 'Red eléctrica'], ['hybrid', '⚡', 'Híbrido', 'Con baterías'], ['off-grid', '🌿', 'Off-Grid', 'Autónomo']].map(([id, ic, t, sub]) => (
-            <div key={id} onClick={() => u('systemType', id)} style={{ flex: 1, padding: '16px 10px', textAlign: 'center', borderRadius: 9, cursor: 'pointer', border: `2px solid ${f.systemType === id ? C.teal : C.border}`, background: f.systemType === id ? `${C.teal}18` : 'transparent' }}>
-              <div style={{ fontSize: 22, marginBottom: 5 }}>{ic}</div>
-              <div style={{ fontWeight: 700, color: f.systemType === id ? C.teal : '#fff', fontSize: 12 }}>{t}</div>
-              <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{sub}</div>
-            </div>
-          ))}
+        <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
+          Elige la topología del sistema. Define si hay inyección a red, respaldo en baterías o autonomía total.
+        </div>
+        <div className="al-type-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 18 }}>
+          {[
+            ['on-grid', '☀', 'On-Grid', 'Red eléctrica', 'Reduce factura hasta 90%.'],
+            ['hybrid', '⚡', 'Híbrido', 'Con baterías', 'Producción continua.'],
+            ['off-grid', '🌿', 'Off-Grid', 'Autónomo', '100% aislado de red.'],
+          ].map(([id, ic, t, sub, desc]) => {
+            const active = f.systemType === id;
+            return (
+              <div key={id} onClick={() => u('systemType', id)} style={{
+                padding: '18px 12px', textAlign: 'center', borderRadius: 10, cursor: 'pointer',
+                border: `2px solid ${active ? C.teal : C.border}`,
+                background: active ? `${C.teal}18` : C.dark,
+                transition: 'all 0.15s ease', boxShadow: active ? `0 0 0 4px ${C.teal}18` : 'none',
+              }}>
+                <div style={{ fontSize: 26, marginBottom: 7 }}>{ic}</div>
+                <div style={{ fontWeight: 800, color: active ? C.teal : '#fff', fontSize: 13, marginBottom: 3 }}>{t}</div>
+                <div style={{ fontSize: 10, color: active ? C.teal : C.muted, marginBottom: 5, fontWeight: 600 }}>{sub}</div>
+                <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.4 }}>{desc}</div>
+              </div>
+            );
+          })}
         </div>
         {needsB && (
           <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 8, padding: '10px 12px', fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
@@ -617,19 +662,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     </div>
   );
 
-  // STEP 5: Results — pantalla de carga mientras llega PVGIS
-  if (step === 5 && (!res || !bgt)) return (
-    <div style={ss.wrap}>
-      <div style={{ ...ss.card, textAlign: 'center', padding: '60px 22px' }}>
-        <div style={{ width: 44, height: 44, borderRadius: '50%', border: `3px solid ${C.teal}33`, borderTopColor: C.teal, margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>Calculando tu sistema</div>
-        <div style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>
-          {loadingPVGIS ? 'Consultando irradiancia PVGIS para tu ubicación…' : 'Procesando dimensionamiento…'}
-        </div>
-      </div>
-    </div>
-  );
+  // STEP 5: Results — pantalla de carga dinámica con orquestación de herramientas
+  if (step === 5 && (!res || !bgt)) return <LoadingSystem C={C} ss={ss} logo={logo} f={f} operator={operator} needsB={needsB} />;
 
   if (step === 5 && res && bgt) {
     if (done) return (
@@ -1244,4 +1278,113 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     );
   }
   return null;
+}
+
+// Pantalla de carga animada — muestra la orquestación de herramientas en vivo.
+// No bloquea: es solo visual. El cálculo real corre en paralelo en calculate().
+function LoadingSystem({ C, ss, logo, f, operator, needsB }) {
+  const tools = useMemo(() => [
+    { icon: '☀', name: 'PVGIS', desc: 'Irradiancia satelital JRC (UE)' },
+    { icon: '📊', name: 'NREL PVWatts', desc: 'Producción anual con pérdidas reales' },
+    { icon: '🌡', name: 'NASA POWER', desc: 'Temperaturas de módulo (cold/hot)' },
+    { icon: '💱', name: 'Banrep TRM', desc: 'Tasa USD/COP oficial' },
+    { icon: '⚡', name: `XM — ${operator.name}`, desc: 'Precio spot en bolsa de energía' },
+    ...(f.systemType !== 'on-grid' ? [{ icon: '🔋', name: 'Dimensionamiento de banco', desc: 'DoD 80% · η 90% · voltaje bus' }] : []),
+    { icon: '🛡', name: 'Validación RETIE + AGPE', desc: 'CREG 174/2021 · Ley 1715 · Código de medida' },
+    { icon: '✦', name: 'Inversor compatible', desc: 'Voc/Vmp, MPPT y rango de strings' },
+  ], [operator.name, f.systemType, needsB]);
+
+  const [cursor, setCursor] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setCursor(c => Math.min(c + 1, tools.length - 1)), 900);
+    const t2 = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => { clearInterval(t); clearInterval(t2); };
+  }, [tools.length]);
+
+  return (
+    <div style={{
+      minHeight: 'calc(100vh - 56px - var(--footer-h, 64px))',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '20px 14px',
+    }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity: 0.35; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes dotFlash { 0%,80%,100% { opacity: 0.25; } 40% { opacity: 1; } }
+      `}</style>
+
+      <div style={{ width: '100%', maxWidth: 520 }}>
+        <div style={{
+          ...ss.card,
+          textAlign: 'center',
+          padding: '32px 24px 26px',
+          borderColor: `${C.teal}55`,
+          background: `linear-gradient(180deg, ${C.teal}08 0%, ${C.card} 60%)`,
+        }}>
+          <img src={logo} alt="SolarHub" style={{ height: 48, marginBottom: 14, objectFit: 'contain', animation: 'pulse 2s ease-in-out infinite' }} />
+
+          <div style={{ position: 'relative', width: 70, height: 70, margin: '0 auto 14px' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `3px solid ${C.teal}22` }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid transparent', borderTopColor: C.teal, borderRightColor: C.teal, animation: 'spin 1.1s linear infinite' }} />
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: C.yellow }}>⚡</div>
+          </div>
+
+          <div style={{ color: '#fff', fontSize: 17, fontWeight: 800, marginBottom: 4 }}>Calculando tu sistema</div>
+          <div style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>
+            Orquestando <strong style={{ color: C.teal }}>{tools.length} herramientas</strong> en paralelo
+            <span style={{ display: 'inline-flex', gap: 2, marginLeft: 4 }}>
+              {[0, 1, 2].map(i => (
+                <span key={i} style={{
+                  width: 3, height: 3, borderRadius: '50%', background: C.teal,
+                  animation: `dotFlash 1.4s ease-in-out ${i * 0.18}s infinite`,
+                }} />
+              ))}
+            </span>
+          </div>
+          <div style={{ color: C.muted, fontSize: 10, marginBottom: 18, letterSpacing: 0.3 }}>
+            {operator.name} · {f.dept} · {elapsed}s
+          </div>
+
+          <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {tools.map((t, i) => {
+              const state = i < cursor ? 'done' : i === cursor ? 'run' : 'pend';
+              const col = state === 'done' ? C.teal : state === 'run' ? C.yellow : C.muted;
+              const bg = state === 'run' ? `${C.yellow}12` : state === 'done' ? `${C.teal}08` : 'transparent';
+              return (
+                <div key={t.name} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 11px', borderRadius: 7,
+                  background: bg,
+                  border: `1px solid ${state === 'run' ? `${C.yellow}44` : state === 'done' ? `${C.teal}22` : C.border}`,
+                  opacity: state === 'pend' ? 0.55 : 1,
+                  animation: state !== 'pend' ? 'slideIn 0.25s ease' : 'none',
+                  transition: 'all 0.2s ease',
+                }}>
+                  <div style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{t.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: state === 'pend' ? C.muted : '#fff' }}>{t.name}</div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.desc}</div>
+                  </div>
+                  <div style={{ flexShrink: 0, width: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {state === 'done' && <span style={{ color: C.teal, fontSize: 14, fontWeight: 800 }}>✓</span>}
+                    {state === 'run' && (
+                      <div style={{ width: 12, height: 12, borderRadius: '50%', border: `2px solid ${C.yellow}33`, borderTopColor: C.yellow, animation: 'spin 0.8s linear infinite' }} />
+                    )}
+                    {state === 'pend' && <span style={{ color: C.muted, fontSize: 11 }}>•</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 16, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+            Los datos se cruzan para entregarte una cotización confiable: producción real, precios de mercado y cumplimiento normativo.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

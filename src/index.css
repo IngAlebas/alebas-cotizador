@@ -67,6 +67,12 @@ button { font-family: inherit; }
 
   /* Grids de stats en 2 columnas */
   .al-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Mini-hero en pasos 1-4: pills de normativa debajo, no al costado */
+  .al-step-pills { width: 100%; justify-content: flex-start !important; }
+
+  /* Tipo de sistema: tarjetas en 1 columna en móvil */
+  .al-type-grid { grid-template-columns: 1fr !important; }
 }
 
 @media (max-width: 400px) {
