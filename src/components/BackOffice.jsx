@@ -287,6 +287,11 @@ function OperatorsMgr({ operators, upd, ss }) {
   const [adding, setAdding] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
   const [spot, setSpot] = useState(null);
+  const [manualSpot, setManualSpot] = useState(() => {
+    try { const v = localStorage.getItem('xm:manualSpot'); return v ? JSON.parse(v) : null; } catch { return null; }
+  });
+  const [editingSpot, setEditingSpot] = useState(false);
+  const [spotInput, setSpotInput] = useState('');
 
   const startAdd = () => { setAdding(true); setEdit(null); setForm({ sic: '', name: '', fullName: '', region: '', tariff: 0, psh: 4.5 }); };
   const startEdit = o => { setEdit(o.name); setAdding(false); setForm({ ...o }); };
@@ -390,6 +395,41 @@ function OperatorsMgr({ operators, upd, ss }) {
           ⚠ Bolsa XM: {spot.error}
         </div>
       )}
+
+      {/* Precio bolsa manual — activo mientras la API XM no responde */}
+      <div style={{ background: `${C.yellow}10`, border: `1px solid ${C.yellow}25`, borderRadius: 6, padding: '8px 12px', marginBottom: 10 }}>
+        {!editingSpot ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ fontSize: 11, color: C.muted }}>
+              $ Precio bolsa manual:{' '}
+              {manualSpot
+                ? <strong style={{ color: C.yellow }}>{manualSpot.cop_per_kwh} COP/kWh</strong>
+                : <span style={{ color: C.muted, fontStyle: 'italic' }}>no definido — usado por AGPE si API falla</span>}
+            </div>
+            <button style={{ ...ss.btn, padding: '3px 10px', fontSize: 10 }} onClick={() => { setSpotInput(manualSpot?.cop_per_kwh || ''); setEditingSpot(true); }}>
+              Editar
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="number" style={{ ...ss.inp, flex: 1, padding: '5px 8px', fontSize: 12 }}
+              placeholder="Ej: 285.50" value={spotInput} onChange={e => setSpotInput(e.target.value)}
+              autoFocus onKeyDown={e => { if (e.key === 'Enter') saveManualSpot(); if (e.key === 'Escape') setEditingSpot(false); }}
+            />
+            <span style={{ fontSize: 10, color: C.muted }}>COP/kWh</span>
+            <button style={ss.btn} onClick={() => {
+              const v = parseFloat(spotInput);
+              if (!isNaN(v) && v > 0) {
+                const d = { cop_per_kwh: v, source: 'manual', syncedAt: new Date().toISOString() };
+                setManualSpot(d);
+                try { localStorage.setItem('xm:manualSpot', JSON.stringify(d)); } catch {}
+              }
+              setEditingSpot(false);
+            }}>Guardar</button>
+            <button style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setEditingSpot(false)}>✕</button>
+          </div>
+        )}
+      </div>
 
       <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}22`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
         Códigos SIC oficiales de XM (Sinergox). Tarifas son referencia residencial estrato 4 sin subsidio — actualizables manualmente o por scrapers de PDFs mensuales (próxima iteración). PSH usa estimación regional; PVGIS lo sobreescribe en el cálculo final.

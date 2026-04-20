@@ -164,18 +164,35 @@ async function getSpot(daysBack) {
   // El MetricId y endpoint para precio de bolsa han cambiado en varias versiones del API.
   // Probamos combinaciones de path + MetricId + Entity hasta obtener respuesta válida.
   const SPOT_CANDIDATES = [
-    { path: '/hourly', MetricId: 'Preciobols',       Entity: 'Sistema' },
-    { path: '/hourly', MetricId: 'PrecBolsNal',      Entity: 'Sistema' },
-    { path: '/hourly', MetricId: 'PrecBols',          Entity: 'Sistema' },
-    { path: '/hourly', MetricId: 'PreciosBolsa',      Entity: 'Sistema' },
-    { path: '/hourly', MetricId: 'PrecioBolsaNal',    Entity: 'Sistema' },
-    { path: '/hourly', MetricId: 'PrecBolsNal',       Entity: 'SIN' },
-    { path: '/hourly', MetricId: 'Preciobols',        Entity: 'SIN' },
+    // Variantes /hourly con distintos MetricId y Entity
+    { path: '/hourly', MetricId: 'Preciobols',            Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecBolsNal',           Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecBols',              Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PreciosBolsa',          Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecioBolsaNal',        Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'Bolsa',                 Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'BolsaNacional',         Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecBolsa',             Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PreciosBolsaNal',       Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PRECIOBOLS',            Entity: 'Sistema' },
+    // Sin Entity
     { path: '/hourly', MetricId: 'Preciobols' },
     { path: '/hourly', MetricId: 'PrecBolsNal' },
-    { path: '/daily',  MetricId: 'Preciobols',        Entity: 'Sistema' },
-    { path: '/daily',  MetricId: 'PrecBolsNal',       Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'Bolsa' },
+    { path: '/hourly', MetricId: 'BolsaNacional' },
+    // Entidad SIN
+    { path: '/hourly', MetricId: 'Preciobols',            Entity: 'SIN' },
+    { path: '/hourly', MetricId: 'PrecBolsNal',           Entity: 'SIN' },
+    { path: '/hourly', MetricId: 'Bolsa',                 Entity: 'SIN' },
+    // /daily
+    { path: '/daily',  MetricId: 'Preciobols',            Entity: 'Sistema' },
+    { path: '/daily',  MetricId: 'PrecBolsNal',           Entity: 'Sistema' },
+    { path: '/daily',  MetricId: 'Bolsa',                 Entity: 'Sistema' },
     { path: '/daily',  MetricId: 'Preciobols' },
+    { path: '/daily',  MetricId: 'PrecBolsNal' },
+    // /monthly como último recurso
+    { path: '/monthly', MetricId: 'Preciobols',           Entity: 'Sistema' },
+    { path: '/monthly', MetricId: 'PrecBolsNal',          Entity: 'Sistema' },
   ];
   let j = null;
   let usedMetric = '';
