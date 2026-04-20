@@ -23,6 +23,28 @@ async function geocode(address) {
   return { lat: loc.lat, lon: loc.lng, formatted: data.results[0].formatted_address };
 }
 
+// Intenta buildingInsights:findClosest con quality fallback HIGH → MEDIUM → LOW.
+// Colombia rural suele fallar en HIGH pero responde en MEDIUM/LOW. Reporta el
+// nivel efectivo en `imagery.quality` para que el usuario sepa la precisión.
+async function fetchInsights(lat, lon) {
+  const qualities = ['HIGH', 'MEDIUM', 'LOW'];
+  let lastErr = null;
+  for (const q of qualities) {
+    const url = `https://solar.googleapis.com/v1/buildingInsights:findClosest?location.latitude=${lat}&location.longitude=${lon}&requiredQuality=${q}&key=${GOOGLE_KEY}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      return { data, effectiveQuality: q };
+    }
+    lastErr = res.status;
+    if (res.status !== 404) break;
+  }
+  const msg = lastErr === 404
+    ? 'Google Solar API no tiene datos para esta ubicación (sin cobertura en LOW/MEDIUM/HIGH)'
+    : `Solar API HTTP ${lastErr}`;
+  throw new Error(msg);
+}
+
 async function fetchDirectGoogle({ address, lat, lon }) {
   if (!GOOGLE_KEY) throw new Error('Google Solar API requiere REACT_APP_GOOGLE_API_KEY');
   let _lat = lat, _lon = lon;
@@ -32,39 +54,47 @@ async function fetchDirectGoogle({ address, lat, lon }) {
   }
   if (_lat == null || _lon == null) throw new Error('Faltan coordenadas');
 
-  const url = `https://solar.googleapis.com/v1/buildingInsights:findClosest?location.latitude=${_lat}&location.longitude=${_lon}&requiredQuality=HIGH&key=${GOOGLE_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const msg = res.status === 404 ? 'Google Solar API no tiene datos para esta ubicación' : `Solar API HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  const data = await res.json();
+  const { data, effectiveQuality } = await fetchInsights(_lat, _lon);
   const sp = data.solarPotential || {};
   const wholeRoof = sp.wholeRoofStats || {};
   const roofSegs = Array.isArray(sp.roofSegmentStats) ? sp.roofSegmentStats : [];
-  const maxCfg = Array.isArray(sp.solarPanelConfigs) ? sp.solarPanelConfigs[sp.solarPanelConfigs.length - 1] : null;
+  const configs = Array.isArray(sp.solarPanelConfigs) ? sp.solarPanelConfigs : [];
+  // El último config es el que maximiza panelsCount, no el de mejor yield.
+  // Usamos el de mayor yearlyEnergyDcKwh para el cross-check con PVWatts.
+  const bestCfg = configs.reduce((a, b) => (b.yearlyEnergyDcKwh || 0) > (a?.yearlyEnergyDcKwh || 0) ? b : a, null);
+  const maxCfg = configs[configs.length - 1] || null;
   const primary = roofSegs[0] || {};
+  const quantile = (arr, i) => (Array.isArray(arr) && arr[i] != null) ? Number(arr[i]) : null;
 
   return {
     lat: _lat,
     lon: _lon,
     areaM2: wholeRoof.areaMeters2 != null ? Number(wholeRoof.areaMeters2) : null,
+    installableAreaM2: sp.maxArrayAreaMeters2 != null ? Number(sp.maxArrayAreaMeters2) : null,
     maxPanels: maxCfg?.panelsCount != null ? Math.floor(maxCfg.panelsCount) : sp.maxArrayPanelsCount,
     tiltDeg: primary.pitchDegrees != null ? Number(primary.pitchDegrees) : null,
     azimuthDeg: primary.azimuthDegrees != null ? Number(primary.azimuthDegrees) : null,
-    sunshineHoursYear: wholeRoof.sunshineQuantiles ? wholeRoof.sunshineQuantiles[5] : null,
+    sunshineHoursYear: quantile(wholeRoof.sunshineQuantiles, 5),
+    peakSunshineHoursYear: sp.maxSunshineHoursPerYear != null ? Number(sp.maxSunshineHoursPerYear) : quantile(wholeRoof.sunshineQuantiles, 10),
+    yearlyEnergyDcKwh: bestCfg?.yearlyEnergyDcKwh != null ? Number(bestCfg.yearlyEnergyDcKwh) : null,
+    panelCapacityWatts: sp.panelCapacityWatts != null ? Number(sp.panelCapacityWatts) : null,
+    carbonOffsetFactorKgPerMwh: sp.carbonOffsetFactorKgPerMwh != null ? Number(sp.carbonOffsetFactorKgPerMwh) : null,
     shadeIndex: null,
     shadeSource: null,
     roofSegments: roofSegs.map(s => ({
       azimuthDegrees: s.azimuthDegrees,
       pitchDegrees: s.pitchDegrees,
       areaMeters2: s.stats?.areaMeters2,
-      sunshineHoursPerYear: s.stats?.sunshineQuantiles ? s.stats.sunshineQuantiles[5] : null,
+      sunshineHoursPerYear: quantile(s.stats?.sunshineQuantiles, 5),
     })),
-    imagery: data.imageryDate ? { imageryDate: data.imageryDate, imageryQuality: data.imageryQuality } : null,
+    imagery: data.imageryDate ? {
+      imageryDate: data.imageryDate,
+      imageryQuality: data.imageryQuality,
+      quality: effectiveQuality,
+    } : { quality: effectiveQuality },
     source: 'google-direct',
-    confidence: 0.9,
-    notes: '',
+    confidence: effectiveQuality === 'HIGH' ? 0.9 : effectiveQuality === 'MEDIUM' ? 0.75 : 0.6,
+    notes: effectiveQuality !== 'HIGH' ? `Datos Google Solar a calidad ${effectiveQuality} (HIGH no disponible en esta ubicación).` : '',
   };
 }
 
@@ -84,10 +114,15 @@ export async function lookupRoof({ address, lat, lon } = {}) {
         lat: Number(data.lat),
         lon: Number(data.lon),
         areaM2: data.areaM2 != null ? Number(data.areaM2) : null,
+        installableAreaM2: data.installableAreaM2 != null ? Number(data.installableAreaM2) : null,
         maxPanels: data.maxPanels != null ? Math.floor(Number(data.maxPanels)) : null,
         tiltDeg: data.tiltDeg != null ? Number(data.tiltDeg) : null,
         azimuthDeg: data.azimuthDeg != null ? Number(data.azimuthDeg) : null,
         sunshineHoursYear: data.sunshineHoursYear != null ? Number(data.sunshineHoursYear) : null,
+        peakSunshineHoursYear: data.peakSunshineHoursYear != null ? Number(data.peakSunshineHoursYear) : null,
+        yearlyEnergyDcKwh: data.yearlyEnergyDcKwh != null ? Number(data.yearlyEnergyDcKwh) : null,
+        panelCapacityWatts: data.panelCapacityWatts != null ? Number(data.panelCapacityWatts) : null,
+        carbonOffsetFactorKgPerMwh: data.carbonOffsetFactorKgPerMwh != null ? Number(data.carbonOffsetFactorKgPerMwh) : null,
         shadeIndex: data.shadeIndex != null ? Number(data.shadeIndex) : null,
         shadeSource: data.shadeSource || null,
         roofSegments: Array.isArray(data.roofSegments) ? data.roofSegments : [],
