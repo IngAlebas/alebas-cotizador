@@ -5,6 +5,8 @@ import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 import { searchCECPanels, searchCECInverters } from '../services/cec';
 import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
+import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
+import { n8nConfigured } from '../services/n8n';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -314,6 +316,10 @@ function OperatorsMgr({ operators, upd, ss }) {
     setSyncStatus({ loading: true });
     try {
       const data = await fetchAgentsList();
+      if (data?.ok === false) {
+        setSyncStatus({ warn: 'error', msg: data.error || data.reason || 'no disponible' });
+        return;
+      }
       const total = data.operators?.length ?? 0;
       if (!total) {
         setSyncStatus({
@@ -334,6 +340,10 @@ function OperatorsMgr({ operators, upd, ss }) {
   const syncSpot = async () => {
     try {
       const p = await fetchSpotPrice(30);
+      if (p?.ok === false) {
+        setSpot({ error: p.error || p.reason });
+        return;
+      }
       setSpot(p);
     } catch (err) {
       setSpot({ error: err.message });
@@ -781,7 +791,111 @@ function SuppliersMgr({ suppliers, uSupp, ss }) {
   );
 }
 
-export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp }) {
+// Cuadro de cargas — catálogo de referencia de consumos típicos para sistemas
+// off-grid (usuarios sin recibo). Primario: n8n /webhook/loads-catalog;
+// fallback: lista local DEFAULT_LOADS_CATALOG. Cambios aquí sólo afectan la
+// sesión local + caché (no persisten al backend remoto).
+function LoadsTab({ catalog, source, setCatalog, setSource, ss }) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+  const uuid = () => `lc_${Math.random().toString(36).slice(2, 10)}`;
+
+  const sync = async () => {
+    setSyncing(true); setSyncMsg('');
+    try {
+      invalidateLoadsCache();
+      const d = await fetchLoadsCatalog();
+      if (Array.isArray(d?.items) && d.items.length) {
+        setCatalog && setCatalog(d.items);
+        setSource && setSource(d.source || 'n8n');
+        setSyncMsg(`✓ ${d.items.length} cargas cargadas (${d.source || 'n8n'})`);
+      } else {
+        setSyncMsg('⚠ respuesta vacía — manteniendo catálogo local');
+      }
+    } catch (e) {
+      setSyncMsg(`⚠ ${e?.message || 'error'} — usando catálogo local`);
+    }
+    setSyncing(false);
+  };
+
+  const items = Array.isArray(catalog) && catalog.length ? catalog : DEFAULT_LOADS_CATALOG;
+
+  const updateItem = (idx, key, val) => {
+    const next = items.map((it, i) => i === idx ? { ...it, [key]: val } : it);
+    setCatalog && setCatalog(next);
+    setSource && setSource('custom');
+  };
+  const removeItem = (idx) => {
+    const next = items.filter((_, i) => i !== idx);
+    setCatalog && setCatalog(next);
+    setSource && setSource('custom');
+  };
+  const addItem = () => {
+    setCatalog && setCatalog([...items, { id: uuid(), name: '', watts: 0, hours: 0, qty: 1, category: '' }]);
+    setSource && setSource('custom');
+  };
+  const resetLocal = () => {
+    setCatalog && setCatalog(DEFAULT_LOADS_CATALOG);
+    setSource && setSource('local-default');
+  };
+
+  return (
+    <div>
+      <div style={ss.h2}>Cuadro de cargas — catálogo de referencia</div>
+      <div style={ss.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.6 }}>
+            Fuente actual: <span style={{ color: C.teal, fontWeight: 700 }}>{source}</span>
+            {' · '}
+            {n8nConfigured()
+              ? 'n8n configurado — puedes sincronizar desde el endpoint /webhook/loads-catalog.'
+              : 'n8n no configurado — usando lista por defecto. Define REACT_APP_N8N_BASE_URL para habilitar sincronización remota.'}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" onClick={sync} disabled={syncing || !n8nConfigured()} style={{ ...ss.btn, opacity: (syncing || !n8nConfigured()) ? 0.5 : 1 }}>
+              {syncing ? '⏳ Sincronizando…' : '↻ Sincronizar con n8n'}
+            </button>
+            <button type="button" onClick={resetLocal} style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: '#fff' }}>
+              Restablecer por defecto
+            </button>
+            <button type="button" onClick={addItem} style={{ ...ss.btn, background: C.yellow, color: '#000' }}>+ Agregar carga</button>
+          </div>
+        </div>
+        {syncMsg && <div style={{ fontSize: 11, color: syncMsg.startsWith('✓') ? C.teal : C.orange, marginBottom: 8 }}>{syncMsg}</div>}
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+            <thead>
+              <tr>
+                {['Carga', 'Categoría', 'Watts', 'Horas/día', 'Cant. típica', 'kWh/día', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, idx) => {
+                const kwhDay = (Number(it.watts || 0) * Number(it.hours || 0) * Number(it.qty || 0)) / 1000;
+                return (
+                  <tr key={it.id || idx}>
+                    <td style={ss.td}><input style={ss.inp} value={it.name || ''} onChange={e => updateItem(idx, 'name', e.target.value)} /></td>
+                    <td style={ss.td}><input style={ss.inp} value={it.category || ''} onChange={e => updateItem(idx, 'category', e.target.value)} /></td>
+                    <td style={ss.td}><input type="number" style={ss.inp} value={it.watts || 0} onChange={e => updateItem(idx, 'watts', Number(e.target.value))} /></td>
+                    <td style={ss.td}><input type="number" step="0.1" style={ss.inp} value={it.hours || 0} onChange={e => updateItem(idx, 'hours', Number(e.target.value))} /></td>
+                    <td style={ss.td}><input type="number" style={ss.inp} value={it.qty || 1} onChange={e => updateItem(idx, 'qty', Number(e.target.value))} /></td>
+                    <td style={{ ...ss.td, color: C.teal, fontWeight: 600 }}>{kwhDay.toFixed(2)}</td>
+                    <td style={ss.td}><button type="button" onClick={() => removeItem(idx)} style={ss.del}>×</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
+          Esta tabla alimenta el botón <strong style={{ color: C.teal }}>+ cargas típicas</strong> del cotizador cuando el usuario marca sistema off-grid. Los primeros 6 ítems se usan como preset inicial.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp, loadsCatalog = [], loadsSource = 'local-default', setLoadsCatalog, setLoadsSource }) {
   const [dashTrm, setDashTrm] = React.useState(null);
   React.useEffect(() => {
     fetchTRM().then(d => setDashTrm(d)).catch(() => {});
@@ -802,7 +916,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '11px 13px' },
   };
 
-  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores'], ['suppliers', '📄', 'Proveedores']];
+  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['loads', '📋', 'Cuadro de cargas'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores'], ['suppliers', '📄', 'Proveedores']];
 
   const tot = quotes.length, nv = quotes.filter(q => q.status === 'nuevo').length;
   const kp = quotes.reduce((s, q) => s + parseFloat(q.results?.actKwp || 0), 0).toFixed(1);
@@ -856,6 +970,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
         {tab === 'inverters' && <InvertersTab inverters={inverters} uI={uI} ss={ss} />}
         {tab === 'batteries' && <BatteriesTab batteries={batteries} uB={uB} ss={ss} />}
+        {tab === 'loads' && <LoadsTab catalog={loadsCatalog} source={loadsSource} setCatalog={setLoadsCatalog} setSource={setLoadsSource} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
         {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} />}

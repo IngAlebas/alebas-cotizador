@@ -15,6 +15,7 @@ import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
 import { aiRecommend, aiConfigured } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
+import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
@@ -23,6 +24,14 @@ const Q0 = {
   transportZone: 'N1', dept: 'Meta', address: '',
   availableArea: '', wantsExcedentes: false,
   name: '', company: '', phone: '', email: '',
+  // Acometida / fase de la carga — RETIE Sección 240 (clasificación usuario final):
+  //   monofasico  = 1F+N, 120V (cargas muy pequeñas, poco común residencial)
+  //   bifasico    = 2F+N (split-phase), 120/240V (residencial típico en Colombia)
+  //   trifasico   = 3F+N, 208/220/440V (comercial/industrial o residencial grande)
+  // Se auto-sugiere según el consumo/potencia estimada y gobierna el filtro
+  // de inversores (phase 1 vs 3) en selectCompatibleInverter.
+  acometida: 'bifasico',
+  phaseManual: false,    // true = usuario forzó la acometida
   // Dimensionamiento de almacenamiento
   backupHours: 4,        // Horas de respaldo (Híbrido)
   autonomyDays: 1,       // Días sin sol (Off-grid)
@@ -36,13 +45,44 @@ const Q0 = {
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null,
+  // Cuadro de cargas — usado en off-grid (no hay factura)
+  loadItems: [],
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
   website: '',
 };
 
+const uuid = () => `ld_${Math.random().toString(36).slice(2, 10)}`;
+
+// RETIE Sección 240 — selección de acometida por carga conectada.
+// La franja es aproximada y válida para Colombia (STR/SDL residencial); el
+// operador de red puede pedir trifásico por razones de calidad incluso en
+// cargas menores.
+function suggestAcometida(monthlyKwh, sysType) {
+  const kwh = Number(monthlyKwh || 0);
+  if (!kwh) return 'bifasico';
+  // Carga máxima instantánea estimada ≈ consumo mensual / 100 (factor coincidencia).
+  const estKw = kwh / 100;
+  if (estKw >= 20) return 'trifasico';
+  if (estKw < 3 && sysType === 'off-grid') return 'monofasico';
+  return 'bifasico';
+}
+
+const ACOMETIDA_INFO = {
+  monofasico: { label: 'Monofásico', volts: '120 V', hilos: '1F + N', retie: '240V ≤ 7 kW' },
+  bifasico:   { label: 'Bifásico',   volts: '120/240 V', hilos: '2F + N', retie: 'Residencial típico Colombia' },
+  trifasico:  { label: 'Trifásico',  volts: '208/220/440 V', hilos: '3F + N', retie: 'Comercial/industrial' },
+};
+
+// Mapeo acometida → fases del inversor (campo `phase` del catálogo).
+//   phase 1 = monofásico/bifásico (split-phase 120/240V, la mayoría residencial en Colombia)
+//   phase 3 = trifásico
+function phasesForAcometida(acometida) {
+  return acometida === 'trifasico' ? [3] : [1];
+}
+
 const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
 
-export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote }) {
+export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote, loadsCatalog }) {
   const [step, setStep] = useState(0);
   const [f, setF] = useState(Q0);
   const [res, setRes] = useState(null);
@@ -50,6 +90,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [done, setDone] = useState(false);
   const [resultTab, setResultTab] = useState('resumen');
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const loadsPresets = (Array.isArray(loadsCatalog) && loadsCatalog.length) ? loadsCatalog : DEFAULT_LOADS_CATALOG;
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
   const operator = operators[f.operatorId] || operators[0];
@@ -86,6 +127,37 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   }, [needsB, suggestedBattQty, f.battManual]);
 
+  // Cuadro de cargas → consumo mensual (off-grid no tiene factura).
+  const loadDailyKwh = (f.loadItems || []).reduce(
+    (s, it) => s + (Number(it.watts || 0) * Number(it.hours || 0) * Number(it.qty || 0)) / 1000,
+    0
+  );
+  const loadMonthlyKwh = +(loadDailyKwh * 30).toFixed(0);
+  useEffect(() => {
+    if (f.systemType !== 'off-grid') return;
+    if (loadMonthlyKwh > 0 && String(loadMonthlyKwh) !== f.monthlyKwh) {
+      u('monthlyKwh', String(loadMonthlyKwh));
+    }
+  }, [f.systemType, loadMonthlyKwh]);
+
+  // Auto-sugerencia de acometida (RETIE 240) según el consumo. Si el usuario
+  // la fija manualmente (phaseManual) no tocamos su elección.
+  const suggestedAcometida = suggestAcometida(f.monthlyKwh, f.systemType);
+  useEffect(() => {
+    if (f.phaseManual) return;
+    if (suggestedAcometida && suggestedAcometida !== f.acometida) {
+      u('acometida', suggestedAcometida);
+    }
+  }, [suggestedAcometida, f.phaseManual]);
+
+  // Configuración del banco de baterías (serie/paralelo).
+  // Series = bus ÷ tensión batería (ceil, mín 1). Paralelos = qty ÷ series.
+  const bankSeries = batt && batt.voltage > 0
+    ? Math.max(1, Math.round(f.busVoltage / batt.voltage))
+    : 1;
+  const bankParallel = bankSeries > 0 ? Math.floor(f.battQty / bankSeries) : f.battQty;
+  const bankOrphan = f.battQty - bankSeries * bankParallel;
+
   const dest = DESTINOS_COURIER.find(d => d.dept === f.dept) || DESTINOS_COURIER[0];
 
   const [loadingPVGIS, setLoadingPVGIS] = useState(false);
@@ -95,7 +167,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [nasaData, setNasaData] = useState(null);
   const [pvwData, setPvwData] = useState(null);
   const [trm, setTrm] = useState(null);
-  // Lookup de techo (Google Solar + Claude fallback vía n8n)
+  // Lookup de techo (Google Solar + IA fallback vía n8n)
   const [roofQuery, setRoofQuery] = useState('');
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
@@ -103,6 +175,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiError, setAiError] = useState(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
   // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
   // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
   const [validatingContact, setValidatingContact] = useState(false);
@@ -173,7 +246,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
       if (r.imagery) u('roofImagery', r.imagery);
     } catch (e) {
-      setRoofError(e.message || 'Error consultando techo');
+      const raw = e?.message || 'Error consultando techo';
+      const friendly = /Failed to fetch|NetworkError/i.test(raw)
+        ? 'No se pudo conectar al servicio. Puedes ingresar el área manualmente arriba y continuar.'
+        : raw;
+      setRoofError(friendly);
     } finally {
       setRoofLoading(false);
     }
@@ -215,7 +292,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     // Fase 1 — sizing rápido con temperaturas default para determinar actKwp.
     const sizingKwp = targetKwp || consumptionKwp;
-    const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters);
+    const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters, { phases: phasesForAcometida(f.acometida) });
     const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
 
     let pvgisAnnualKwh = null;
@@ -269,7 +346,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const bestAnnualKwh = pvwattsAnnualKwh || pvgisAnnualKwh || null;
     const productionSource = pvwattsAnnualKwh ? 'PVWatts' : pvgisAnnualKwh ? 'PVGIS' : 'PSH';
 
-    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, temps);
+    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
       { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
@@ -460,11 +537,65 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
         <div style={ss.h2}>Consumo y operador de red</div>
-        <div style={{ marginBottom: 13 }}>
-          <label style={ss.lbl}>Consumo mensual (kWh) — del recibo de energía</label>
-          <input type="number" style={ss.inp} placeholder="Ej: 450" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Busca "Energía activa" o "kWh consumidos" en tu factura</div>
-        </div>
+        {f.systemType === 'off-grid' ? (
+          <div style={{ marginBottom: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+              <label style={{ ...ss.lbl, marginBottom: 0 }}>Cuadro de cargas — off-grid no tiene factura</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {(!f.loadItems || f.loadItems.length === 0) && (
+                  <button type="button" onClick={() => u('loadItems', loadsPresets.slice(0, 6).map(x => ({ id: uuid(), name: x.name, watts: x.watts, hours: x.hours, qty: x.qty || 1 })))}
+                    style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}66`, color: C.teal, borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                    + cargas típicas
+                  </button>
+                )}
+                <button type="button" onClick={() => u('loadItems', [...(f.loadItems || []), { id: uuid(), name: '', watts: 0, hours: 0, qty: 1 }])}
+                  style={{ background: 'transparent', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10 }}>
+                  + agregar
+                </button>
+              </div>
+            </div>
+            {(f.loadItems || []).length === 0 ? (
+              <div style={{ background: C.dark, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '14px 12px', fontSize: 11, color: C.muted, textAlign: 'center' }}>
+                Agrega las cargas de tu finca/vivienda (nevera, luces, TV, bomba...) o carga la plantilla típica.
+              </div>
+            ) : (
+              <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.7fr 0.5fr 28px', gap: 6, fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, padding: '2px 0 6px' }}>
+                  <span>Carga</span><span>Watts</span><span>Horas/día</span><span>Cant.</span><span></span>
+                </div>
+                {f.loadItems.map(it => {
+                  const kwhDay = (Number(it.watts || 0) * Number(it.hours || 0) * Number(it.qty || 0)) / 1000;
+                  return (
+                    <div key={it.id} style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.7fr 0.5fr 28px', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                      <input style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} placeholder="Ej: Nevera" value={it.name}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, name: e.target.value } : x))} />
+                      <input type="number" style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} placeholder="W" value={it.watts}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, watts: e.target.value } : x))} />
+                      <input type="number" step="0.1" style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} placeholder="h/día" value={it.hours}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, hours: e.target.value } : x))} />
+                      <input type="number" style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} value={it.qty}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, qty: e.target.value } : x))} />
+                      <button type="button" title={`${kwhDay.toFixed(2)} kWh/día`}
+                        onClick={() => u('loadItems', f.loadItems.filter(x => x.id !== it.id))}
+                        style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 4, cursor: 'pointer', fontSize: 12, height: 30 }}>×</button>
+                    </div>
+                  );
+                })}
+                <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                  <span style={{ color: C.muted }}>Total estimado</span>
+                  <span style={{ color: C.teal, fontWeight: 700 }}>{loadDailyKwh.toFixed(2)} kWh/día · {loadMonthlyKwh} kWh/mes</span>
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Suma aproximada. Ajusta watts y horas según tus equipos reales.</div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 13 }}>
+            <label style={ss.lbl}>Consumo mensual (kWh) — del recibo de energía</label>
+            <input type="number" style={ss.inp} placeholder="Ej: 450" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Busca "Energía activa" o "kWh consumidos" en tu factura</div>
+          </div>
+        )}
         <div style={{ marginBottom: 13 }}>
           <label style={ss.lbl}>Operador de red / empresa de energía</label>
           <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.operatorId} onChange={e => u('operatorId', parseInt(e.target.value))}>
@@ -472,6 +603,32 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </select>
           <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
             Tarifa: <span style={{ color: C.teal }}>{operator.tariff} COP/kWh</span> · PSH: <span style={{ color: C.teal }}>{operator.psh} h/día</span>
+          </div>
+        </div>
+        <div style={{ marginBottom: 13 }}>
+          <label style={ss.lbl}>Acometida / fases de la carga (RETIE 240)</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {['monofasico', 'bifasico', 'trifasico'].map(ph => {
+              const info = ACOMETIDA_INFO[ph];
+              const active = f.acometida === ph;
+              return (
+                <button key={ph} type="button" onClick={() => { u('acometida', ph); u('phaseManual', true); }}
+                  style={{ flex: '1 1 140px', minWidth: 130, padding: '8px 10px', borderRadius: 7,
+                           border: `2px solid ${active ? C.teal : C.border}`,
+                           background: active ? `${C.teal}22` : 'transparent',
+                           color: active ? C.teal : '#fff', cursor: 'pointer',
+                           textAlign: 'left', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{info.label}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{info.hilos} · {info.volts}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+            {f.phaseManual ? 'Selección manual.' : `Sugerido por consumo: ${ACOMETIDA_INFO[suggestedAcometida].label}.`}
+            {' '}<span style={{ color: C.teal }}>{ACOMETIDA_INFO[f.acometida].retie}</span>
+            {' · '}El inversor se filtra por fase: {f.acometida === 'trifasico' ? 'trifásico (3F)' : 'monofásico / bifásico (1F)'}.
+            {f.phaseManual && <button type="button" onClick={() => u('phaseManual', false)} style={{ marginLeft: 8, background: 'transparent', border: 'none', color: C.teal, cursor: 'pointer', fontSize: 10, textDecoration: 'underline' }}>auto</button>}
           </div>
         </div>
         <div style={{ marginBottom: 8 }}>
@@ -507,7 +664,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {f.roofLookupSource && (
             <div style={{ fontSize: 10, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
               Fuente: <span style={{ color: C.teal, fontWeight: 600 }}>
-                {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Claude IA (estimación)' : f.roofLookupSource}
+                {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Estimación asistida' : f.roofLookupSource}
               </span>
               {f.lat != null && f.lon != null && <> · {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
               {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
@@ -707,19 +864,45 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 )}
               </div>
               {batt && f.battQty > 0 && (
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
-                  Banco total: <strong style={{ color: C.teal }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</strong> · {f.battQty} × {batt.kwh} kWh
-                  {requiredBankKwh > 0 && (batt.kwh * f.battQty) < requiredBankKwh && (
-                    <span style={{ color: C.orange, marginLeft: 6 }}>⚠ bajo lo requerido</span>
-                  )}
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.6 }}>
+                  <div>
+                    Banco total: <strong style={{ color: C.teal }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</strong> · {f.battQty} × {batt.kwh} kWh
+                    {requiredBankKwh > 0 && (batt.kwh * f.battQty) < requiredBankKwh && (
+                      <span style={{ color: C.orange, marginLeft: 6 }}>⚠ bajo lo requerido</span>
+                    )}
+                  </div>
+                  <div>
+                    Configuración: <strong style={{ color: C.teal }}>{bankSeries}S × {bankParallel}P</strong>
+                    {' '}({bankSeries} en serie a {bankSeries * batt.voltage}V · {bankParallel} ramas en paralelo)
+                    {bankOrphan > 0 && (
+                      <span style={{ color: C.orange, marginLeft: 6 }}>
+                        ⚠ {bankOrphan} batería{bankOrphan > 1 ? 's' : ''} sobrante{bankOrphan > 1 ? 's' : ''} — ajusta la cantidad a múltiplo de {bankSeries}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
+        {!f.monthlyKwh && (
+          <div style={{ marginTop: 14, padding: '10px 12px', background: `${C.yellow}12`, border: `1px solid ${C.yellow}55`, borderRadius: 7, fontSize: 11, color: C.yellow, lineHeight: 1.5 }}>
+            <strong>Falta el consumo mensual (kWh)</strong> — {f.systemType === 'off-grid'
+              ? 'agrega las cargas en el Cuadro de cargas de arriba (o usa el preset "+ cargas típicas"). El consumo mensual se calcula solo.'
+              : 'anótalo del recibo de energía ("Energía activa" / "kWh consumidos").'}
+            {' El área ('}{f.availableArea || '—'}{' m²) es opcional y ya la registramos.'}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
           <button style={ss.ghost} onClick={() => setStep(2)}>← Atrás</button>
-          <button style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }} onClick={() => { if (f.monthlyKwh) setStep(4); }}>Siguiente →</button>
+          <button
+            style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1, cursor: !f.monthlyKwh ? 'not-allowed' : 'pointer' }}
+            title={!f.monthlyKwh ? 'Ingresa el consumo mensual arriba para continuar' : ''}
+            onClick={() => {
+              if (f.monthlyKwh) { setStep(4); return; }
+              setRoofError('Falta el consumo mensual (kWh). El área manual ya está guardada.');
+            }}
+          >Siguiente →</button>
         </div>
       </div>
     </div>
@@ -1058,7 +1241,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           );
         })()}
 
-        {showResumen && aiConfigured() && (
+        {showResumen && aiConfigured() && !aiUnavailable && (
           <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
@@ -1085,7 +1268,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
                     });
                     setAiData(out);
-                  } catch (e) { setAiError(e.message || 'Error IA'); }
+                  } catch (e) {
+                    const msg = e?.message || 'Error IA';
+                    if (/Failed to fetch|NetworkError|aborted/i.test(msg)) {
+                      setAiUnavailable(true);
+                    } else {
+                      setAiError(msg);
+                    }
+                  }
                   finally { setAiLoading(false); }
                 }}
                 style={{ ...ss.btn, background: C.yellow, color: '#000', padding: '7px 13px', fontSize: 11, opacity: aiLoading ? 0.6 : 1 }}
@@ -1121,17 +1311,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </ul>
                   </div>
                 )}
-                {(aiData.provider || aiData.tokens?.in) && (
-                  <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
-                    {aiData.provider && <span>Modelo: <span style={{ color: C.teal }}>{aiData.provider}</span></span>}
-                    {aiData.tokens?.in > 0 && <span> · {(aiData.tokens.in + (aiData.tokens.out || 0)).toLocaleString('es-CO')} tokens</span>}
-                  </div>
-                )}
+                <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
+                  Cadena de revisión interna
+                </div>
               </div>
             )}
             {!aiData && !aiError && !aiLoading && (
               <div style={{ fontSize: 11, color: C.muted }}>
-                Claude Haiku revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
+                Revisión técnica interna del sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
               </div>
             )}
           </div>
@@ -1175,6 +1362,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
                   <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Baterías</div>
                   <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{f.battQty} × {batt.kwh} kWh</div>
+                  <div style={{ fontSize: 10, color: C.yellow, marginTop: 3 }}>{bankSeries}S × {bankParallel}P · {bankSeries * batt.voltage}V bus</div>
                 </div>
                 <div style={{ fontSize: 18, color: C.teal }}>→</div>
               </>
@@ -1318,10 +1506,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
             {[
               ['Panel', `${panel.brand} ${panel.model}`], ['Potencia', `${panel.wp} Wp`],
-              ['Inversor', `${res.inv?.brand} ${res.inv?.model}`], ['Potencia inv.', `${res.inv?.kw} kW`],
+              ['Inversor', `${res.inv?.brand} ${res.inv?.model}`], ['Potencia inv.', `${res.inv?.kw} kW · ${res.inv?.phase === 3 ? 'trifásico' : 'monofásico/bifásico'}`],
+              ['Acometida', `${ACOMETIDA_INFO[f.acometida].label} (${ACOMETIDA_INFO[f.acometida].hilos} · ${ACOMETIDA_INFO[f.acometida].volts})`], ['Tipo sistema', f.systemType],
               ['Strings', `${res.ns} × ${res.ppss} paneles`], ['Ratio DC/AC', res.dca],
               ['Área techo', `${res.roof} m²`], ['Peso sistema', `${fmt(res.kgTotal)} kg`],
-              ...(needsB ? [['Baterías', `${f.battQty} × ${batt.brand} ${batt.model}`], ['Cap. total', `${res.tB} kWh`], ['Autonomía', `${res.aut} h`]] : []),
+              ...(needsB ? [
+                ['Baterías', `${f.battQty} × ${batt.brand} ${batt.model}`],
+                ['Config. banco', `${bankSeries}S × ${bankParallel}P · ${bankSeries * batt.voltage}V bus`],
+                ['Cap. total', `${res.tB} kWh`], ['Autonomía', `${res.aut} h`],
+              ] : []),
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.border}22`, gap: 4 }}>
                 <span style={{ fontSize: 10, color: C.muted }}>{k}</span>

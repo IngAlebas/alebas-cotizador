@@ -88,9 +88,18 @@ export async function fetchNASAPower(lat, lon) {
   const cached = readCache(key);
   if (cached?.annualPsh) return { ...cached, cached: true };
 
-  const data = n8nConfigured()
-    ? await n8nPost('nasa-power', { lat, lon })
-    : await fetchDirect(lat, lon);
+  // n8n primario → si falla, cae al endpoint público NASA POWER (CORS habilitado).
+  let data;
+  if (n8nConfigured()) {
+    try {
+      data = await n8nPost('nasa-power', { lat, lon });
+      if (!data?.annualPsh) throw new Error('NASA POWER n8n: respuesta sin annualPsh');
+    } catch (e) {
+      data = await fetchDirect(lat, lon);
+    }
+  } else {
+    data = await fetchDirect(lat, lon);
+  }
 
   if (data?.annualPsh) writeCache(key, data);
   return data;
