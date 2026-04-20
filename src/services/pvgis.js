@@ -29,16 +29,7 @@ export async function fetchPVProduction({ lat, lon, kwp, losses = 14, tilt = 10,
   const cached = readCache(key);
   if (cached) return { ...cached, cached: true };
 
-  let data;
-  if (n8nConfigured()) {
-    data = await n8nPost('pvgis', { lat, lon, kwp, tilt, azimuth, losses });
-  } else {
-    // Fallback directo a /api/pvgis (Vercel legacy) cuando n8n no está configurado
-    const params = new URLSearchParams({ lat, lon, kwp, tilt, azimuth, losses });
-    const r = await fetch(`/api/pvgis?${params}`);
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `PVGIS HTTP ${r.status}`); }
-    data = await r.json();
-  }
+  const data = await n8nPost('pvgis', { lat, lon, kwp, tilt, azimuth, losses });
   if (data?.annualKwh) writeCache(key, data);
   return { ...data, cached: false };
 }

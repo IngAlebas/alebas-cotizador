@@ -25,15 +25,7 @@ export async function fetchPVWatts(lat, lon, kwp, tilt = 10, azimuth = 180) {
   const cached = readCache(key);
   if (cached?.annualKwh) return { ...cached, cached: true };
 
-  let data;
-  if (n8nConfigured()) {
-    data = await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth });
-  } else {
-    const params = new URLSearchParams({ lat, lon, kwp, tilt, azimuth });
-    const r = await fetch(`/api/pvwatts?${params}`);
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `PVWatts HTTP ${r.status}`); }
-    data = await r.json();
-  }
+  const data = await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth });
   if (data?.annualKwh) writeCache(key, data);
   return data;
 }

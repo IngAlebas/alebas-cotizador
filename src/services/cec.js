@@ -24,15 +24,7 @@ async function searchCEC(type, query, limit = 20) {
   const cached = readCache(key);
   if (cached) return { ...cached, cached: true };
 
-  let data;
-  if (n8nConfigured()) {
-    data = await n8nPost('cec', { type, q: query || '', limit });
-  } else {
-    const params = new URLSearchParams({ type, q: query || '', limit: String(limit) });
-    const r = await fetch(`/api/cec?${params}`);
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `CEC HTTP ${r.status}`); }
-    data = await r.json();
-  }
+  const data = await n8nPost('cec', { type, q: query || '', limit });
   writeCache(key, { ...data, cached: false });
   return data;
 }

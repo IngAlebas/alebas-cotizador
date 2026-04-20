@@ -25,14 +25,7 @@ export async function fetchNASAPower(lat, lon) {
   const cached = readCache(key);
   if (cached?.annualPsh) return { ...cached, cached: true };
 
-  let data;
-  if (n8nConfigured()) {
-    data = await n8nPost('nasa-power', { lat, lon });
-  } else {
-    const r = await fetch(`/api/nasa-power?lat=${lat}&lon=${lon}`);
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `NASA POWER HTTP ${r.status}`); }
-    data = await r.json();
-  }
+  const data = await n8nPost('nasa-power', { lat, lon });
   if (data?.annualPsh) writeCache(key, data);
   return data;
 }

@@ -24,15 +24,7 @@ export async function searchBatteries(q = '', arch = '', limit = 50) {
   const cached = readCache(key);
   if (cached?.items?.length) return { ...cached, cached: true };
 
-  let data;
-  if (n8nConfigured()) {
-    data = await n8nPost('batteries', { q, arch, limit });
-  } else {
-    const params = new URLSearchParams({ q, arch, limit: String(limit) });
-    const r = await fetch(`/api/batteries?${params}`);
-    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `batteries HTTP ${r.status}`); }
-    data = await r.json();
-  }
+  const data = await n8nPost('batteries', { q, arch, limit });
   if (data?.items?.length) writeCache(key, { ...data, cached: false });
   return data;
 }
