@@ -60,13 +60,15 @@ En Railway → servicio n8n → **Variables** → añade las que uses:
 
 ```
 GOOGLE_API_KEY=               # Geocoding + Solar API (ver paso 6)
-ANTHROPIC_API_KEY=sk-ant-...  # Claude (ai-recommend + solar-roof fallback)
 NREL_API_KEY=DEMO_KEY         # PVWatts (DEMO_KEY: 1000 req/día)
 
-# IA cascade (gratuitos — opcional, el workflow usa el primero disponible)
-GROQ_API_KEY=                 # https://console.groq.com  (14,400 req/día)
+# IA cascade — orden de intento en ai-recommend.json:
+#   Gemini → Groq → Mistral → Claude
+# Basta con configurar una. Gemini primero por cuota generosa y calidad técnica.
 GOOGLE_AI_KEY=                # https://aistudio.google.com  (1,500 req/día)
+GROQ_API_KEY=                 # https://console.groq.com      (14,400 req/día)
 MISTRAL_API_KEY=              # https://console.mistral.ai
+ANTHROPIC_API_KEY=sk-ant-...  # Claude (fallback pago + usado en solar-roof)
 
 # Token compartido con el frontend (opcional pero recomendado)
 ALEBAS_WEBHOOK_TOKEN=<genera uno largo y aleatorio>
@@ -103,7 +105,12 @@ Vercel → proyecto `alebas-cotizador` → **Settings → Environment Variables*
 ```
 REACT_APP_N8N_BASE_URL=https://n8n-production-xxxx.up.railway.app/webhook
 REACT_APP_N8N_TOKEN=<mismo valor que ALEBAS_WEBHOOK_TOKEN>
+REACT_APP_GOOGLE_AI_KEY=      # Opcional — fallback directo Gemini si n8n falla
 ```
+
+**Seguridad de `REACT_APP_GOOGLE_AI_KEY`:** la key viaja al navegador. Restringirla en
+[Google AI Studio](https://aistudio.google.com/app/apikey) por HTTP referrer
+(`https://alebas-cotizador.vercel.app/*`) antes de publicarla.
 
 - Scope: **Production** (y opcionalmente **Preview**).
 - **Redeploy** el último commit (Deployments → … → Redeploy).
