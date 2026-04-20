@@ -1179,7 +1179,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             )}
             {res.productionSource === 'PVGIS' && (
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}>
-                ✓ PVGIS · {dest.capital}
+                ✓ PVGIS · {dest.city}
               </span>
             )}
             {res.productionSource === 'PSH' && (
