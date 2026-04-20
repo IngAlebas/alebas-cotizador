@@ -1131,7 +1131,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             )}
             {!aiData && !aiError && !aiLoading && (
               <div style={{ fontSize: 11, color: C.muted }}>
-                La IA revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas. Usa Groq, Gemini, Mistral o Claude según disponibilidad.
+                Claude Haiku revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
               </div>
             )}
           </div>
