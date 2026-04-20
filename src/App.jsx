@@ -7,7 +7,7 @@ import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
-import logo from './logo.png';
+import logo from './logo.svg';
 
 export default function App() {
   const [view, setView] = useState('quoter');

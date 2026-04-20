@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import logo from '../logo.png';
+import logo from '../logo.svg';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
   calcSystem, calcTransport, calcBudget, selectCompatibleInverter,
