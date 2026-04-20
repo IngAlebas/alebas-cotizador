@@ -1,0 +1,163 @@
+{
+  "name": "PVGIS - Producción fotovoltaica",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pvgis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c2000000-0002-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-pvgis"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida y normaliza input: lat, lon, kwp obligatorios.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst lat = parseFloat(body.lat);\nconst lon = parseFloat(body.lon);\nconst kwp = parseFloat(body.kwp);\nconst tilt = parseFloat(body.tilt ?? body.angle ?? 10);\nconst azimuth = parseFloat(body.azimuth ?? body.aspect ?? 0);\nconst losses = parseFloat(body.losses ?? 14);\n\nif (isNaN(lat) || isNaN(lon)) {\n  return [{ json: { ok: false, reason: 'invalid_coords', detail: 'lat y lon requeridos (numéricos)' } }];\n}\nif (isNaN(kwp) || kwp <= 0) {\n  return [{ json: { ok: false, reason: 'invalid_kwp', detail: 'kwp requerido y mayor que 0' } }];\n}\nreturn [{ json: { ok: true, lat, lon, kwp, tilt, azimuth, losses } }];"
+      },
+      "id": "c2000000-0002-4000-9000-000000000002",
+      "name": "Validar input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c2000000-0002-4000-9000-000000000003",
+      "name": "Input válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "lat",           "value": "={{ $json.lat }}" },
+            { "name": "lon",           "value": "={{ $json.lon }}" },
+            { "name": "peakpower",     "value": "={{ $json.kwp }}" },
+            { "name": "loss",          "value": "={{ $json.losses }}" },
+            { "name": "angle",         "value": "={{ $json.tilt }}" },
+            { "name": "aspect",        "value": "={{ $json.azimuth }}" },
+            { "name": "outputformat",  "value": "json" },
+            { "name": "pvtechchoice",  "value": "crystSi" },
+            { "name": "mountingplace", "value": "building" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "c2000000-0002-4000-9000-000000000004",
+      "name": "PVGIS API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza la respuesta de PVGIS v5.2 PVcalc.\n// Estructura esperada: j.outputs.totals.fixed.E_y + j.outputs.monthly.fixed[]\nconst j = $input.first().json;\nif (!j || j.status || j.error || !j.outputs) {\n  const detail = j?.error?.message || j?.message || JSON.stringify(j).slice(0, 200);\n  return [{ json: { ok: false, reason: 'upstream_error', detail } }];\n}\nconst fixed = j.outputs?.totals?.fixed;\nconst monthly = j.outputs?.monthly?.fixed || [];\nif (!fixed?.E_y) {\n  return [{ json: { ok: false, reason: 'upstream_error', detail: 'PVGIS: respuesta sin E_y' } }];\n}\nconst annualKwh = Math.round(fixed.E_y);\nconst irradiationAnnual = Math.round(fixed['H(i)_y'] ?? 0);\nreturn [{ json: {\n  ok: true,\n  annualKwh,\n  monthlyKwh: monthly.map(m => ({ month: m.month, kwh: Math.round(m.E_m) })),\n  irradiationAnnual,\n  psh: irradiationAnnual > 0 ? parseFloat((irradiationAnnual / 365).toFixed(2)) : null,\n  source: 'PVGIS',\n  syncedAt: new Date().toISOString(),\n} }];"
+      },
+      "id": "c2000000-0002-4000-9000-000000000005",
+      "name": "Normalizar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error de red o HTTP desde PVGIS.\nconst err = $input.first();\nconst detail = err?.json?.message || err?.json?.error || 'PVGIS no disponible';\nreturn [{ json: { ok: false, reason: 'upstream_error', detail } }];"
+      },
+      "id": "c2000000-0002-4000-9000-000000000006",
+      "name": "Error PVGIS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input inválido — reenviar el error ya formado.\nreturn [$input.first()];"
+      },
+      "id": "c2000000-0002-4000-9000-000000000007",
+      "name": "Error input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Cache-Control", "value": "s-maxage=604800, stale-while-revalidate=86400" }
+            ]
+          }
+        }
+      },
+      "id": "c2000000-0002-4000-9000-000000000008",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validar input", "type": "main", "index": 0 }]]
+    },
+    "Validar input": {
+      "main": [[{ "node": "Input válido?", "type": "main", "index": 0 }]]
+    },
+    "Input válido?": {
+      "main": [
+        [{ "node": "PVGIS API", "type": "main", "index": 0 }],
+        [{ "node": "Error input", "type": "main", "index": 0 }]
+      ]
+    },
+    "PVGIS API": {
+      "main": [
+        [{ "node": "Normalizar respuesta", "type": "main", "index": 0 }],
+        [{ "node": "Error PVGIS",          "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizar respuesta": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    },
+    "Error PVGIS": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    },
+    "Error input": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "versionId": "1"
+}
