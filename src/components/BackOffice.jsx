@@ -303,7 +303,7 @@ function OperatorsMgr({ operators, upd, ss }) {
 
   const syncXM = async () => {
     if (isLocalDev) {
-      setSyncStatus({ error: 'local-dev' });
+      setSyncStatus({ warn: 'local-dev' });
       return;
     }
     setSyncStatus({ loading: true });
@@ -311,15 +311,20 @@ function OperatorsMgr({ operators, upd, ss }) {
       const data = await fetchAgentsList();
       const total = data.operators?.length ?? 0;
       if (!total) {
-        // No agents at all — could be an API error or empty response
-        setSyncStatus({ error: 'XM devolvió 0 agentes. Probable error transitorio o cambio de schema en el API.' });
+        // XM no devolvió agentes — puede ser cambio de schema o API no disponible.
+        // La lista local de operadores permanece activa; esto es sólo una advertencia.
+        setSyncStatus({
+          warn: 'zero',
+          rawPreview: data.rawPreview,
+          syncedAt: data.syncedAt,
+        });
         return;
       }
       const xmCodes = new Set(data.operators.map(o => o.sic).filter(Boolean));
       const matched = operators.filter(o => o.sic && xmCodes.has(o.sic)).length;
       setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached, filterWarning: !data.activityFilterWorked });
     } catch (err) {
-      setSyncStatus({ error: err.message });
+      setSyncStatus({ warn: 'error', msg: err.message });
     }
   };
 
@@ -355,18 +360,24 @@ function OperatorsMgr({ operators, upd, ss }) {
 
       {syncStatus?.ok && (
         <div style={{ background: `${C.green}12`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
-          ✓ XM sync · {syncStatus.matched} / {operators.filter(o => o.sic).length} OR locales validados contra {syncStatus.total} agentes XM {syncStatus.cached ? '(caché)' : ''} · {new Date(syncStatus.syncedAt).toLocaleString('es-CO')}
-          {syncStatus.filterWarning && ' · ⚠ Filtro de actividad no detectó OR — se incluyeron todos los agentes.'}
+          ✓ XM sync · {syncStatus.matched}/{operators.filter(o => o.sic).length} OR locales validados · {syncStatus.total} agentes XM {syncStatus.cached ? '(caché)' : ''} · {new Date(syncStatus.syncedAt).toLocaleString('es-CO')}
+          {syncStatus.filterWarning && ' · Filtro actividad no detectó OR — incluidos todos los agentes.'}
         </div>
       )}
-      {syncStatus?.error === 'local-dev' && (
+      {syncStatus?.warn === 'local-dev' && (
         <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
-          ℹ El proxy XM (/api/xm) solo corre en Vercel — no disponible en desarrollo local. Los 20 operadores de la tabla son datos estáticos actualizables manualmente.
+          ℹ Proxy XM no disponible en desarrollo local — los 20 operadores de la tabla son datos estáticos. Actualiza manualmente o despliega en Vercel.
         </div>
       )}
-      {syncStatus?.error && syncStatus.error !== 'local-dev' && (
-        <div style={{ background: `${C.red}12`, border: `1px solid ${C.red}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.red }}>
-          ⚠ Sync XM falló: {syncStatus.error}. Reintenta en unos minutos o actualiza manualmente.
+      {syncStatus?.warn === 'zero' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ XM ListadoAgentes no devolvió agentes en esta consulta — puede ser un cambio temporal de schema. La lista local de {operators.length} operadores permanece activa sin cambios.
+          {syncStatus.rawPreview && <div style={{ marginTop: 5, fontFamily: 'monospace', fontSize: 9, color: C.muted, wordBreak: 'break-all' }}>Raw preview: {syncStatus.rawPreview}</div>}
+        </div>
+      )}
+      {syncStatus?.warn === 'error' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ Sync XM no disponible: {syncStatus.msg}. La lista local permanece activa.
         </div>
       )}
       {spot?.cop_per_kwh != null && (

@@ -34,38 +34,101 @@ async function postXM(path, body) {
 
 function isoDate(d) { return d.toISOString().slice(0, 10); }
 
-// Lista oficial de agentes del mercado (comercializadores y OR) de XM.
-// Respuesta típica: { Items: [{ Values: { Id, Nombre, Actividad, ... } }] }
-// o variantes — usamos un parser tolerante que busca los campos por nombre.
+// Extrae recursivamente todos los objetos candidatos a "agente" de una
+// respuesta JSON de cualquier shape. Busca nodos que contengan al menos
+// un campo de ID (sic/código) o nombre. Tolerante a cambios de schema.
+function walkAgents(node, collected = []) {
+  if (node == null) return collected;
+  if (Array.isArray(node)) { node.forEach(n => walkAgents(n, collected)); return collected; }
+  if (typeof node !== 'object') return collected;
+
+  // Candidato: nodo con algún campo identificador de agente
+  const SIC_KEYS  = ['Id','id','Codigo','codigo','Code','code','SIC','sic','CodigoSIC','codigoSIC'];
+  const NAME_KEYS = ['Nombre','nombre','Name','name','RazonSocial','razonSocial'];
+  const ACT_KEYS  = ['Actividad','actividad','Actividades','actividades','Activity','activity','TipoAgente','tipoAgente'];
+
+  const sic  = SIC_KEYS.find(k => node[k]);
+  const name = NAME_KEYS.find(k => node[k]);
+  const act  = ACT_KEYS.find(k => node[k]);
+
+  if (sic || name) {
+    collected.push({
+      sic:        node[sic]  || '',
+      name:       node[name] || '',
+      activities: node[act]  || '',
+    });
+  }
+
+  // Seguir recursión sólo en sub-objetos (no en los campos primitivos)
+  for (const v of Object.values(node)) {
+    if (v && typeof v === 'object') walkAgents(v, collected);
+  }
+  return collected;
+}
+
+// Lista oficial de agentes del mercado. El schema de XM cambia con frecuencia;
+// usamos walkAgents para extraer datos independientemente de la estructura.
+// Si la respuesta sigue sin tener agentes, devolvemos items=[] y operators=[]
+// para que el BackOffice lo maneje como advertencia (no error fatal).
 async function getAgents() {
   const end = new Date();
-  const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const j = await postXM('/lists', {
-    MetricId: 'ListadoAgentes',
-    Entity: 'Sistema',
-    StartDate: isoDate(start),
-    EndDate: isoDate(end),
+  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 días — rango más amplio
+  let j;
+  try {
+    j = await postXM('/lists', {
+      MetricId: 'ListadoAgentes',
+      Entity: 'Sistema',
+      StartDate: isoDate(start),
+      EndDate: isoDate(end),
+    });
+  } catch (err) {
+    // Intentar sin Entity como fallback (algunas versiones del API lo ignoran)
+    j = await postXM('/lists', {
+      MetricId: 'ListadoAgentes',
+      StartDate: isoDate(start),
+      EndDate: isoDate(end),
+    });
+  }
+
+  // Intentar el path estándar primero; si vacío, recorrer recursivamente todo el JSON
+  const rawItems = j?.Items || j?.items || j?.data || j?.Data || j?.result || j?.Result || [];
+  let items = [];
+  if (rawItems.length) {
+    items = rawItems.map(it => {
+      const v = it?.Values || it?.values || it;
+      return {
+        sic:        v?.Id || v?.Codigo || v?.codigo || v?.Code || v?.SIC || it?.Id || '',
+        name:       v?.Nombre || v?.nombre || v?.Name || it?.Name || '',
+        activities: v?.Actividad || v?.Actividades || v?.actividades || v?.Activity || '',
+      };
+    });
+  } else {
+    // Fallback recursivo: extraer cualquier nodo que parezca un agente
+    items = walkAgents(j);
+  }
+
+  // Deduplicar por SIC
+  const seen = new Set();
+  items = items.filter(a => {
+    const key = a.sic || a.name;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
-  const rawItems = j?.Items || j?.items || [];
-  const items = rawItems.map(it => {
-    const v = it?.Values || it?.values || it;
-    return {
-      sic: v?.Id || v?.Codigo || v?.codigo || v?.Code || v?.SIC || it?.Id || '',
-      name: v?.Nombre || v?.nombre || v?.Name || it?.Name || '',
-      activities: v?.Actividad || v?.Actividades || v?.actividades || v?.Activity || '',
-    };
-  });
-  // OR = Operador de Red = actividad 'D' (distribución) o comercialización.
-  // Fallback: si el filtro de actividad no devuelve nada (schema cambiado en XM),
-  // incluir todos los agentes con nombre — mejor tener la lista completa que vacía.
+
   const filtered = items.filter(a => /D|OR|distribuid|comercial/i.test(a.activities || ''));
   const operators = filtered.length ? filtered : items.filter(a => a.name || a.sic);
   const activityFilterWorked = filtered.length > 0;
+
+  // Incluir preview del raw para diagnóstico cuando no hay datos
+  const rawPreview = !items.length ? JSON.stringify(j).slice(0, 300) : undefined;
+
   return {
     items,
     operators,
     total: items.length,
     activityFilterWorked,
+    rawPreview,
     syncedAt: new Date().toISOString(),
     source: 'XM ListadoAgentes',
   };
