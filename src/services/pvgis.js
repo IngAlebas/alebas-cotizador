@@ -1,9 +1,8 @@
-// PVGIS API service — European Commission's free PV simulation tool
-// Docs: https://joint-research-centre.ec.europa.eu/photovoltaic-geographical-information-system-pvgis_en
-// Returns more accurate annual production than static PSH heuristics
-// because it uses location-specific irradiation and meteorological data.
+// PVGIS client — consume el proxy Vercel (/api/pvgis) para evitar CORS.
+// El proxy a su vez consulta re.jrc.ec.europa.eu/api/v5_2/PVcalc y
+// cachea en edge 7 días. Mantenemos caché local adicional para evitar
+// fetchs repetidos durante la misma sesión.
 
-const PVGIS_URL = 'https://re.jrc.ec.europa.eu/api/v5_2/PVcalc';
 const CACHE_PREFIX = 'pvgis:';
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 días
 
@@ -31,22 +30,13 @@ export async function fetchPVProduction({ lat, lon, kwp, losses = 14, tilt = 10,
   const cached = readCache(key);
   if (cached) return { ...cached, cached: true };
 
-  const url = `${PVGIS_URL}?lat=${lat}&lon=${lon}&peakpower=${kwp}&loss=${losses}&angle=${tilt}&aspect=${azimuth}&outputformat=json&pvtechchoice=crystSi&mountingplace=building`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`PVGIS HTTP ${r.status}`);
-  const j = await r.json();
-  const fixed = j?.outputs?.totals?.fixed;
-  const monthly = j?.outputs?.monthly?.fixed;
-  if (!fixed?.E_y) throw new Error('PVGIS: respuesta sin datos');
-
-  const data = {
-    annualKwh: Math.round(fixed.E_y),
-    monthlyKwh: monthly?.map(m => ({ month: m.month, kwh: Math.round(m.E_m) })) || [],
-    irradiationAnnual: parseFloat(fixed['H(i)_y']?.toFixed(0)),
-    psh: parseFloat((fixed['H(i)_y'] / 365).toFixed(2)),
-    source: 'PVGIS',
-    cached: false,
-  };
+  const params = new URLSearchParams({ lat, lon, kwp, tilt, azimuth, losses });
+  const r = await fetch(`/api/pvgis?${params}`);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `PVGIS proxy HTTP ${r.status}`);
+  }
+  const data = { ...(await r.json()), cached: false };
   writeCache(key, data);
   return data;
 }
