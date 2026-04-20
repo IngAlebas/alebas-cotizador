@@ -13,6 +13,7 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
+import { regionalPotential, nationalAverage } from '../services/regional-potential';
 import { aiRecommend, aiConfigured } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
@@ -1058,6 +1059,42 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           </div>
         )}
+        {dest && (() => {
+          const pot = regionalPotential(dest.dept);
+          if (!pot) return null;
+          const nat = nationalAverage();
+          const diff = nat ? Math.round(((pot.yearlyKwhPerKwp - nat.yearlyKwhPerKwp) / nat.yearlyKwhPerKwp) * 100) : 0;
+          return (
+            <div style={{ background: `${C.yellow}10`, border: `1px solid ${C.yellow}33`, borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.yellow, marginBottom: 8 }}>
+                ☀ Potencial solar regional — {dest.dept}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: C.muted }}>Producción anual estimada:</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#fff' }}>~{pot.yearlyKwhPerKwp.toLocaleString('es-CO')} kWh/kWp/año</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: C.muted }}>Techos aptos (estimado):</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#fff' }}>~{pot.percentQualified}%</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: C.muted }}>Horas sol pico (PSH):</span>
+                <span style={{ fontSize: 11, color: '#fff' }}>{pot.psh} h/día</span>
+              </div>
+              {nat && diff !== 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, color: C.muted }}>vs. promedio nacional:</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: diff > 0 ? C.green : C.orange }}>
+                    {diff > 0 ? '+' : ''}{diff}%
+                  </span>
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 6, lineHeight: 1.4 }}>
+                {pot.climate}. Tu cotización usará el valor real por coordenadas vía PVGIS/NASA.
+              </div>
+            </div>
+          );
+        })()}
         <div style={{ fontSize: 10, color: C.muted, background: C.dark, borderRadius: 6, padding: '9px 12px' }}>
           📦 El cotizador evalúa {Object.keys(CARRIERS).length} transportadoras ({Object.values(CARRIERS).map(c => c.label).join(', ')}) y selecciona la más económica por destino y peso del sistema. Tarifas referenciales 2025-2026.
         </div>
