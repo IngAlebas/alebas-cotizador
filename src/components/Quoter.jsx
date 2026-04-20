@@ -13,6 +13,7 @@ import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
 import { aiRecommend, aiConfigured } from '../services/aiAssistant';
+import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
@@ -109,8 +110,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       return false;
     }
     if (f.website) {
-      // Honeypot rellenado — probablemente bot. Silenciamos el error para
-      // no revelar el mecanismo, pero bloqueamos el avance.
+      // Honeypot relleno — bloqueamos sin revelar el mecanismo.
       setContactError('No fue posible validar tu identidad. Intenta de nuevo.');
       return false;
     }
@@ -121,8 +121,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
     setValidatingContact(true);
     try {
-      // TODO: hook al backend (n8n /validate-contact) — dedupe por email/teléfono.
-      await new Promise(r => setTimeout(r, 150));
+      const r = await validateContactRemote({
+        email: f.email.trim(),
+        phone: f.phone.trim(),
+        name: f.name.trim(),
+        company: f.company?.trim() || '',
+        website: f.website || '',
+      });
+      if (r?.offline) return true; // n8n sin configurar (dev local)
+      if (!r?.ok) {
+        const msg = r?.message || (r?.reason === 'rate_limit'
+          ? 'Has solicitado muchas cotizaciones recientemente. Un ingeniero te contactará pronto.'
+          : r?.reason === 'blocked'
+          ? 'Contacto bloqueado. Escríbenos a info@alebas.co.'
+          : 'No fue posible validar tus datos. Revisa email y teléfono.');
+        setContactError(msg);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      // No bloqueamos por fallas de red del backend — dejamos pasar y
+      // save-quote hará la persistencia definitiva si está disponible.
       return true;
     } finally {
       setValidatingContact(false);
@@ -261,7 +280,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     setAgpe({ ...benefit, spotSource: spot, tariffCU: operator.tariff });
   };
 
-  const submit = () => {
+  const submit = async () => {
     const norms = agpe
       ? getApplicableNormativa({
           hasExcedentes: agpe.excedentes > 0,
@@ -270,14 +289,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           gridExport: agpe.gridExport,
         }).map(n => n.id)
       : [];
-    addQuote({
+    const payload = {
       id: Date.now(), date: new Date().toLocaleDateString('es-CO'),
       name: f.name, company: f.company, email: f.email, phone: f.phone,
-      address: f.address, city: f.dept, operator: operator.name,
+      address: f.address, city: f.dept, dept: f.dept, operator: operator.name,
       systemType: f.systemType, monthlyKwh: f.monthlyKwh,
+      lat: f.lat, lon: f.lon,
+      shadeIndex: f.shadeIndex, shadeSource: f.shadeSource,
       panel, results: res, budget: bgt, agpe, regulatory: norms, status: 'nuevo',
-    });
+    };
+    addQuote(payload);
     setDone(true);
+    // Persistencia remota (Postgres vía n8n) — best-effort, no bloquea la UX.
+    saveQuoteRemote(payload).catch(() => {});
   };
 
   const ss = {

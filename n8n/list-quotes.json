@@ -1,0 +1,78 @@
+{
+  "name": "ALEBAS — list-quotes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "list-quotes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c3000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-list-quotes"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Admite filtros opcionales: status, limit, search (email/nombre)\nconst src = $input.first().json;\nconst body = src.body || src;\nconst status = (body.status || '').toString().trim();\nconst search = (body.search || '').toString().trim();\nconst limit = Math.min(500, Math.max(1, Number(body.limit || 100)));\nreturn [{ json: { status, search: search ? `%${search.toLowerCase()}%` : '', limit } }];"
+      },
+      "id": "c3000000-0001-4000-9000-000000000002",
+      "name": "Parse filters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  q.id, q.created_at, q.status, q.system_type, q.monthly_kwh, q.operator,\n  q.dept, q.address, q.kwp, q.num_panels, q.total_cop, q.annual_sav_cop, q.roi_years,\n  q.has_excedentes, q.agpe_category, q.coverage_pct, q.shade_index,\n  u.id AS user_id, u.email, u.name, u.phone, u.company, u.quote_count\nFROM quotes q\nJOIN users u ON u.id = q.user_id\nWHERE ($1 = '' OR q.status = $1)\n  AND ($2 = '' OR LOWER(u.email) LIKE $2 OR LOWER(u.name) LIKE $2)\nORDER BY q.created_at DESC\nLIMIT $3;",
+        "options": {
+          "queryReplacement": "={{ $json.status }},{{ $json.search }},{{ $json.limit }}"
+        }
+      },
+      "id": "c3000000-0001-4000-9000-000000000003",
+      "name": "Postgres query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nreturn [{ json: { ok: true, count: rows.length, quotes: rows } }];"
+      },
+      "id": "c3000000-0001-4000-9000-000000000004",
+      "name": "Wrap response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c3000000-0001-4000-9000-000000000005",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Parse filters", "type": "main", "index": 0 }]] },
+    "Parse filters": { "main": [[{ "node": "Postgres query", "type": "main", "index": 0 }]] },
+    "Postgres query": { "main": [[{ "node": "Wrap response", "type": "main", "index": 0 }]] },
+    "Wrap response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}
