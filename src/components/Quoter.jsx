@@ -39,6 +39,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [xmError, setXmError] = useState(null);
   const [agpe, setAgpe] = useState(null);
 
+  // Sistemas off-grid están aislados de la red: no pueden entregar
+  // excedentes. Los on-grid e híbridos sí (marco AGPE — CREG 174/2021).
+  const gridExport = f.systemType !== 'off-grid';
+
   // Dimensionamiento base: por consumo (cobertura ~100%). Si el cliente
   // quiere excedentes Y tiene área disponible superior a la requerida,
   // sobredimensionamos al kWp que cabe en el techo (limitado por área).
@@ -47,15 +51,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const hasArea = !!areaVal && areaVal > 0;
   const areaMaxPanels = hasArea ? Math.floor(areaVal / 2.2) : 0;
   const areaMaxKwp = hasArea ? parseFloat((areaMaxPanels * panel.wp / 1000).toFixed(2)) : 0;
-  const areaAllowsExcedentes = hasArea && areaMaxKwp > consumptionKwp;
+  const areaAllowsExcedentes = gridExport && hasArea && areaMaxKwp > consumptionKwp;
   const targetKwp = (f.wantsExcedentes && areaAllowsExcedentes) ? areaMaxKwp : null;
 
-  // Si el área cambia y ya no permite excedentes, desactivar el toggle.
+  // Off-grid no puede tener excedentes; si el usuario cambia el tipo,
+  // o reduce el área, desactivar el toggle automáticamente.
   useEffect(() => {
-    if (f.wantsExcedentes && hasArea && !areaAllowsExcedentes) {
+    if (f.wantsExcedentes && (!gridExport || (hasArea && !areaAllowsExcedentes))) {
       u('wantsExcedentes', false);
     }
-  }, [f.wantsExcedentes, hasArea, areaAllowsExcedentes]);
+  }, [f.wantsExcedentes, gridExport, hasArea, areaAllowsExcedentes]);
 
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
@@ -87,7 +92,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const inv2 = autoInverter(sys.actKwp, f.systemType, inverters);
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
-    const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp);
+    const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp, { gridExport });
     const annualSav = benefit.totalAnual;
     const roi = annualSav > 0 ? parseFloat((budget.tot / annualSav).toFixed(1)) : 0;
     setRes({ ...sys, inv: inv2, sizedFor: f.wantsExcedentes && areaAllowsExcedentes ? 'excedentes' : 'consumo' });
@@ -101,6 +106,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           hasExcedentes: agpe.excedentes > 0,
           agpeCategory: agpe.agpeCategory,
           kwp: res.actKwp,
+          gridExport: agpe.gridExport,
         }).map(n => n.id)
       : [];
     addQuote({
@@ -239,7 +245,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           const maxKwp = hasAreaLocal ? (maxPanels * panel.wp / 1000) : 0;
           const maxCov = hasAreaLocal && reqPanels > 0 ? Math.min(Math.round((maxPanels / reqPanels) * 100), 100) : 0;
           const col = enough === null ? C.teal : enough ? C.green : C.orange;
-          const excedentesPosibles = hasAreaLocal && maxKwp > reqKwp;
+          const excedentesPosibles = gridExport && hasAreaLocal && maxKwp > reqKwp;
           const extraKwp = excedentesPosibles ? parseFloat((maxKwp - reqKwp).toFixed(2)) : 0;
           return (
             <div style={{ background: `${col}12`, border: `1px solid ${col}33`, borderRadius: 7, padding: '10px 13px', marginTop: 10, fontSize: 12 }}>
@@ -516,52 +522,72 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         {agpe && (
           <div style={ss.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>⚖ Beneficio anual estimado (AGPE)</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+                {agpe.gridExport ? '⚖ Beneficio anual estimado (AGPE)' : '⚖ Ahorro anual (sistema aislado)'}
+              </div>
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55`, fontWeight: 600 }}>
-                AGPE {agpe.agpeCategory} · CREG 174/2021
+                {agpe.gridExport ? `AGPE ${agpe.agpeCategory} · CREG 174/2021` : 'Off-grid · ZNI · no inyecta a red'}
               </span>
             </div>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 11 }}>{agpe.rule}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 10 }}>
-              <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: '11px 13px' }}>
-                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Autoconsumo</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ahorroAutoconsumo)}</div>
-                <div style={{ fontSize: 10, color: C.teal, marginTop: 2 }}>{fmt(agpe.autoConsumed)} kWh × {agpe.tariffCU} COP/kWh</div>
-                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Tarifa CU {operator.name}</div>
-              </div>
-              <div style={{ background: C.dark, border: `1px solid ${C.yellow}55`, borderRadius: 8, padding: '11px 13px' }}>
-                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Excedentes a la red</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ingresoExcedentes)}</div>
-                <div style={{ fontSize: 10, color: C.yellow, marginTop: 2 }}>
-                  {fmt(agpe.excedentes)} kWh × {agpe.priceExcedentes ? `${Math.round(agpe.priceExcedentes)} COP/kWh` : '—'}
+            {agpe.gridExport ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 10 }}>
+                <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: '11px 13px' }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Autoconsumo</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ahorroAutoconsumo)}</div>
+                  <div style={{ fontSize: 10, color: C.teal, marginTop: 2 }}>{fmt(agpe.autoConsumed)} kWh × {agpe.tariffCU} COP/kWh</div>
+                  <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Tarifa CU {operator.name}</div>
                 </div>
-                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>
-                  {agpe.agpeCategory === 'Menor'
-                    ? `Tarifa CU (netting 1:1)`
-                    : agpe.spotSource
-                      ? `Bolsa XM · ${agpe.spotSource.periodDays}d (${agpe.spotSource.samples} muestras)`
-                      : xmError
-                        ? '⚠ Bolsa XM no disponible'
-                        : 'Sin datos de bolsa'}
+                <div style={{ background: C.dark, border: `1px solid ${C.yellow}55`, borderRadius: 8, padding: '11px 13px' }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Excedentes a la red</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ingresoExcedentes)}</div>
+                  <div style={{ fontSize: 10, color: C.yellow, marginTop: 2 }}>
+                    {fmt(agpe.excedentes)} kWh × {agpe.priceExcedentes ? `${Math.round(agpe.priceExcedentes)} COP/kWh` : '—'}
+                  </div>
+                  <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>
+                    {agpe.agpeCategory === 'Menor'
+                      ? `Tarifa CU (netting 1:1)`
+                      : agpe.spotSource
+                        ? `Bolsa XM · ${agpe.spotSource.periodDays}d (${agpe.spotSource.samples} muestras)`
+                        : xmError
+                          ? '⚠ Bolsa XM no disponible'
+                          : 'Sin datos de bolsa'}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 10 }}>
+                <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: '11px 13px' }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Autoconsumo (baterías/carga)</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ahorroAutoconsumo)}</div>
+                  <div style={{ fontSize: 10, color: C.teal, marginTop: 2 }}>{fmt(agpe.autoConsumed)} kWh × {agpe.tariffCU} COP/kWh</div>
+                  <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Costo evitado vs. generación diésel/red</div>
+                </div>
+                <div style={{ background: C.dark, border: `1px solid ${C.gray}55`, borderRadius: 8, padding: '11px 13px' }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Energía no aprovechada</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: C.muted }}>{fmt(agpe.energiaDesperdiciada)} kWh</div>
+                  <div style={{ fontSize: 10, color: C.gray, marginTop: 2 }}>No hay red para inyectar</div>
+                  <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Se limita vía dump load / regulador</div>
+                </div>
+              </div>
+            )}
             <div style={{ background: `${C.teal}12`, borderRadius: 7, padding: '10px 13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>Beneficio anual total</span>
+              <span style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>{agpe.gridExport ? 'Beneficio anual total' : 'Ahorro anual total'}</span>
               <span style={{ fontSize: 18, fontWeight: 800, color: C.teal }}>{fmtCOP(agpe.totalAnual)}</span>
             </div>
             <div style={{ fontSize: 9, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
-              {agpe.spotSource
-                ? `Precio bolsa promedio últimos ${agpe.spotSource.periodDays}d: ${agpe.spotSource.cop_per_kwh} COP/kWh — fuente XM PrecBolsNal${agpe.spotSource.cached ? ' (caché)' : ''}.`
-                : 'Cálculo de excedentes basado en tarifa CU del operador (sin acceso a bolsa XM en este momento).'}
-              {' '}El autoconsumo asume cobertura del consumo mensual; el resto de la generación se contabiliza como excedentes inyectados a la red.
+              {agpe.gridExport
+                ? (agpe.spotSource
+                    ? `Precio bolsa promedio últimos ${agpe.spotSource.periodDays}d: ${agpe.spotSource.cop_per_kwh} COP/kWh — fuente XM PrecBolsNal${agpe.spotSource.cached ? ' (caché)' : ''}. El autoconsumo asume cobertura del consumo mensual; el resto de la generación se contabiliza como excedentes inyectados a la red.`
+                    : 'Cálculo de excedentes basado en tarifa CU del operador (sin acceso a bolsa XM en este momento). El autoconsumo asume cobertura del consumo mensual; el resto de la generación se contabiliza como excedentes inyectados a la red.')
+                : 'Los sistemas off-grid no están conectados al SIN: la energía que excede el consumo y la capacidad de las baterías se desperdicia (dump load). Para monetizar excedentes se requiere un sistema on-grid o híbrido bajo marco AGPE (CREG 174/2021).'}
             </div>
           </div>
         )}
 
         {agpe && (() => {
           const hasExcedentes = agpe.excedentes > 0;
-          const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp });
+          const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
           return (
             <div style={ss.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
@@ -569,9 +595,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <span style={{ fontSize: 9, color: C.muted }}>Colombia · MinMinas · CREG</span>
               </div>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
-                Normas colombianas vigentes que rigen tu instalación AGPE {agpe.agpeCategory}
-                {hasExcedentes ? ' con entrega de excedentes' : ''}. Este pre-dimensionamiento
-                se ajusta a sus requisitos técnicos y comerciales.
+                {agpe.gridExport
+                  ? <>Normas colombianas vigentes que rigen tu instalación AGPE {agpe.agpeCategory}{hasExcedentes ? ' con entrega de excedentes' : ''}. Este pre-dimensionamiento se ajusta a sus requisitos técnicos y comerciales.</>
+                  : <>Tu sistema es <strong style={{ color: C.teal }}>off-grid (aislado)</strong>: no está conectado al SIN, por lo que la regulación AGPE (CREG 174/2021) no aplica. El marco relevante es el de Zonas No Interconectadas (ZNI) y las normas técnicas RETIE.</>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                 {norms.map(n => (
@@ -586,7 +612,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 ))}
               </div>
               <div style={{ fontSize: 9, color: C.muted, marginTop: 10, lineHeight: 1.5, fontStyle: 'italic' }}>
-                Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.
+                {agpe.gridExport
+                  ? 'Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.'
+                  : 'Nota: si deseas monetizar excedentes, evalúa un sistema on-grid o híbrido bajo AGPE. Este cotizador no reemplaza asesoría jurídica.'}
               </div>
             </div>
           );

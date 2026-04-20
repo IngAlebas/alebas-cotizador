@@ -10,6 +10,7 @@
 //   - 'excedentes'    → cuando el sistema entrega excedentes a la red
 //   - 'comunidad'     → sólo esquemas colectivos (no cubierto en el cotizador v1)
 //   - 'remoto'        → autogeneración remota / productor marginal remoto
+//   - 'off-grid'      → sistema aislado (no conectado al SIN)
 
 export const NORMATIVA = [
   {
@@ -72,13 +73,23 @@ export const NORMATIVA = [
     summary:
       'Regula entrega de excedentes en esquemas remotos (generación en un sitio y consumo en otro). Aplica simetría con generadores convencionales para conexión y participación en el mercado mayorista cuando hay excedentes.',
   },
+  {
+    id: 'Ley 855/2003',
+    title: 'Ley 855 de 2003 + CREG 091/2007',
+    fullName: 'Zonas No Interconectadas (ZNI) y prestación del servicio en sistemas aislados',
+    scope: 'off-grid',
+    summary:
+      'Marco para soluciones de energía en Zonas No Interconectadas (ZNI) y sistemas aislados. Los sistemas off-grid no entregan excedentes al SIN porque no están conectados — la energía sobrante se pierde o se limita vía dump load. El IPSE gestiona subsidios y planes de expansión rural. RETIE aplica en todo caso para la instalación.',
+  },
 ];
 
 // Devuelve el subconjunto de normas aplicables al caso del cliente.
-// ctx: { hasExcedentes: bool, agpeCategory: 'Menor'|'Mayor', kwp: number }
+// ctx: { hasExcedentes: bool, agpeCategory, kwp, gridExport }
 export function getApplicableNormativa(ctx = {}) {
-  const { hasExcedentes = false, agpeCategory } = ctx;
+  const { hasExcedentes = false, agpeCategory, gridExport = true } = ctx;
   return NORMATIVA.filter(n => {
+    if (n.scope === 'off-grid') return !gridExport;
+    if (!gridExport) return false; // off-grid: sólo ZNI + RETIE, el resto no aplica
     if (n.scope === 'always') return true;
     if (n.scope === 'agpe') return true;
     if (n.scope === 'agpe-menor') return agpeCategory === 'Menor';
