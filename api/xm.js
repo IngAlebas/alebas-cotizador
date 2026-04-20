@@ -161,35 +161,48 @@ async function getSpot(daysBack) {
   // XM publica con delay T+1 — apuntar a ayer como EndDate evita huecos.
   const end = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
-  // El MetricId para precio de bolsa ha cambiado en distintas versiones del API.
-  // Intentamos los candidatos en orden hasta obtener datos válidos.
-  const SPOT_METRICS = ['Preciobols', 'PrecBolsNal', 'PrecBols', 'PreciosBolsa'];
+  // El MetricId y endpoint para precio de bolsa han cambiado en varias versiones del API.
+  // Probamos combinaciones de path + MetricId + Entity hasta obtener respuesta válida.
+  const SPOT_CANDIDATES = [
+    { path: '/hourly', MetricId: 'Preciobols',       Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecBolsNal',      Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecBols',          Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PreciosBolsa',      Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecioBolsaNal',    Entity: 'Sistema' },
+    { path: '/hourly', MetricId: 'PrecBolsNal',       Entity: 'SIN' },
+    { path: '/hourly', MetricId: 'Preciobols',        Entity: 'SIN' },
+    { path: '/hourly', MetricId: 'Preciobols' },
+    { path: '/hourly', MetricId: 'PrecBolsNal' },
+    { path: '/daily',  MetricId: 'Preciobols',        Entity: 'Sistema' },
+    { path: '/daily',  MetricId: 'PrecBolsNal',       Entity: 'Sistema' },
+    { path: '/daily',  MetricId: 'Preciobols' },
+  ];
   let j = null;
   let usedMetric = '';
-  for (const metricId of SPOT_METRICS) {
+  const tried = [];
+  for (const c of SPOT_CANDIDATES) {
+    const body = { MetricId: c.MetricId, StartDate: isoDate(start), EndDate: isoDate(end) };
+    if (c.Entity) body.Entity = c.Entity;
+    const label = `${c.path}/${c.MetricId}${c.Entity ? '/'+c.Entity : ''}`;
+    tried.push(label);
     try {
-      j = await postXM('/hourly', {
-        MetricId: metricId,
-        Entity: 'Sistema',
-        StartDate: isoDate(start),
-        EndDate: isoDate(end),
-      });
-      usedMetric = metricId;
+      j = await postXM(c.path, body);
+      usedMetric = label;
       break;
     } catch (err) {
-      // 400 = métrica no encontrada; seguir con la siguiente
-      if (err.message.includes('400')) continue;
-      throw err; // otro error (red, 5xx) → propagar
+      if (err.message.includes('400') || err.message.includes('404')) continue;
+      throw err; // error de red o 5xx → propagar
     }
   }
-  if (!j) throw new Error('XM: ningún MetricId de bolsa respondió correctamente');
+  if (!j) throw new Error(`XM: ningún candidato de bolsa respondió (probados: ${tried.join(', ')})`);
   const values = [];
   const walk = (node) => {
     if (node == null) return;
     if (Array.isArray(node)) { node.forEach(walk); return; }
     if (typeof node === 'object') {
       for (const [k, v] of Object.entries(node)) {
-        if (/^(Hour|Hora|Value)\d{1,2}$/i.test(k) && Number.isFinite(Number(v))) {
+        // Captura Hour01-Hour24 (horario), Value (diario), Precio/Price, Total
+        if (/^(Hour|Hora|Value|Precio|Price|Total)\d{0,2}$/i.test(k) && Number.isFinite(Number(v)) && Number(v) > 0) {
           values.push(Number(v));
         } else if (typeof v === 'object') {
           walk(v);
@@ -198,7 +211,7 @@ async function getSpot(daysBack) {
     }
   };
   walk(j);
-  if (!values.length) throw new Error('XM: respuesta sin datos horarios de bolsa');
+  if (!values.length) throw new Error(`XM: respuesta sin datos de bolsa (métrica: ${usedMetric}) — raw: ${JSON.stringify(j).slice(0,200)}`);
   const avgMwh = values.reduce((s, v) => s + v, 0) / values.length;
   const cop_per_kwh = Number((avgMwh / 1000).toFixed(2));
   return {
