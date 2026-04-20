@@ -103,6 +103,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiError, setAiError] = useState(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
   // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
   // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
   const [validatingContact, setValidatingContact] = useState(false);
@@ -173,7 +174,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
       if (r.imagery) u('roofImagery', r.imagery);
     } catch (e) {
-      setRoofError(e.message || 'Error consultando techo');
+      const raw = e?.message || 'Error consultando techo';
+      const friendly = /Failed to fetch|NetworkError/i.test(raw)
+        ? 'No se pudo conectar al servicio. Puedes ingresar el área manualmente arriba y continuar.'
+        : raw;
+      setRoofError(friendly);
     } finally {
       setRoofLoading(false);
     }
@@ -719,7 +724,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
           <button style={ss.ghost} onClick={() => setStep(2)}>← Atrás</button>
-          <button style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }} onClick={() => { if (f.monthlyKwh) setStep(4); }}>Siguiente →</button>
+          <button
+            style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }}
+            title={!f.monthlyKwh ? 'Ingresa el consumo mensual (kWh) arriba para continuar' : ''}
+            onClick={() => {
+              if (f.monthlyKwh) { setStep(4); return; }
+              setRoofError('Ingresa tu consumo mensual (kWh) arriba para continuar.');
+            }}
+          >Siguiente →</button>
         </div>
       </div>
     </div>
@@ -1058,7 +1070,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           );
         })()}
 
-        {showResumen && aiConfigured() && (
+        {showResumen && aiConfigured() && !aiUnavailable && (
           <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
@@ -1085,7 +1097,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
                     });
                     setAiData(out);
-                  } catch (e) { setAiError(e.message || 'Error IA'); }
+                  } catch (e) {
+                    const msg = e?.message || 'Error IA';
+                    if (/Failed to fetch|NetworkError|aborted/i.test(msg)) {
+                      setAiUnavailable(true);
+                    } else {
+                      setAiError(msg);
+                    }
+                  }
                   finally { setAiLoading(false); }
                 }}
                 style={{ ...ss.btn, background: C.yellow, color: '#000', padding: '7px 13px', fontSize: 11, opacity: aiLoading ? 0.6 : 1 }}
