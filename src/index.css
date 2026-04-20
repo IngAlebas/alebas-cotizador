@@ -57,6 +57,7 @@ button { font-family: inherit; }
     padding: 5px 9px !important;
   }
   .al-nav-label { display: none; }
+  .al-brand { display: none !important; }
 
   /* Footer: 2 filas apiladas */
   .al-footer { padding: 6px 10px !important; }

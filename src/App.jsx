@@ -75,8 +75,14 @@ export default function App() {
         justifyContent: 'space-between', gap: 8, minHeight: 56,
         position: 'sticky', top: 0, zIndex: 99, flexWrap: 'wrap'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <img src={logo} alt="ALEBAS Ingeniería" className="al-logo" style={{ height: 38, width: 'auto' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <img src={logo} alt="SolarHub by ALEBAS Ingeniería" className="al-logo" style={{ height: 38, width: 'auto' }} />
+          <div className="al-brand" style={{ lineHeight: 1.05, borderLeft: `1px solid ${C.teal}44`, paddingLeft: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: -0.3 }}>
+              Solar<span style={{ color: C.yellow }}>Hub</span>
+            </div>
+            <div style={{ fontSize: 8, color: C.teal, fontWeight: 600, letterSpacing: 1.2 }}>BY ALEBAS INGENIERÍA</div>
+          </div>
         </div>
         <div className="al-nav-btns" style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {NAV.map(([id, ic, l]) => (
@@ -122,10 +128,13 @@ export default function App() {
         <div style={{ maxWidth: 780, margin: '0 auto' }}>
           <div className="al-foot-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-              <img src={logo} alt="ALEBAS" style={{ height: 22, opacity: 0.9, flexShrink: 0 }} />
+              <img src={logo} alt="SolarHub" style={{ height: 22, opacity: 0.9, flexShrink: 0 }} />
               <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.25, minWidth: 0 }}>
-                <div><span style={{ color: '#fff', fontWeight: 700 }}>ALEBAS Ingeniería SAS</span> · NIT 901.992.450-5</div>
-                <div className="al-foot-legal">Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()}</div>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>Solar<span style={{ color: C.yellow }}>Hub</span></span>
+                  <span style={{ color: C.teal, fontWeight: 600, marginLeft: 5 }}>by ALEBAS Ingeniería SAS</span>
+                </div>
+                <div className="al-foot-legal">NIT 901.992.450-5 · Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()}</div>
               </div>
             </div>
 

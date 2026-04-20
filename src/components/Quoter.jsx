@@ -201,10 +201,21 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     <div style={ss.wrap}>
       {/* Hero */}
       <div style={{ ...ss.card, textAlign: 'center', padding: '36px 20px', borderColor: C.teal }}>
-        <img src={logo} alt="ALEBAS Ingeniería" style={{ height: 78, maxWidth: '75%', marginBottom: 16, objectFit: 'contain' }} />
-        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 12, fontWeight: 700, color: C.teal }}>COTIZADOR SOLAR FOTOVOLTAICO</div>
-        <div style={{ color: C.text, fontSize: 13, maxWidth: 400, margin: '0 auto 18px', lineHeight: 1.6 }}>
-          Pre-dimensionamiento profesional de tu sistema fotovoltaico. Resultado inmediato con precios reales del mercado colombiano.
+        <img src={logo} alt="SolarHub by ALEBAS Ingeniería" style={{ height: 72, maxWidth: '75%', marginBottom: 12, objectFit: 'contain' }} />
+        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 4, fontWeight: 700, color: C.teal }}>SOLARHUB BY ALEBAS</div>
+        <h1 style={{ margin: '0 0 6px', fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+          El centro de tu <span style={{ color: C.yellow }}>energía solar</span>
+        </h1>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap', margin: '10px 0 14px' }}>
+          {['Dimensiona', 'Cotiza', 'Conecta', 'Instala'].map((t, i) => (
+            <span key={t} style={{ fontSize: 11, fontWeight: 700, color: i % 2 === 0 ? C.teal : C.yellow, letterSpacing: 0.5 }}>
+              {t}{i < 3 ? <span style={{ color: C.muted, margin: '0 4px' }}>•</span> : ''}
+            </span>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, letterSpacing: 2.5, marginBottom: 10, fontWeight: 700, color: C.teal }}>COTIZADOR SOLAR FOTOVOLTAICO</div>
+        <div style={{ color: C.text, fontSize: 13, maxWidth: 420, margin: '0 auto 18px', lineHeight: 1.6 }}>
+          Pre-dimensionamiento profesional con precios reales del mercado colombiano. Obtén tu propuesta técnica al instante.
         </div>
         <div style={{ display: 'flex', gap: 7, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 22 }}>
           {['20 operadores de red', 'Ley 1715 · CREG 174/2021 · CREG 135/2021', 'RETIE + Código de Medida (CREG 038/2014)'].map(t => (
@@ -888,7 +899,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         </div>
         {resultTab === 'presupuesto' && (
           <div style={{ textAlign: 'center', padding: '0 0 20px' }}>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero ALEBAS te contacta en menos de 24 h</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero SolarHub · ALEBAS te contacta en menos de 24 h</div>
             <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
           </div>
         )}
