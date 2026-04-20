@@ -31,9 +31,11 @@ const Q0 = {
   lat: null, lon: null, roofLookupAt: null, roofLookupSource: null, roofLookupNotes: '',
   // Sombreado local derivado de Google Solar dataLayers (0-1; 1=sin sombra)
   shadeIndex: null, shadeSource: null,
+  // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
+  website: '',
 };
 
-const STEPS = ['Tipo', 'Consumo', 'Transporte', 'Contacto', 'Resultado'];
+const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
 
 export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote }) {
   const [step, setStep] = useState(0);
@@ -96,6 +98,36 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiError, setAiError] = useState(null);
+  // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
+  // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
+  const [validatingContact, setValidatingContact] = useState(false);
+  const [contactError, setContactError] = useState(null);
+  const validateContact = async () => {
+    setContactError(null);
+    if (!f.name?.trim() || !f.phone?.trim() || !f.email?.trim()) {
+      setContactError('Completa nombre, teléfono y email.');
+      return false;
+    }
+    if (f.website) {
+      // Honeypot rellenado — probablemente bot. Silenciamos el error para
+      // no revelar el mecanismo, pero bloqueamos el avance.
+      setContactError('No fue posible validar tu identidad. Intenta de nuevo.');
+      return false;
+    }
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim());
+    if (!emailOk) {
+      setContactError('Email inválido.');
+      return false;
+    }
+    setValidatingContact(true);
+    try {
+      // TODO: hook al backend (n8n /validate-contact) — dedupe por email/teléfono.
+      await new Promise(r => setTimeout(r, 150));
+      return true;
+    } finally {
+      setValidatingContact(false);
+    }
+  };
 
   const onLookupRoof = async () => {
     const q = (roofQuery || '').trim();
@@ -385,8 +417,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     </div>
   );
 
-  // STEP 2: Consumption & operator
-  if (step === 2) return (
+  // STEP 3: Consumption & operator
+  if (step === 3) return (
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
         <div style={ss.h2}>Consumo y operador de red</div>
@@ -605,15 +637,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
-          <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
-          <button style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }} onClick={() => { if (f.monthlyKwh) setStep(3); }}>Siguiente →</button>
+          <button style={ss.ghost} onClick={() => setStep(2)}>← Atrás</button>
+          <button style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }} onClick={() => { if (f.monthlyKwh) setStep(4); }}>Siguiente →</button>
         </div>
       </div>
     </div>
   );
 
-  // STEP 3: Transport
-  if (step === 3) return (
+  // STEP 4: Transport — último paso antes del cálculo (dispara APIs)
+  if (step === 4) return (
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
         <div style={ss.h2}>Departamento de instalación</div>
@@ -643,37 +675,67 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           📦 El costo de transporte vía Interrapidísimo se incluye en el presupuesto Sección B. Tarifas vigentes jul 2025 – jul 2026.
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
-          <button style={ss.ghost} onClick={() => setStep(2)}>← Atrás</button>
-          <button style={ss.btn} onClick={() => setStep(4)}>Siguiente →</button>
+          <button style={ss.ghost} onClick={() => setStep(3)}>← Atrás</button>
+          <button
+            style={{ ...ss.btn, opacity: loadingPVGIS ? 0.4 : 1 }}
+            disabled={loadingPVGIS}
+            onClick={async () => {
+              setStep(5);
+              await calculate();
+            }}
+          >
+            {loadingPVGIS ? 'Calculando…' : 'Ver mi sistema →'}
+          </button>
         </div>
       </div>
     </div>
   );
 
-  // STEP 4: Contact
-  if (step === 4) return (
+  // STEP 2: Contact (antes de consumir APIs — previene abuso/reuso)
+  if (step === 2) return (
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
         <div style={ss.h2}>Datos de contacto</div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 11 }}>
-          <div style={{ flex: 1 }}><label style={ss.lbl}>Nombre *</label><input style={ss.inp} value={f.name} onChange={e => u('name', e.target.value)} placeholder="Nombre completo" /></div>
-          <div style={{ flex: 1 }}><label style={ss.lbl}>Empresa / Predio</label><input style={ss.inp} value={f.company} onChange={e => u('company', e.target.value)} placeholder="Empresa o predio" /></div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
+          Necesitamos identificarte antes de ejecutar el cálculo. Así evitamos consumo innecesario de APIs y podemos enviarte la propuesta técnica.
         </div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 11 }}>
-          <div style={{ flex: 1 }}><label style={ss.lbl}>Teléfono / WhatsApp *</label><input style={ss.inp} value={f.phone} onChange={e => u('phone', e.target.value)} placeholder="300 000 0000" /></div>
-          <div style={{ flex: 1 }}><label style={ss.lbl}>Email *</label><input style={ss.inp} value={f.email} onChange={e => u('email', e.target.value)} placeholder="tu@email.com" /></div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 11, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Nombre *</label><input style={ss.inp} value={f.name} onChange={e => u('name', e.target.value)} placeholder="Nombre completo" autoComplete="name" /></div>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Empresa / Predio</label><input style={ss.inp} value={f.company} onChange={e => u('company', e.target.value)} placeholder="Empresa o predio" autoComplete="organization" /></div>
         </div>
-        <div style={{ marginBottom: 14 }}><label style={ss.lbl}>Dirección / Municipio</label><input style={ss.inp} value={f.address} onChange={e => u('address', e.target.value)} placeholder="Municipio o dirección exacta" /></div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 11, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Teléfono / WhatsApp *</label><input style={ss.inp} value={f.phone} onChange={e => u('phone', e.target.value)} placeholder="300 000 0000" autoComplete="tel" inputMode="tel" /></div>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Email *</label><input style={ss.inp} value={f.email} onChange={e => u('email', e.target.value)} placeholder="tu@email.com" autoComplete="email" inputMode="email" /></div>
+        </div>
+        <div style={{ marginBottom: 14 }}><label style={ss.lbl}>Dirección / Municipio</label><input style={ss.inp} value={f.address} onChange={e => u('address', e.target.value)} placeholder="Municipio o dirección exacta" autoComplete="street-address" /></div>
+        {/* Honeypot anti-bot — invisible para humanos, los bots lo llenan */}
+        <input
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          value={f.website || ''}
+          onChange={e => u('website', e.target.value)}
+          style={{ position: 'absolute', left: '-10000px', top: 'auto', width: 1, height: 1, overflow: 'hidden', opacity: 0 }}
+          aria-hidden="true"
+        />
+        {contactError && (
+          <div style={{ background: `${C.orange}15`, border: `1px solid ${C.orange}55`, borderRadius: 7, padding: '10px 12px', marginBottom: 12, fontSize: 11, color: C.orange, lineHeight: 1.5 }}>
+            ⚠ {contactError}
+          </div>
+        )}
         <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.</div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <button style={ss.ghost} onClick={() => setStep(3)}>← Atrás</button>
-          <button style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || loadingPVGIS) ? 0.4 : 1 }} disabled={loadingPVGIS} onClick={async () => {
-            if (f.name && f.phone && f.email) {
-              setStep(5);
-              await calculate();
-            }
-          }}>
-            {loadingPVGIS ? 'Calculando…' : 'Ver mi sistema →'}
+          <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
+          <button
+            style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || validatingContact) ? 0.4 : 1 }}
+            disabled={validatingContact}
+            onClick={async () => {
+              const ok = await validateContact();
+              if (ok) setStep(3);
+            }}
+          >
+            {validatingContact ? 'Validando…' : 'Siguiente →'}
           </button>
         </div>
       </div>
