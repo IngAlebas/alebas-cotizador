@@ -314,6 +314,10 @@ function OperatorsMgr({ operators, upd, ss }) {
     setSyncStatus({ loading: true });
     try {
       const data = await fetchAgentsList();
+      if (data?.ok === false) {
+        setSyncStatus({ warn: 'error', msg: data.error || data.reason || 'no disponible' });
+        return;
+      }
       const total = data.operators?.length ?? 0;
       if (!total) {
         setSyncStatus({
@@ -334,6 +338,10 @@ function OperatorsMgr({ operators, upd, ss }) {
   const syncSpot = async () => {
     try {
       const p = await fetchSpotPrice(30);
+      if (p?.ok === false) {
+        setSpot({ error: p.error || p.reason });
+        return;
+      }
       setSpot(p);
     } catch (err) {
       setSpot({ error: err.message });

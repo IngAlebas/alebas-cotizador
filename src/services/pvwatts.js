@@ -1,10 +1,11 @@
-// Cliente NREL PVWatts v8 — POST al webhook n8n.
-// Caché localStorage 24 h por coordenadas + kWp.
+// Cliente NREL PVWatts v8 — n8n primario, fallback directo si REACT_APP_NREL_API_KEY existe.
+// Caché localStorage 24h por coordenadas + kWp.
 
 import { n8nPost, n8nConfigured } from './n8n';
 
 const CACHE_PREFIX = 'pvw:';
 const TTL_MS = 24 * 60 * 60 * 1000;
+const NREL_KEY = process.env.REACT_APP_NREL_API_KEY || '';
 
 function readCache(key) {
   try {
@@ -20,12 +21,41 @@ function writeCache(key, data) {
   try { localStorage.setItem(key, JSON.stringify({ t: Date.now(), d: data })); } catch {}
 }
 
+async function fetchDirect(lat, lon, kwp, tilt, azimuth) {
+  if (!NREL_KEY) throw new Error('PVWatts: falta REACT_APP_NREL_API_KEY');
+  const qs = new URLSearchParams({
+    api_key: NREL_KEY,
+    lat, lon,
+    system_capacity: kwp,
+    azimuth,
+    tilt,
+    array_type: 1,
+    module_type: 0,
+    losses: 14,
+    timeframe: 'monthly',
+  });
+  const res = await fetch(`https://developer.nrel.gov/api/pvwatts/v8.json?${qs}`);
+  if (!res.ok) throw new Error(`PVWatts HTTP ${res.status}`);
+  const data = await res.json();
+  const out = data.outputs || {};
+  return {
+    ok: true,
+    annualKwh: out.ac_annual != null ? Math.round(out.ac_annual) : null,
+    monthlyKwh: Array.isArray(out.ac_monthly) ? out.ac_monthly.map(v => Math.round(v)) : [],
+    capacityFactor: out.capacity_factor != null ? +out.capacity_factor.toFixed(2) : null,
+    source: 'pvwatts-direct',
+  };
+}
+
 export async function fetchPVWatts(lat, lon, kwp, tilt = 10, azimuth = 180) {
   const key = `${CACHE_PREFIX}${(+lat).toFixed(2)}:${(+lon).toFixed(2)}:${kwp}:${tilt}:${azimuth}`;
   const cached = readCache(key);
   if (cached?.annualKwh) return { ...cached, cached: true };
 
-  const data = await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth });
+  const data = n8nConfigured()
+    ? await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth })
+    : await fetchDirect(lat, lon, kwp, tilt, azimuth);
+
   if (data?.annualKwh) writeCache(key, data);
   return data;
 }
