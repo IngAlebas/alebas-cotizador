@@ -689,10 +689,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       ['resumen', '📊', 'Resumen'],
       ['tecnico', '⚙', 'Técnico'],
       ['presupuesto', '◈', 'Presupuesto'],
+      ['normativo', '§', 'Normativo'],
     ];
+    const TAB_ORDER = ['resumen', 'tecnico', 'presupuesto', 'normativo'];
+    const TAB_LABEL = { resumen: 'Resumen', tecnico: 'Técnico', presupuesto: 'Presupuesto', normativo: 'Marco normativo' };
     const showResumen = resultTab === 'resumen';
     const showTecnico = resultTab === 'tecnico';
     const showPresupuesto = resultTab === 'presupuesto';
+    const showNormativo = resultTab === 'normativo';
     return (
       <div style={ss.wrap}>
         <div style={{ ...ss.card, textAlign: 'center', padding: '22px', borderColor: C.teal }}>
@@ -1207,13 +1211,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         </div>
         )}
 
-        {showPresupuesto && agpe && (() => {
+        {showNormativo && agpe && (() => {
           const hasExcedentes = agpe.excedentes > 0;
           const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
           return (
-            <div style={{ ...ss.card, marginTop: 18, borderColor: `${C.teal}55`, background: `${C.teal}06` }}>
+            <div style={{ ...ss.card, borderColor: `${C.teal}55`, background: `${C.teal}06` }}>
               <div style={{ textAlign: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${C.teal}33` }}>
-                <div style={{ fontSize: 10, color: C.teal, letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Sección final</div>
+                <div style={{ fontSize: 10, color: C.teal, letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Pestaña final</div>
                 <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>§ Marco regulatorio aplicable</div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>Colombia · MinMinas · CREG</div>
               </div>
@@ -1253,14 +1257,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
         {/* Navegación entre tabs + CTA final */}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', padding: '8px 0 14px' }}>
-          {resultTab !== 'resumen' && (
-            <button style={ss.ghost} onClick={() => { const order = ['resumen','tecnico','presupuesto']; setResultTab(order[order.indexOf(resultTab) - 1]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+          {resultTab !== TAB_ORDER[0] && (
+            <button style={ss.ghost} onClick={() => { setResultTab(TAB_ORDER[TAB_ORDER.indexOf(resultTab) - 1]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
               ← Anterior
             </button>
           )}
-          {resultTab !== 'presupuesto' ? (
-            <button style={ss.btn} onClick={() => { const order = ['resumen','tecnico','presupuesto']; setResultTab(order[order.indexOf(resultTab) + 1]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-              Siguiente: {resultTab === 'resumen' ? 'Técnico' : 'Presupuesto'} →
+          {resultTab !== TAB_ORDER[TAB_ORDER.length - 1] ? (
+            <button style={ss.btn} onClick={() => { setResultTab(TAB_ORDER[TAB_ORDER.indexOf(resultTab) + 1]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+              Siguiente: {TAB_LABEL[TAB_ORDER[TAB_ORDER.indexOf(resultTab) + 1]]} →
             </button>
           ) : (
             <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={submit}>
@@ -1268,7 +1272,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </button>
           )}
         </div>
-        {resultTab === 'presupuesto' && (
+        {showNormativo && (
           <div style={{ textAlign: 'center', padding: '0 0 20px' }}>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero SolarHub · ALEBAS te contacta en menos de 24 h</div>
             <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
