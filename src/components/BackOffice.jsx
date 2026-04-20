@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import logo from '../logo.svg';
+import logo from '../logo.png';
 import { C, fmt, fmtCOP, OPERATORS } from '../constants';
 import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 import { searchCECPanels, searchCECInverters } from '../services/cec';

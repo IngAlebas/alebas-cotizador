@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import logo from '../logo.svg';
+import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
   calcSystem, calcTransport, calcBudget, selectCompatibleInverter,
@@ -28,6 +28,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [res, setRes] = useState(null);
   const [bgt, setBgt] = useState(null);
   const [done, setDone] = useState(false);
+  const [resultTab, setResultTab] = useState('resumen');
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
@@ -199,24 +200,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   if (step === 0) return (
     <div style={ss.wrap}>
       {/* Hero */}
-      <div style={{ ...ss.card, textAlign: 'center', padding: '44px 22px', borderColor: C.teal }}>
-        <img src={logo} alt="SolarHub by ALEBAS" style={{ height: 56, borderRadius: 6, marginBottom: 14 }} />
-        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 6, fontWeight: 700, color: C.teal }}>SOLARHUB BY ALEBAS</div>
-        <h1 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
-          El centro de tu<br /><span style={{ color: C.yellow }}>energía solar</span>
-        </h1>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', margin: '12px 0 18px' }}>
-          {['Dimensiona', 'Cotiza', 'Conecta', 'Instala'].map((t, i) => (
-            <span key={t} style={{ fontSize: 11, fontWeight: 700, color: i % 2 === 0 ? C.teal : C.yellow, letterSpacing: 0.5 }}>
-              {t}{i < 3 ? <span style={{ color: C.muted, margin: '0 6px' }}>•</span> : ''}
-            </span>
-          ))}
+      <div style={{ ...ss.card, textAlign: 'center', padding: '36px 20px', borderColor: C.teal }}>
+        <img src={logo} alt="ALEBAS Ingeniería" style={{ height: 78, maxWidth: '75%', marginBottom: 16, objectFit: 'contain' }} />
+        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 12, fontWeight: 700, color: C.teal }}>COTIZADOR SOLAR FOTOVOLTAICO</div>
+        <div style={{ color: C.text, fontSize: 13, maxWidth: 400, margin: '0 auto 18px', lineHeight: 1.6 }}>
+          Pre-dimensionamiento profesional de tu sistema fotovoltaico. Resultado inmediato con precios reales del mercado colombiano.
         </div>
-        <div style={{ color: C.muted, fontSize: 13, maxWidth: 400, margin: '0 auto 22px', lineHeight: 1.7 }}>
-          Pre-dimensionamiento profesional con precios mayoristas reales. Obtén tu propuesta técnica al instante.
-        </div>
-        <div style={{ display: 'flex', gap: 7, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 26 }}>
-          {['✓ 20 operadores de red Colombia', '✓ Ley 1715 · CREG 174/2021', '✓ RETIE + Código de Medida'].map(t => (
+        <div style={{ display: 'flex', gap: 7, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 22 }}>
+          {['20 operadores de red', 'Ley 1715 · CREG 174/2021 · CREG 135/2021', 'RETIE + Código de Medida (CREG 038/2014)'].map(t => (
             <span key={t} style={{ background: `${C.teal}15`, border: `1px solid ${C.teal}44`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: C.teal }}>{t}</span>
           ))}
         </div>
@@ -461,6 +452,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       </div>
     );
 
+    const RESULT_TABS = [
+      ['resumen', '📊', 'Resumen'],
+      ['tecnico', '⚙', 'Técnico'],
+      ['presupuesto', '◈', 'Presupuesto'],
+    ];
+    const showResumen = resultTab === 'resumen';
+    const showTecnico = resultTab === 'tecnico';
+    const showPresupuesto = resultTab === 'presupuesto';
     return (
       <div style={ss.wrap}>
         <div style={{ ...ss.card, textAlign: 'center', padding: '22px', borderColor: C.teal }}>
@@ -500,7 +499,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         </div>
 
-        {res.cappedByRegulation && (
+        {/* Tab navigation para paginar resultados */}
+        <div className="al-result-tabs" style={{
+          display: 'flex', gap: 6, marginBottom: 12, background: C.card, padding: 4,
+          borderRadius: 10, border: `1px solid ${C.border}`,
+        }}>
+          {RESULT_TABS.map(([id, ic, l]) => (
+            <button key={id} onClick={() => { setResultTab(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{
+              flex: 1, padding: '9px 8px', borderRadius: 7, border: 'none', cursor: 'pointer',
+              background: resultTab === id ? C.teal : 'transparent',
+              color: resultTab === id ? '#fff' : C.muted,
+              fontSize: 12, fontWeight: 700, letterSpacing: 0.3, whiteSpace: 'nowrap',
+            }}>{ic} {l}</button>
+          ))}
+        </div>
+
+        {showResumen && res.cappedByRegulation && (
           <div style={{ background: `${C.orange}12`, border: `1px solid ${C.orange}55`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 4, textTransform: 'uppercase' }}>⚠ Sistema acotado a {MAX_KWP_AGPE} kW</div>
             <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
@@ -509,7 +523,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         )}
 
-        {(() => {
+        {showResumen && (() => {
           const area = parseFloat(f.availableArea);
           if (!area || area <= 0) return null;
           const areaLimited = res.sizedFor === 'area';
@@ -559,7 +573,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           );
         })()}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 9, marginBottom: 12 }}>
+        {showResumen && (
+        <div className="al-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 9, marginBottom: 12 }}>
           {[['Paneles', res.numPanels, 'unidades'], ['Prod. mensual', fmt(res.mp), 'kWh/mes'], ['Cobertura', res.cov, '%'], ['Prod. anual', fmt(res.ap), 'kWh/año'], ['CO₂ evitado', fmt(res.co2), 'kg/año'], ['ROI', bgt.roi, 'años']].map(([l, v, u]) => (
             <div key={l} style={ss.stat}>
               <div style={{ fontSize: 9, color: C.muted, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
@@ -568,7 +583,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           ))}
         </div>
+        )}
 
+        {showTecnico && (
         <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>▣ Preview del layout y strings</div>
           <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
@@ -626,8 +643,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ))}
           </div>
         </div>
+        )}
 
-        {(() => {
+        {showTecnico && (() => {
           const v = validateLayout(panel, res.inv, res.ppss, res.ns);
           const hasSpecs = panel?.voc && res.inv?.vocMax;
           if (!hasSpecs) {
@@ -676,7 +694,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           );
         })()}
 
-        {agpe && (
+        {showPresupuesto && agpe && (
           <div style={ss.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
@@ -742,7 +760,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         )}
 
-        {agpe && (() => {
+        {showPresupuesto && agpe && (() => {
           const hasExcedentes = agpe.excedentes > 0;
           const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
           return (
@@ -785,6 +803,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           );
         })()}
 
+        {showTecnico && (
         <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>⚡ Configuración técnica</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
@@ -802,7 +821,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ))}
           </div>
         </div>
+        )}
 
+        {showPresupuesto && (
         <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 8 }}>◈ Presupuesto estimado</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: `${C.teal}0e`, border: `1px solid ${C.teal}28`, borderRadius: 7, padding: '8px 12px', marginBottom: 10 }}>
@@ -846,14 +867,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
           <div style={{ fontSize: 9, color: C.muted, marginTop: 9, lineHeight: 1.5 }}>* Estimado sujeto a visita técnica. Incluye memorias RETIE, diagramas unifilares y trámites {operator.name}.</div>
         </div>
+        )}
 
-        <div style={{ textAlign: 'center', padding: '4px 0 28px' }}>
-          <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px', marginBottom: 9 }} onClick={submit}>
-            Solicitar propuesta detallada →
-          </button>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Ingeniero SolarHub · ALEBAS te contacta en menos de 24 h</div>
-          <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
+        {/* Navegación entre tabs + CTA final */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', padding: '8px 0 14px' }}>
+          {resultTab !== 'resumen' && (
+            <button style={ss.ghost} onClick={() => { const order = ['resumen','tecnico','presupuesto']; setResultTab(order[order.indexOf(resultTab) - 1]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+              ← Anterior
+            </button>
+          )}
+          {resultTab !== 'presupuesto' ? (
+            <button style={ss.btn} onClick={() => { const order = ['resumen','tecnico','presupuesto']; setResultTab(order[order.indexOf(resultTab) + 1]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+              Siguiente: {resultTab === 'resumen' ? 'Técnico' : 'Presupuesto'} →
+            </button>
+          ) : (
+            <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={submit}>
+              Solicitar propuesta detallada →
+            </button>
+          )}
         </div>
+        {resultTab === 'presupuesto' && (
+          <div style={{ textAlign: 'center', padding: '0 0 20px' }}>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero ALEBAS te contacta en menos de 24 h</div>
+            <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
+          </div>
+        )}
       </div>
     );
   }

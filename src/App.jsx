@@ -7,7 +7,7 @@ import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
-import logo from './logo.svg';
+import logo from './logo.png';
 
 export default function App() {
   const [view, setView] = useState('quoter');
@@ -68,30 +68,25 @@ export default function App() {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: C.dark, color: C.text }}>
-      <nav style={{
+    <div style={{ minHeight: '100vh', background: C.dark, color: C.text, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--footer-h, 64px)' }}>
+      <nav className="al-nav" style={{
         background: '#08151e', borderBottom: `2px solid ${C.teal}`,
-        padding: '0 16px', display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', height: 56,
-        position: 'sticky', top: 0, zIndex: 99
+        padding: '6px 12px', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', gap: 8, minHeight: 56,
+        position: 'sticky', top: 0, zIndex: 99, flexWrap: 'wrap'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src={logo} alt="SolarHub by ALEBAS" style={{ height: 34, width: 'auto', borderRadius: 4 }} />
-          <div style={{ lineHeight: 1.1 }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: -0.3 }}>
-              Solar<span style={{ color: C.yellow }}>Hub</span>
-            </div>
-            <div style={{ fontSize: 9, color: C.teal, fontWeight: 600, letterSpacing: 1.2 }}>BY ALEBAS INGENIERÍA</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <img src={logo} alt="ALEBAS Ingeniería" className="al-logo" style={{ height: 38, width: 'auto' }} />
         </div>
-        <div style={{ display: 'flex', gap: 3 }}>
+        <div className="al-nav-btns" style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {NAV.map(([id, ic, l]) => (
-            <button key={id} onClick={() => setView(id)} style={{
-              padding: '5px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
+            <button key={id} onClick={() => setView(id)} className="al-nav-btn" style={{
+              padding: '6px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
               fontWeight: 600, fontSize: 12,
               background: view === id ? C.teal : 'rgba(1,112,139,0.1)',
               color: view === id ? '#fff' : C.teal,
-            }}>{ic} {l}</button>
+              whiteSpace: 'nowrap',
+            }}>{ic} <span className="al-nav-label">{l}</span></button>
           ))}
         </div>
       </nav>
@@ -119,49 +114,32 @@ export default function App() {
         />
       )}
 
-      <footer style={{ background: '#08151e', borderTop: `1px solid ${C.teal}22`, marginTop: 24, padding: '14px 16px 12px' }}>
-        <div style={{ maxWidth: 680, margin: '0 auto' }}>
-          {/* Fila principal: marca + mayoristas */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
-            {/* Marca */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src={logo} alt="SolarHub" style={{ height: 24, borderRadius: 3, opacity: 0.85 }} />
-              <div style={{ lineHeight: 1.15 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Solar<span style={{ color: C.yellow }}>Hub</span></div>
-                <div style={{ fontSize: 8, color: C.teal, letterSpacing: 0.8 }}>ALEBAS INGENIERÍA SAS · NIT 901.992.450-5 · Villavicencio, Meta</div>
+      <footer className="al-footer" style={{
+        background: '#08151e', borderTop: `1px solid ${C.teal}44`,
+        padding: '8px 12px', position: 'fixed', bottom: 0, left: 0, right: 0,
+        zIndex: 98, boxShadow: '0 -2px 10px rgba(0,0,0,0.4)'
+      }}>
+        <div style={{ maxWidth: 780, margin: '0 auto' }}>
+          <div className="al-foot-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <img src={logo} alt="ALEBAS" style={{ height: 22, opacity: 0.9, flexShrink: 0 }} />
+              <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.25, minWidth: 0 }}>
+                <div><span style={{ color: '#fff', fontWeight: 700 }}>ALEBAS Ingeniería SAS</span> · NIT 901.992.450-5</div>
+                <div className="al-foot-legal">Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()}</div>
               </div>
             </div>
 
-            {/* Mayoristas aprobados — agregar aquí nuevas tarjetas cuando sean aprobadas */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginRight: 2 }}>Mayoristas</span>
-
-              {/* ALEBAS INGENIERÍA SAS */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: `${C.teal}12`, border: `1px solid ${C.teal}30`, borderRadius: 6, padding: '4px 10px' }}>
-                <span style={{ fontSize: 13 }}>⚡</span>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.teal, lineHeight: 1.1 }}>ALEBAS Ingeniería SAS</div>
-                  <div style={{ fontSize: 8, color: C.muted }}>Villavicencio · Proyectos FV</div>
-                </div>
+            <div className="al-mayoristas" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>Mayoristas</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.teal}18`, border: `1px solid ${C.teal}44`, borderRadius: 5, padding: '3px 8px' }}>
+                <span style={{ fontSize: 11 }}>⚡</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: C.teal }}>ALEBAS</span>
               </div>
-
-              {/* Must Energy */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: `${C.yellow}10`, border: `1px solid ${C.yellow}30`, borderRadius: 6, padding: '4px 10px' }}>
-                <span style={{ fontSize: 13 }}>🔋</span>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.yellow, lineHeight: 1.1 }}>Must Energy</div>
-                  <div style={{ fontSize: 8, color: C.muted }}>Colombia · Equipos solares</div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.yellow}18`, border: `1px solid ${C.yellow}44`, borderRadius: 5, padding: '3px 8px' }}>
+                <span style={{ fontSize: 11 }}>🔋</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: C.yellow }}>Must Energy</span>
               </div>
-
-              {/* Próximos mayoristas se agregan aquí */}
             </div>
-          </div>
-
-          {/* Línea legal */}
-          <div style={{ borderTop: `1px solid ${C.teal}18`, paddingTop: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
-            <div style={{ fontSize: 9, color: C.muted }}>© {new Date().getFullYear()} ALEBAS INGENIERÍA SAS · Todos los derechos reservados</div>
-            <div style={{ fontSize: 9, color: C.muted }}>Ley 1715/2014 · CREG 174/2021 · CREG 135/2021 · RETIE</div>
           </div>
         </div>
       </footer>

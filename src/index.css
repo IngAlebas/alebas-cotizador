@@ -4,16 +4,24 @@
   padding: 0;
 }
 
+html {
+  --footer-h: 64px;
+}
+
 body {
   background: #050d12;
   min-height: 100vh;
   font-family: system-ui, -apple-system, sans-serif;
   color: #e8f4f7;
+  -webkit-text-size-adjust: 100%;
 }
+
+img { max-width: 100%; height: auto; }
 
 input, select, textarea {
   font-family: inherit;
   outline: none;
+  font-size: 16px;
 }
 
 input[type=number]::-webkit-inner-spin-button,
@@ -21,5 +29,45 @@ input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none;
 }
 
-::-webkit-scrollbar { width: 4px; }
+button { font-family: inherit; }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-thumb { background: #01708B44; border-radius: 4px; }
+
+/* ======= Mobile responsiveness ======= */
+@media (max-width: 640px) {
+  html { --footer-h: 92px; }
+
+  /* Nav: logo arriba, botones en fila horizontal con scroll */
+  .al-nav {
+    padding: 6px 10px !important;
+    gap: 6px !important;
+  }
+  .al-logo { height: 32px !important; }
+  .al-nav-btns {
+    width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start !important;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .al-nav-btns::-webkit-scrollbar { display: none; }
+  .al-nav-btn {
+    font-size: 11px !important;
+    padding: 5px 9px !important;
+  }
+  .al-nav-label { display: none; }
+
+  /* Footer: 2 filas apiladas */
+  .al-footer { padding: 6px 10px !important; }
+  .al-foot-row { flex-direction: column; align-items: flex-start !important; gap: 4px !important; }
+  .al-foot-legal { display: none; }
+  .al-mayoristas { gap: 4px !important; }
+
+  /* Grids de stats en 2 columnas */
+  .al-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 400px) {
+  .al-stats-grid { grid-template-columns: 1fr !important; }
+}
