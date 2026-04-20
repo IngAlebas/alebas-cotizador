@@ -6,7 +6,7 @@ import { searchCECPanels, searchCECInverters } from '../services/cec';
 import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
-import { n8nConfigured, n8nBaseUrl } from '../services/n8n';
+import { n8nConfigured, n8nBaseUrl, n8nPlaceholderDetected } from '../services/n8n';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -313,6 +313,11 @@ function OperatorsMgr({ operators, upd, ss }) {
       setSyncStatus({ warn: 'local-dev' });
       return;
     }
+    const placeholder = n8nPlaceholderDetected();
+    if (placeholder) {
+      setSyncStatus({ warn: 'placeholder', raw: placeholder });
+      return;
+    }
     if (!n8nConfigured()) {
       setSyncStatus({ warn: 'not-configured' });
       return;
@@ -391,6 +396,12 @@ function OperatorsMgr({ operators, upd, ss }) {
         <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
           ℹ XM ListadoAgentes no devolvió agentes en esta consulta — puede ser un cambio temporal de schema. La lista local de {operators.length} operadores permanece activa sin cambios.
           {syncStatus.rawPreview && <div style={{ marginTop: 5, fontFamily: 'monospace', fontSize: 9, color: C.muted, wordBreak: 'break-all' }}>Raw preview: {syncStatus.rawPreview}</div>}
+        </div>
+      )}
+      {syncStatus?.warn === 'placeholder' && (
+        <div style={{ background: `${C.orange}15`, border: `1px solid ${C.orange}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.orange }}>
+          <div>⚠ <code>REACT_APP_N8N_BASE_URL</code> apunta a una URL de ejemplo: <code style={{ fontFamily: 'monospace' }}>{syncStatus.raw}</code></div>
+          <div style={{ marginTop: 4, color: C.muted }}>Actualiza el valor en Vercel → Settings → Environment Variables con tu webhook n8n real (o déjalo vacío para usar solo la lista local).</div>
         </div>
       )}
       {syncStatus?.warn === 'not-configured' && (

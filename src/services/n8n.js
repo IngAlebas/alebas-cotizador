@@ -2,11 +2,24 @@
 // Base URL is configured via REACT_APP_N8N_BASE_URL (e.g. https://n8n-xxx.up.railway.app/webhook).
 // Optional shared secret via REACT_APP_N8N_TOKEN is sent as x-alebas-token header — n8n validates.
 
-const BASE = (process.env.REACT_APP_N8N_BASE_URL || '').replace(/\/+$/, '');
+const RAW_BASE = (process.env.REACT_APP_N8N_BASE_URL || '').replace(/\/+$/, '');
 const TOKEN = process.env.REACT_APP_N8N_TOKEN || '';
+
+// Patrones de placeholders comunes en docs/ejemplos. Si la env var apunta a uno
+// de estos se trata como "no configurado" — evita DNS fallando en producción.
+const PLACEHOLDER_PATTERNS = [
+  /\btu-n8n\b/i,
+  /\byour-n8n\b/i,
+  /\bxxxx+\b/i,
+  /example\.com/i,
+  /<[^>]+>/,
+];
+const isPlaceholder = RAW_BASE.length > 0 && PLACEHOLDER_PATTERNS.some(re => re.test(RAW_BASE));
+const BASE = isPlaceholder ? '' : RAW_BASE;
 
 export const n8nConfigured = () => BASE.length > 0;
 export const n8nBaseUrl = () => BASE;
+export const n8nPlaceholderDetected = () => isPlaceholder ? RAW_BASE : '';
 
 export async function n8nPost(path, body, { timeoutMs = 25000 } = {}) {
   if (!BASE) throw new Error('n8n no configurado (REACT_APP_N8N_BASE_URL vacío)');
