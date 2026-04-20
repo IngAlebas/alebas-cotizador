@@ -55,12 +55,17 @@ async function getAgents() {
       activities: v?.Actividad || v?.Actividades || v?.actividades || v?.Activity || '',
     };
   });
-  // OR = Operador de Red = actividad 'D' (distribución) o comercialización
-  const operators = items.filter(a => /D|OR|distribuid|comercial/i.test(a.activities || ''));
+  // OR = Operador de Red = actividad 'D' (distribución) o comercialización.
+  // Fallback: si el filtro de actividad no devuelve nada (schema cambiado en XM),
+  // incluir todos los agentes con nombre — mejor tener la lista completa que vacía.
+  const filtered = items.filter(a => /D|OR|distribuid|comercial/i.test(a.activities || ''));
+  const operators = filtered.length ? filtered : items.filter(a => a.name || a.sic);
+  const activityFilterWorked = filtered.length > 0;
   return {
     items,
     operators,
     total: items.length,
+    activityFilterWorked,
     syncedAt: new Date().toISOString(),
     source: 'XM ListadoAgentes',
   };

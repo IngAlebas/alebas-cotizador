@@ -274,18 +274,25 @@ function OperatorsMgr({ operators, upd, ss }) {
   const del = name => upd(operators.filter(o => o.name !== name));
   const resetDefaults = () => upd(OPERATORS);
 
+  const isLocalDev = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(window.location.hostname);
+
   const syncXM = async () => {
+    if (isLocalDev) {
+      setSyncStatus({ error: 'local-dev' });
+      return;
+    }
     setSyncStatus({ loading: true });
     try {
       const data = await fetchAgentsList();
       const total = data.operators?.length ?? 0;
       if (!total) {
-        setSyncStatus({ error: 'XM devolvió 0 agentes — posible cambio de schema en el API. Reintentar más tarde.' });
+        // No agents at all — could be an API error or empty response
+        setSyncStatus({ error: 'XM devolvió 0 agentes. Probable error transitorio o cambio de schema en el API.' });
         return;
       }
       const xmCodes = new Set(data.operators.map(o => o.sic).filter(Boolean));
       const matched = operators.filter(o => o.sic && xmCodes.has(o.sic)).length;
-      setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached });
+      setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached, filterWarning: !data.activityFilterWorked });
     } catch (err) {
       setSyncStatus({ error: err.message });
     }
@@ -324,14 +331,17 @@ function OperatorsMgr({ operators, upd, ss }) {
       {syncStatus?.ok && (
         <div style={{ background: `${C.green}12`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
           ✓ XM sync · {syncStatus.matched} / {operators.filter(o => o.sic).length} OR locales validados contra {syncStatus.total} agentes XM {syncStatus.cached ? '(caché)' : ''} · {new Date(syncStatus.syncedAt).toLocaleString('es-CO')}
+          {syncStatus.filterWarning && ' · ⚠ Filtro de actividad no detectó OR — se incluyeron todos los agentes.'}
         </div>
       )}
-      {syncStatus?.error && (
+      {syncStatus?.error === 'local-dev' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ El proxy XM (/api/xm) solo corre en Vercel — no disponible en desarrollo local. Los 20 operadores de la tabla son datos estáticos actualizables manualmente.
+        </div>
+      )}
+      {syncStatus?.error && syncStatus.error !== 'local-dev' && (
         <div style={{ background: `${C.red}12`, border: `1px solid ${C.red}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.red }}>
-          ⚠ Sync XM falló: {syncStatus.error}.{' '}
-          {window.location.hostname === 'localhost'
-            ? 'En desarrollo local el proxy /api/xm no está disponible — usa los datos estáticos de la tabla o despliega en Vercel.'
-            : 'Reintenta en unos minutos o actualiza manualmente.'}
+          ⚠ Sync XM falló: {syncStatus.error}. Reintenta en unos minutos o actualiza manualmente.
         </div>
       )}
       {spot?.cop_per_kwh != null && (
