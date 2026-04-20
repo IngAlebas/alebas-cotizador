@@ -1349,6 +1349,45 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               );
             })}
           </div>
+          {needsB && batt && f.battQty > 0 && (
+            <>
+              <div style={{ fontSize: 12, color: C.muted, margin: '4px 0 8px' }}>
+                Banco de baterías: {bankSeries}S × {bankParallel}P ·
+                {' '}bus DC a <span style={{ color: C.yellow }}>{bankSeries * batt.voltage} V</span> ·
+                {' '}total <span style={{ color: C.yellow }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</span>
+                {bankOrphan > 0 && <span style={{ color: C.orange }}> · ⚠ {bankOrphan} sobrante{bankOrphan > 1 ? 's' : ''}</span>}
+              </div>
+              <div style={{ background: C.dark, border: `1px dashed ${C.yellow}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                {Array.from({ length: bankParallel }).map((_, pIdx) => (
+                  <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: pIdx < bankParallel - 1 ? 9 : 0 }}>
+                    <div style={{ fontSize: 12, color: C.yellow, fontWeight: 700, minWidth: 44, letterSpacing: 0.5 }}>P{pIdx + 1}</div>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+                      {Array.from({ length: bankSeries }).map((_, sIdx) => (
+                        <React.Fragment key={sIdx}>
+                          <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 4, padding: '4px 8px', minWidth: 62, textAlign: 'center' }}>
+                            <div style={{ fontSize: 9, color: C.muted, lineHeight: 1 }}>🔋</div>
+                            <div style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>{batt.voltage}V</div>
+                            <div style={{ fontSize: 9, color: C.yellow }}>{batt.kwh}kWh</div>
+                          </div>
+                          {sIdx < bankSeries - 1 && (
+                            <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>—</div>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted, minWidth: 96, textAlign: 'right' }}>
+                      {bankSeries} en serie · {(bankSeries * batt.kwh).toFixed(2)} kWh
+                    </div>
+                  </div>
+                ))}
+                {bankParallel > 1 && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.yellow}33`, fontSize: 10, color: C.muted, textAlign: 'center', letterSpacing: 0.5 }}>
+                    ↕ {bankParallel} ramas en paralelo al bus {bankSeries * batt.voltage}V
+                  </div>
+                )}
+              </div>
+            </>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap', padding: '6px 0 14px' }}>
             <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
             <div style={{ fontSize: 18, color: C.teal }}>→</div>
