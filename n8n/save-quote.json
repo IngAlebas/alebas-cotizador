@@ -1,0 +1,105 @@
+{
+  "name": "ALEBAS — save-quote",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "save-quote",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c2000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-save-quote"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza payload del quoter a columnas planas + payload JSONB completo.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst q = body || {};\nconst r = q.results || {};\nconst b = q.budget || {};\nconst agpe = q.agpe || {};\nconst panel = q.panel || {};\n\nconst email = (q.email || '').toString().trim().toLowerCase();\nconst phone = (q.phone || '').toString().trim();\nconst name = (q.name || '').toString().trim();\nconst company = (q.company || '').toString().trim();\nif (!email) throw new Error('email requerido');\nif (!name) throw new Error('name requerido');\n\nconst ip = (src.headers && (src.headers['x-forwarded-for'] || src.headers['x-real-ip'])) || null;\nconst userAgent = (src.headers && src.headers['user-agent']) || null;\n\nreturn [{ json: {\n  email, phone, name, company,\n  system_type: q.systemType || null,\n  monthly_kwh: q.monthlyKwh != null ? Number(q.monthlyKwh) : null,\n  operator: q.operator || null,\n  dept: q.city || q.dept || null,\n  address: q.address || null,\n  lat: q.lat != null ? Number(q.lat) : null,\n  lon: q.lon != null ? Number(q.lon) : null,\n  kwp: r.actKwp != null ? Number(r.actKwp) : null,\n  num_panels: r.numPanels != null ? Math.round(Number(r.numPanels)) : null,\n  panel_id: panel.id || null,\n  production_kwh_month: r.mp != null ? Number(r.mp) : null,\n  coverage_pct: r.cov != null ? Number(r.cov) : null,\n  shade_index: q.shadeIndex != null ? Number(q.shadeIndex) : null,\n  shade_source: q.shadeSource || null,\n  total_cop: b.tot != null ? Math.round(Number(b.tot)) : null,\n  total_usd: b.budgetUsd != null ? Math.round(Number(b.budgetUsd)) : null,\n  section_a_cop: b.sA != null ? Math.round(Number(b.sA)) : null,\n  section_b_cop: b.sB != null ? Math.round(Number(b.sB)) : null,\n  transport_cop: b.transport != null ? Math.round(Number(b.transport)) : null,\n  annual_sav_cop: b.sav != null ? Math.round(Number(b.sav)) : null,\n  roi_years: b.roi != null ? Number(b.roi) : null,\n  has_excedentes: agpe.excedentes != null ? Number(agpe.excedentes) > 0 : null,\n  agpe_category: agpe.agpeCategory || null,\n  regulatory_ids: Array.isArray(q.regulatory) ? q.regulatory : [],\n  payload: q,\n  ip, user_agent: userAgent,\n} }];"
+      },
+      "id": "c2000000-0001-4000-9000-000000000002",
+      "name": "Normalize payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO users (email, phone, name, company, first_seen, last_seen, quote_count)\nVALUES ($1, $2, $3, $4, NOW(), NOW(), 1)\nON CONFLICT (email) DO UPDATE SET\n  phone = COALESCE(EXCLUDED.phone, users.phone),\n  name = COALESCE(EXCLUDED.name, users.name),\n  company = COALESCE(EXCLUDED.company, users.company),\n  last_seen = NOW(),\n  quote_count = users.quote_count + 1\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $json.email }},{{ $json.phone }},{{ $json.name }},{{ $json.company }}"
+        }
+      },
+      "id": "c2000000-0001-4000-9000-000000000003",
+      "name": "Upsert user",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Une userId con el payload normalizado.\nconst norm = $('Normalize payload').first().json;\nconst u = $input.first().json;\nconst userId = Number(u.id || u.ID || 0);\nif (!userId) throw new Error('upsert users no devolvió id');\nreturn [{ json: { ...norm, user_id: userId } }];"
+      },
+      "id": "c2000000-0001-4000-9000-000000000004",
+      "name": "Merge userId",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO quotes (\n  user_id, system_type, monthly_kwh, operator, dept, address, lat, lon,\n  kwp, num_panels, panel_id, production_kwh_month, coverage_pct,\n  shade_index, shade_source,\n  total_cop, total_usd, section_a_cop, section_b_cop, transport_cop,\n  annual_sav_cop, roi_years, has_excedentes, agpe_category,\n  regulatory_ids, payload, ip, user_agent\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8,\n  $9, $10, $11, $12, $13,\n  $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24,\n  $25::text[], $26::jsonb, NULLIF($27,'')::inet, $28\n) RETURNING id, created_at;",
+        "options": {
+          "queryReplacement": "={{ $json.user_id }},{{ $json.system_type }},{{ $json.monthly_kwh }},{{ $json.operator }},{{ $json.dept }},{{ $json.address }},{{ $json.lat }},{{ $json.lon }},{{ $json.kwp }},{{ $json.num_panels }},{{ $json.panel_id }},{{ $json.production_kwh_month }},{{ $json.coverage_pct }},{{ $json.shade_index }},{{ $json.shade_source }},{{ $json.total_cop }},{{ $json.total_usd }},{{ $json.section_a_cop }},{{ $json.section_b_cop }},{{ $json.transport_cop }},{{ $json.annual_sav_cop }},{{ $json.roi_years }},{{ $json.has_excedentes }},{{ $json.agpe_category }},{{ JSON.stringify($json.regulatory_ids || []).replace(/^\\[/,'{').replace(/\\]$/,'}').replace(/\"/g,'') }},{{ JSON.stringify($json.payload) }},{{ $json.ip || '' }},{{ $json.user_agent }}"
+        }
+      },
+      "id": "c2000000-0001-4000-9000-000000000005",
+      "name": "Insert quote",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = $('Normalize payload').first().json;\nconst merged = $('Merge userId').first().json;\nconst ins = $input.first().json || {};\nconst quoteId = Number(ins.id || 0);\nreturn [{ json: { ok: true, quoteId, userId: merged.user_id, createdAt: ins.created_at || null, contact: { email: norm.email, name: norm.name }, totals: { kwp: norm.kwp, total_cop: norm.total_cop, num_panels: norm.num_panels } } }];"
+      },
+      "id": "c2000000-0001-4000-9000-000000000006",
+      "name": "Build response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c2000000-0001-4000-9000-000000000007",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Normalize payload", "type": "main", "index": 0 }]] },
+    "Normalize payload": { "main": [[{ "node": "Upsert user", "type": "main", "index": 0 }]] },
+    "Upsert user": { "main": [[{ "node": "Merge userId", "type": "main", "index": 0 }]] },
+    "Merge userId": { "main": [[{ "node": "Insert quote", "type": "main", "index": 0 }]] },
+    "Insert quote": { "main": [[{ "node": "Build response", "type": "main", "index": 0 }]] },
+    "Build response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}

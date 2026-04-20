@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import logo from '../logo.png';
+import logo from '../logo.svg';
 import { C, fmt, fmtCOP, OPERATORS } from '../constants';
 import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 import { searchCECPanels, searchCECInverters } from '../services/cec';
+import { searchBatteries } from '../services/batteries';
+import { fetchTRM } from '../services/trm';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -132,6 +134,14 @@ function EqMgr({ title, items, upd, fields, ss }) {
 function PriceMgr({ pricing, upd, ss }) {
   const [form, setForm] = useState(pricing);
   const [saved, setSaved] = useState(false);
+  const [trmData, setTrmData] = useState(null);
+  const [trmLoading, setTrmLoading] = useState(false);
+
+  React.useEffect(() => {
+    setTrmLoading(true);
+    fetchTRM().then(d => setTrmData(d)).catch(() => {}).finally(() => setTrmLoading(false));
+  }, []);
+
   const fields = [
     { k: 'structure_per_panel', l: 'Estructura/panel (COP)' },
     { k: 'cabling_per_kwp', l: 'Cableado/kWp' },
@@ -145,7 +155,23 @@ function PriceMgr({ pricing, upd, ss }) {
   return (
     <div>
       <div style={ss.h2}>Configuración de precios</div>
-      <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}22`, borderRadius: 7, padding: '9px 12px', marginBottom: 13, fontSize: 11, color: C.muted }}>
+      {/* TRM widget */}
+      <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '9px 14px', marginBottom: 13, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>TRM (COP/USD)</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.yellow }}>
+            {trmLoading ? '…' : trmData?.cop_per_usd ? `$${fmt(trmData.cop_per_usd)}` : '—'}
+          </div>
+        </div>
+        {trmData && (
+          <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.7 }}>
+            <div>Vigencia: {trmData.date}</div>
+            <div>Fuente: {trmData.source}</div>
+            <div style={{ color: C.teal }}>Actualiza precios en USD → precio panel / TRM = precio COP</div>
+          </div>
+        )}
+      </div>
+      <div style={{ background: `${C.teal}08`, border: `1px solid ${C.border}`, borderRadius: 7, padding: '9px 12px', marginBottom: 13, fontSize: 11, color: C.muted }}>
         Actualiza según cotizaciones reales del mercado. Los cambios aplican inmediatamente en el cotizador.
       </div>
       <div style={ss.card}>
@@ -261,6 +287,11 @@ function OperatorsMgr({ operators, upd, ss }) {
   const [adding, setAdding] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
   const [spot, setSpot] = useState(null);
+  const [manualSpot, setManualSpot] = useState(() => {
+    try { const v = localStorage.getItem('xm:manualSpot'); return v ? JSON.parse(v) : null; } catch { return null; }
+  });
+  const [editingSpot, setEditingSpot] = useState(false);
+  const [spotInput, setSpotInput] = useState('');
 
   const startAdd = () => { setAdding(true); setEdit(null); setForm({ sic: '', name: '', fullName: '', region: '', tariff: 0, psh: 4.5 }); };
   const startEdit = o => { setEdit(o.name); setAdding(false); setForm({ ...o }); };
@@ -273,20 +304,30 @@ function OperatorsMgr({ operators, upd, ss }) {
   const del = name => upd(operators.filter(o => o.name !== name));
   const resetDefaults = () => upd(OPERATORS);
 
+  const isLocalDev = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(window.location.hostname);
+
   const syncXM = async () => {
+    if (isLocalDev) {
+      setSyncStatus({ warn: 'local-dev' });
+      return;
+    }
     setSyncStatus({ loading: true });
     try {
       const data = await fetchAgentsList();
       const total = data.operators?.length ?? 0;
       if (!total) {
-        setSyncStatus({ error: 'XM devolvió 0 agentes — posible cambio de schema en el API. Reintentar más tarde.' });
+        setSyncStatus({
+          warn: 'zero',
+          rawPreview: data.rawPreview,
+          syncedAt: data.syncedAt,
+        });
         return;
       }
       const xmCodes = new Set(data.operators.map(o => o.sic).filter(Boolean));
       const matched = operators.filter(o => o.sic && xmCodes.has(o.sic)).length;
-      setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached });
+      setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached, filterWarning: !data.activityFilterWorked });
     } catch (err) {
-      setSyncStatus({ error: err.message });
+      setSyncStatus({ warn: 'error', msg: err.message });
     }
   };
 
@@ -322,12 +363,24 @@ function OperatorsMgr({ operators, upd, ss }) {
 
       {syncStatus?.ok && (
         <div style={{ background: `${C.green}12`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
-          ✓ XM sync · {syncStatus.matched} / {operators.filter(o => o.sic).length} OR locales validados contra {syncStatus.total} agentes XM {syncStatus.cached ? '(caché)' : ''} · {new Date(syncStatus.syncedAt).toLocaleString('es-CO')}
+          ✓ XM sync · {syncStatus.matched}/{operators.filter(o => o.sic).length} OR locales validados · {syncStatus.total} agentes XM {syncStatus.cached ? '(caché)' : ''} · {new Date(syncStatus.syncedAt).toLocaleString('es-CO')}
+          {syncStatus.filterWarning && ' · Filtro actividad no detectó OR — incluidos todos los agentes.'}
         </div>
       )}
-      {syncStatus?.error && (
-        <div style={{ background: `${C.red}12`, border: `1px solid ${C.red}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.red }}>
-          ⚠ Sync falló: {syncStatus.error}. Probable bloqueo CORS — usar proxy backend en producción.
+      {syncStatus?.warn === 'local-dev' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ Proxy XM no disponible en desarrollo local — los 20 operadores de la tabla son datos estáticos. Actualiza manualmente o despliega en Vercel.
+        </div>
+      )}
+      {syncStatus?.warn === 'zero' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ XM ListadoAgentes no devolvió agentes en esta consulta — puede ser un cambio temporal de schema. La lista local de {operators.length} operadores permanece activa sin cambios.
+          {syncStatus.rawPreview && <div style={{ marginTop: 5, fontFamily: 'monospace', fontSize: 9, color: C.muted, wordBreak: 'break-all' }}>Raw preview: {syncStatus.rawPreview}</div>}
+        </div>
+      )}
+      {syncStatus?.warn === 'error' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ Sync XM no disponible: {syncStatus.msg}. La lista local permanece activa.
         </div>
       )}
       {spot?.cop_per_kwh != null && (
@@ -340,6 +393,41 @@ function OperatorsMgr({ operators, upd, ss }) {
           ⚠ Bolsa XM: {spot.error}
         </div>
       )}
+
+      {/* Precio bolsa manual — activo mientras la API XM no responde */}
+      <div style={{ background: `${C.yellow}10`, border: `1px solid ${C.yellow}25`, borderRadius: 6, padding: '8px 12px', marginBottom: 10 }}>
+        {!editingSpot ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ fontSize: 11, color: C.muted }}>
+              $ Precio bolsa manual:{' '}
+              {manualSpot
+                ? <strong style={{ color: C.yellow }}>{manualSpot.cop_per_kwh} COP/kWh</strong>
+                : <span style={{ color: C.muted, fontStyle: 'italic' }}>no definido — usado por AGPE si API falla</span>}
+            </div>
+            <button style={{ ...ss.btn, padding: '3px 10px', fontSize: 10 }} onClick={() => { setSpotInput(manualSpot?.cop_per_kwh || ''); setEditingSpot(true); }}>
+              Editar
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="number" style={{ ...ss.inp, flex: 1, padding: '5px 8px', fontSize: 12 }}
+              placeholder="Ej: 285.50" value={spotInput} onChange={e => setSpotInput(e.target.value)}
+              autoFocus onKeyDown={e => { if (e.key === 'Enter') saveManualSpot(); if (e.key === 'Escape') setEditingSpot(false); }}
+            />
+            <span style={{ fontSize: 10, color: C.muted }}>COP/kWh</span>
+            <button style={ss.btn} onClick={() => {
+              const v = parseFloat(spotInput);
+              if (!isNaN(v) && v > 0) {
+                const d = { cop_per_kwh: v, source: 'manual', syncedAt: new Date().toISOString() };
+                setManualSpot(d);
+                try { localStorage.setItem('xm:manualSpot', JSON.stringify(d)); } catch {}
+              }
+              setEditingSpot(false);
+            }}>Guardar</button>
+            <button style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setEditingSpot(false)}>✕</button>
+          </div>
+        )}
+      </div>
 
       <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}22`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
         Códigos SIC oficiales de XM (Sinergox). Tarifas son referencia residencial estrato 4 sin subsidio — actualizables manualmente o por scrapers de PDFs mensuales (próxima iteración). PSH usa estimación regional; PVGIS lo sobreescribe en el cálculo final.
@@ -504,7 +592,188 @@ function InvertersTab({ inverters, uI, ss }) {
   );
 }
 
-export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers }) {
+// Importador de baterías desde el catálogo curado (/api/batteries).
+// Permite buscar por marca/modelo y filtrar por arquitectura (HV-stack/LV-48V).
+function BatteryImportModal({ onClose, onImport, ss }) {
+  const [q, setQ] = useState('');
+  const [arch, setArch] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const doSearch = async () => {
+    setLoading(true); setError(null);
+    try {
+      const data = await searchBatteries(q, arch, 50);
+      setResults(data.items || []);
+    } catch (e) {
+      setError(e.message);
+      setResults([]);
+    }
+    setLoading(false);
+  };
+
+  // Auto-búsqueda al abrir y cuando cambia el filtro de arquitectura.
+  React.useEffect(() => { doSearch(); /* eslint-disable-next-line */ }, [arch]);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, width: 720, maxHeight: '85vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Importar batería del catálogo</div>
+          <button style={ss.del} onClick={onClose}>Cerrar</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <input style={{ ...ss.inp, flex: 1 }} placeholder="Buscar por marca/modelo (Pylontech, BYD, Huawei, Deye, Dyness...)" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()} />
+          <select style={{ ...ss.inp, maxWidth: 150, cursor: 'pointer' }} value={arch} onChange={e => setArch(e.target.value)}>
+            <option value="">Todas las arquitecturas</option>
+            <option value="HV-stack">HV stack</option>
+            <option value="LV-48V">LV 48 V</option>
+            <option value="LV-24V">LV 24 V</option>
+          </select>
+          <button style={ss.btn} onClick={doSearch}>Buscar</button>
+        </div>
+        {loading && <div style={{ color: C.muted, fontSize: 11, padding: 8 }}>Cargando...</div>}
+        {error && <div style={{ color: '#f87171', fontSize: 11, padding: 8 }}>{error}</div>}
+        {!loading && !error && results.length === 0 && <div style={{ color: C.muted, fontSize: 11, padding: 8 }}>Sin resultados.</div>}
+        {results.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Marca', 'Modelo', 'Quím.', 'kWh', 'V', 'Arq.', 'Ciclos', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <tbody>{results.map(b => (
+              <tr key={b.id}>
+                <td style={ss.td}>{b.brand}</td>
+                <td style={ss.td}>{b.model}</td>
+                <td style={ss.td}>{b.chemistry}</td>
+                <td style={ss.td}>{b.kwh}</td>
+                <td style={ss.td}>{b.v}</td>
+                <td style={ss.td}>{b.arch}</td>
+                <td style={ss.td}>{b.cycles}</td>
+                <td style={ss.td}><button style={ss.btn} onClick={() => onImport(b)}>Importar</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BatteriesTab({ batteries, uB, ss }) {
+  const [showImp, setShowImp] = useState(false);
+  const [justImported, setJustImported] = useState(null);
+  const onImport = (b) => {
+    const newBatt = {
+      id: 'eq_' + Date.now(),
+      brand: b.brand,
+      model: b.model,
+      kwh: b.kwh,
+      v: b.v,
+      chemistry: b.chemistry,
+      arch: b.arch,
+      cycles: b.cycles,
+      dod: b.dod,
+      warrantyYears: b.warrantyYears,
+      kg: b.kgPerModule,
+      price: 5500000, // admin debe ajustar precio local
+      source: 'Catalog',
+    };
+    uB([...batteries, newBatt]);
+    setJustImported(`${newBatt.brand} ${newBatt.model}`);
+    setShowImp(false);
+    setTimeout(() => setJustImported(null), 3500);
+  };
+  return (
+    <div>
+      {justImported && (
+        <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
+          ✓ Importada: <strong>{justImported}</strong>. Ajusta precio local antes de usar en el cotizador.
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button style={{ ...ss.btn, background: C.yellow, color: '#050d12' }} onClick={() => setShowImp(true)}>🔍 Importar del catálogo</button>
+      </div>
+      <EqMgr title="Baterías" items={batteries} upd={uB} ss={ss} fields={[
+        { k: 'brand', l: 'Marca', t: 'text' },
+        { k: 'model', l: 'Modelo', t: 'text' },
+        { k: 'kwh', l: 'kWh', t: 'number' },
+        { k: 'v', l: 'V nom.', t: 'number' },
+        { k: 'arch', l: 'Arq.', t: 'text' },
+        { k: 'chemistry', l: 'Quím.', t: 'text' },
+        { k: 'price', l: 'Precio COP', t: 'number' },
+      ]} />
+      {showImp && <BatteryImportModal ss={ss} onClose={() => setShowImp(false)} onImport={onImport} />}
+    </div>
+  );
+}
+
+// Gestor de envíos de proveedores. Permite revisar los PDFs enviados,
+// marcar estado y descargar el archivo. El data URL se almacena en
+// localStorage — ideal para un flujo manual de revisión.
+function SuppliersMgr({ suppliers, uSupp, ss }) {
+  const setStatus = (id, status) => {
+    uSupp(suppliers.map(s => s.id === id ? { ...s, status } : s));
+  };
+  const remove = (id) => {
+    if (!window.confirm('¿Eliminar este envío?')) return;
+    uSupp(suppliers.filter(s => s.id !== id));
+  };
+  return (
+    <div>
+      <div style={ss.h2}>Envíos de proveedores</div>
+      <div style={ss.card}>
+        {suppliers.length === 0 ? (
+          <div style={{ color: C.muted, textAlign: 'center', padding: 24, fontSize: 12 }}>
+            Aún no hay listas de precios enviadas. Comparte la URL de Proveedores con tus contactos.
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Fecha', 'Empresa', 'Contacto', 'Categoría', 'PDF', 'Estado', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <tbody>{suppliers.map(s => (
+              <tr key={s.id}>
+                <td style={ss.td}>{s.date}</td>
+                <td style={ss.td}><div style={{ fontWeight: 600 }}>{s.company}</div><div style={{ fontSize: 10, color: C.muted }}>{s.email}</div></td>
+                <td style={ss.td}>{s.contact}{s.phone ? <div style={{ fontSize: 10, color: C.muted }}>{s.phone}</div> : null}</td>
+                <td style={ss.td}>{s.category}</td>
+                <td style={ss.td}>
+                  {s.fileData ? (
+                    <a href={s.fileData} download={s.fileName} style={{ color: C.teal, textDecoration: 'none', fontSize: 11 }}>⬇ {s.fileName}</a>
+                  ) : '—'}
+                </td>
+                <td style={ss.td}>
+                  <select style={{ ...ss.inp, padding: '3px 6px', fontSize: 10 }} value={s.status} onChange={e => setStatus(s.id, e.target.value)}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="revisado">Revisado</option>
+                    <option value="integrado">Integrado</option>
+                    <option value="rechazado">Rechazado</option>
+                  </select>
+                </td>
+                <td style={ss.td}><button style={ss.del} onClick={() => remove(s.id)}>Borrar</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+      {suppliers.some(s => s.notes) && (
+        <div style={ss.card}>
+          <div style={{ fontWeight: 600, color: '#fff', marginBottom: 8, fontSize: 12 }}>Notas de proveedores</div>
+          {suppliers.filter(s => s.notes).map(s => (
+            <div key={s.id} style={{ padding: '6px 0', borderBottom: `1px solid ${C.border}22`, fontSize: 11 }}>
+              <div style={{ color: C.teal, fontWeight: 600 }}>{s.company} — {s.date}</div>
+              <div style={{ color: C.muted, marginTop: 2 }}>{s.notes}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp }) {
+  const [dashTrm, setDashTrm] = React.useState(null);
+  React.useEffect(() => {
+    fetchTRM().then(d => setDashTrm(d)).catch(() => {});
+  }, []);
+
   const ss = {
     wrap: { display: 'flex', minHeight: 'calc(100vh - 54px)' },
     side: { width: 185, background: '#08151e', borderRight: `1px solid ${C.border}`, padding: '12px 8px', flexShrink: 0 },
@@ -520,7 +789,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '11px 13px' },
   };
 
-  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores']];
+  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores'], ['suppliers', '📄', 'Proveedores']];
 
   const tot = quotes.length, nv = quotes.filter(q => q.status === 'nuevo').length;
   const kp = quotes.reduce((s, q) => s + parseFloat(q.results?.actKwp || 0), 0).toFixed(1);
@@ -548,10 +817,15 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'dashboard' && (
           <div>
             <div style={ss.h2}>Dashboard</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 9, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 9, marginBottom: 16 }}>
               {[['Cotizaciones', tot, C.teal], ['Sin procesar', nv, C.yellow], ['kWp cotizados', kp, '#fff'], ['Pipeline', `$${fmt(pl / 1e6)}M`, C.teal]].map(([l, v, col]) => (
                 <div key={l} style={ss.stat}><div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>{l}</div><div style={{ fontSize: 18, fontWeight: 700, color: col }}>{v}</div></div>
               ))}
+              <div style={ss.stat}>
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>TRM COP/USD</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow }}>{dashTrm?.cop_per_usd ? `$${fmt(dashTrm.cop_per_usd)}` : '—'}</div>
+                {dashTrm?.date && <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>{dashTrm.date}</div>}
+              </div>
             </div>
             <div style={ss.card}>
               <div style={{ fontWeight: 600, color: '#fff', marginBottom: 11, fontSize: 13 }}>Últimas cotizaciones</div>
@@ -568,11 +842,12 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         )}
         {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
         {tab === 'inverters' && <InvertersTab inverters={inverters} uI={uI} ss={ss} />}
-        {tab === 'batteries' && <EqMgr title="Baterías" items={batteries} upd={uB} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'kwh', l: 'kWh', t: 'number' }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
+        {tab === 'batteries' && <BatteriesTab batteries={batteries} uB={uB} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
         {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} />}
         {tab === 'installers' && <InstallersMgr installers={installers} ss={ss} />}
+        {tab === 'suppliers' && <SuppliersMgr suppliers={suppliers} uSupp={uSupp} ss={ss} />}
       </main>
     </div>
   );
