@@ -7,6 +7,7 @@ import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
 import { n8nConfigured, n8nBaseUrl, n8nPlaceholderDetected } from '../services/n8n';
+import { rankDepartments, nationalAverage } from '../services/regional-potential';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -538,6 +539,61 @@ function OperatorsMgr({ operators, upd, ss }) {
   );
 }
 
+// Ranking regional de potencial solar (inspirado en Project Sunroof).
+// Muestra producción anual por kWp y % techos aptos por departamento —
+// útil para planear campañas por zona y comparar oportunidades regionales.
+function RegionalPotentialTab({ ss }) {
+  const rows = rankDepartments();
+  const nat = nationalAverage();
+  return (
+    <div>
+      <div style={ss.h2}>Potencial solar regional</div>
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.5 }}>
+        Ranking de departamentos por producción anual estimada (kWh/kWp/año) y % de techos aptos.
+        Inspirado en Project Sunroof (Google). Los valores por cotización se refinan con PVGIS/NASA POWER
+        según las coordenadas exactas del predio.
+      </div>
+      {nat && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 9, marginBottom: 16 }}>
+          <div style={ss.stat}>
+            <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>PSH nacional promedio</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow }}>{nat.psh} h/día</div>
+          </div>
+          <div style={ss.stat}>
+            <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>kWh/kWp/año promedio</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{nat.yearlyKwhPerKwp.toLocaleString('es-CO')}</div>
+          </div>
+          <div style={ss.stat}>
+            <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>% techos aptos (media)</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: C.teal }}>{nat.percentQualified}%</div>
+          </div>
+        </div>
+      )}
+      <div style={ss.card}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>{['#', 'Departamento', 'Operador', 'PSH', 'kWh/kWp/año', '% aptos', 'Clima'].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+          <tbody>{rows.map((r, i) => (
+            <tr key={r.dept}>
+              <td style={ss.td}>{i + 1}</td>
+              <td style={{ ...ss.td, fontWeight: 600, color: '#fff' }}>{r.dept}</td>
+              <td style={ss.td}>{r.operator}</td>
+              <td style={ss.td}>{r.psh} h/día</td>
+              <td style={{ ...ss.td, fontWeight: 600, color: C.yellow }}>{r.yearlyKwhPerKwp.toLocaleString('es-CO')}</td>
+              <td style={ss.td}>{r.percentQualified}%</td>
+              <td style={{ ...ss.td, fontSize: 10, color: C.muted }}>{r.climate}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 10, color: C.muted, marginTop: 14, lineHeight: 1.5 }}>
+        Metodología: producción = PSH × 365 × PR (0.78). % aptos es una estimación derivada del PSH
+        regional (ver <code>src/services/regional-potential.js</code>); Sunroof usa análisis de imágenes
+        por techo, acá aproximamos por zona climática.
+      </div>
+    </div>
+  );
+}
+
 // Wrapper que combina el EqMgr local con un botón de importación CEC.
 // Al importar, mezcla los specs eléctricos oficiales con valores razonables
 // de precio/kg que el admin puede ajustar antes de guardar.
@@ -947,7 +1003,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '11px 13px' },
   };
 
-  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['loads', '📋', 'Cuadro de cargas'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores'], ['suppliers', '📄', 'Proveedores']];
+  const NAV = [['dashboard', '◈', 'Dashboard'], ['regional', '☀', 'Potencial regional'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['loads', '📋', 'Cuadro de cargas'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores'], ['suppliers', '📄', 'Proveedores']];
 
   const tot = quotes.length, nv = quotes.filter(q => q.status === 'nuevo').length;
   const kp = quotes.reduce((s, q) => s + parseFloat(q.results?.actKwp || 0), 0).toFixed(1);
@@ -998,6 +1054,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
             </div>
           </div>
         )}
+        {tab === 'regional' && <RegionalPotentialTab ss={ss} />}
         {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
         {tab === 'inverters' && <InvertersTab inverters={inverters} uI={uI} ss={ss} />}
         {tab === 'batteries' && <BatteriesTab batteries={batteries} uB={uB} ss={ss} />}
