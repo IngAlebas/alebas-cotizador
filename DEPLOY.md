@@ -195,6 +195,94 @@ Esto es un commit posterior — no bloquea el deploy del cotizador público.
 
 ---
 
+## Paso 10 — Migrar el resto de APIs externas a workflows n8n ⚠️ **CRÍTICO**
+
+Los servicios del frontend hoy hacen `fetch('/api/...')` apuntando a **funciones edge de Vercel** que no existen en Railway. Si desplegamos en Railway sin migrarlos, **el cotizador se romperá** (no habrá PVGIS, PVWatts, NASA, XM, TRM, CEC ni baterías). Cada servicio necesita su workflow n8n + actualización del cliente para usar `n8nPost()` en vez de `fetch('/api/*')`.
+
+### Inventario
+
+| # | Servicio frontend | Endpoint actual | API externa real | Workflow n8n a crear | Caché local |
+|---|---|---|---|---|---|
+| 10.1 | `src/services/pvgis.js` | `GET /api/pvgis?lat&lon&kwp&tilt&az` | `re.jrc.ec.europa.eu/api/v5_2/PVcalc` | `n8n/pvgis.json` → `POST /webhook/pvgis` | 30 días |
+| 10.2 | `src/services/pvwatts.js` | `GET /api/pvwatts?...` | NREL PVWatts v8 (requiere API key) | `n8n/pvwatts.json` → `POST /webhook/pvwatts` | 24 h |
+| 10.3 | `src/services/nasaPower.js` | `GET /api/nasa-power?lat&lon` | NASA POWER API | `n8n/nasa-power.json` → `POST /webhook/nasa-power` | 7 días |
+| 10.4 | `src/services/xm.js` | `GET /api/xm?endpoint=agents|spot&days=N` | XM Sinergox (`servapibi.xm.com.co`) | `n8n/xm-agents.json` + `n8n/xm-spot.json` | 7d / 24h |
+| 10.5 | `src/services/trm.js` | `GET /api/trm` | `https://www.datos.gov.co/resource/...` | `n8n/trm.json` → `POST /webhook/trm` | 4 h |
+| 10.6 | `src/services/cec.js` | `GET /api/cec?type=panel|inverter&q=X` | Dataset NREL SAM/CEC local (JSON bundled en función edge) | `n8n/cec.json` → `POST /webhook/cec` | 24 h |
+| 10.7 | `src/services/batteries.js` | `GET /api/batteries?q&arch` | Dataset curado JSON | `n8n/batteries.json` → `POST /webhook/batteries` | 7 días |
+
+### Plan por workflow
+
+**10.1 — PVGIS** (`/webhook/pvgis`)
+- [ ] Input: `{ lat, lon, kwp, tilt?, azimuth? }`
+- [ ] Nodo HTTP Request GET `https://re.jrc.ec.europa.eu/api/v5_2/PVcalc`
+  - qs: `lat, lon, peakpower=kwp, loss=14, angle=tilt||10, aspect=azimuth||0, outputformat=json, pvtechchoice=crystSi`
+- [ ] Normalizar a `{ annualKwh, monthly: [{month, kwh}], source: 'PVGIS' }`
+- [ ] Actualizar `src/services/pvgis.js` para llamar `n8nPost('pvgis', {...})`
+
+**10.2 — PVWatts** (`/webhook/pvwatts`)
+- [ ] Requiere `NREL_API_KEY` en Railway → n8n vars (gratis en https://developer.nrel.gov/signup/)
+- [ ] Input: `{ lat, lon, kwp, tilt?, azimuth?, losses? }`
+- [ ] Nodo HTTP GET `https://developer.nrel.gov/api/pvwatts/v8.json?api_key={{$env.NREL_API_KEY}}&...`
+- [ ] Normalizar a `{ solradAnnual, acAnnualKwh, monthly, productionSource: 'PVWatts' }`
+- [ ] Actualizar `src/services/pvwatts.js`
+
+**10.3 — NASA POWER** (`/webhook/nasa-power`)
+- [ ] Input: `{ lat, lon }`
+- [ ] Nodo HTTP GET `https://power.larc.nasa.gov/api/temporal/climatology/point`
+  - qs: `parameters=ALLSKY_SFC_SW_DWN,T2M,T2M_MAX,T2M_MIN, community=RE, latitude, longitude, format=JSON`
+- [ ] Normalizar a `{ monthlyPSH: [...], monthlyTemp: [...], monthlyTempMax: [...], source: 'NASA POWER' }`
+- [ ] Actualizar `src/services/nasaPower.js`
+
+**10.4 — XM** (dividir en 2 workflows)
+- [ ] `xm-agents` → `POST /webhook/xm-agents` · GET `https://servapibi.xm.com.co/hourly/ListadoAgentes` → devuelve lista de operadores; incluir `activityFilterWorked` flag
+- [ ] `xm-spot` → `POST /webhook/xm-spot` · input `{ days: 30 }` → GET `https://servapibi.xm.com.co/hourly/PrecioBolsaNal?startdate=...&enddate=...` → promediar últimos N días → `{ cop_per_kwh, periodDays, cached: false }`
+- [ ] Actualizar `src/services/xm.js`: reemplazar `fetchAgentsList()` y `fetchSpotPrice(N)` por llamadas a n8n
+
+**10.5 — TRM** (`/webhook/trm`)
+- [ ] Input: `{}`
+- [ ] Nodo HTTP GET `https://www.datos.gov.co/resource/mcec-87by.json?$order=vigenciadesde%20DESC&$limit=1`
+- [ ] Normalizar a `{ cop_per_usd, date, source: 'datos.gov.co' }`
+- [ ] Actualizar `src/services/trm.js`
+
+**10.6 — CEC** (`/webhook/cec`)
+- [ ] El dataset NREL SAM (~22k paneles + ~6k inversores) hoy vive como JSON en la función edge
+- [ ] Opción A — cargar el dataset como archivo estático desde una URL pública (S3 / GitHub raw) y filtrar en el nodo Code (mismo algoritmo de `/api/cec`)
+- [ ] Opción B — importar dataset a Postgres (tablas `cec_panels`, `cec_inverters`) y consultar por SQL — más rápido, mejor para búsquedas fuzzy
+- [ ] Recomendado: **Opción B** · migración incluye nuevo SQL + script de carga inicial
+- [ ] Actualizar `src/services/cec.js`
+
+**10.7 — Batteries** (`/webhook/batteries`)
+- [ ] Dataset más pequeño (~50-100 modelos curados). Mismo patrón que CEC.
+- [ ] Recomendado: tabla `batteries` en Postgres, workflow filtra por `q` y `arch`
+- [ ] Actualizar `src/services/batteries.js`
+
+### Variables extra a configurar en n8n (Railway)
+
+```
+NREL_API_KEY   = <gratis en developer.nrel.gov/signup>
+DATOS_GOV_TOKEN = <opcional, sin token hay rate limit>
+```
+
+### Orden sugerido de implementación
+
+1. **Primero**: 10.1 (PVGIS), 10.3 (NASA), 10.5 (TRM) — APIs públicas sin key, implementación directa (~1 h)
+2. **Segundo**: 10.2 (PVWatts) — pedir API key NREL, luego implementar (~30 min)
+3. **Tercero**: 10.4 (XM agents + spot) — XM tiene schema variable, más testing (~1 h)
+4. **Cuarto**: 10.6 (CEC) + 10.7 (Batteries) — requieren migrar datasets a Postgres (~2-3 h)
+5. **Quinto**: refactor de cada `src/services/*.js` para usar `n8nPost()` en vez de `fetch('/api/*')`
+6. **Último**: eliminar carpeta `api/` del repo (funciones Vercel obsoletas)
+
+### Alternativa temporal (si urge desplegar antes)
+
+Mantener Vercel para las funciones `/api/*` y Railway sólo para n8n + frontend:
+- Frontend en Railway apunta a `app.alebas.co/webhook` para los workflows nuevos
+- Frontend sigue llamando `/api/*` que Vercel resolverá si el dominio apunta allá
+
+**No recomendado** — añade complejidad (dos proveedores, dos dominios). Mejor migrar todo a n8n de una vez.
+
+---
+
 ## Troubleshooting rápido
 
 | Síntoma | Causa común |
