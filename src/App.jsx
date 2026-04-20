@@ -7,6 +7,7 @@ import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
+import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import logo from './logo.svg';
 
 export default function App() {
@@ -20,6 +21,8 @@ export default function App() {
   const [quotes, setQuotes] = useState([]);
   const [installers, setInstallers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [loadsCatalog, setLoadsCatalog] = useState(DEFAULT_LOADS_CATALOG);
+  const [loadsSource, setLoadsSource] = useState('local-default');
 
   useEffect(() => {
     // Union-merge equipment lists: keep saved items (custom prices/specs) AND
@@ -47,6 +50,13 @@ export default function App() {
     g('al:quotes', setQuotes);
     g('al:installers', setInstallers);
     g('al:suppliers', setSuppliers);
+    // Intento de hidratar cuadro de cargas desde n8n (no bloquea UI).
+    fetchLoadsCatalog().then(d => {
+      if (Array.isArray(d?.items) && d.items.length) {
+        setLoadsCatalog(d.items);
+        setLoadsSource(d.source || 'n8n');
+      }
+    }).catch(() => {});
   }, []);
 
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
@@ -103,6 +113,7 @@ export default function App() {
           batteries={batteries} pricing={pricing}
           operators={operators}
           addQuote={addQ}
+          loadsCatalog={loadsCatalog}
         />
       )}
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
@@ -117,6 +128,8 @@ export default function App() {
           operators={operators} uOp={uOp}
           quotes={quotes} installers={installers}
           suppliers={suppliers} uSupp={uSupp}
+          loadsCatalog={loadsCatalog} loadsSource={loadsSource}
+          setLoadsCatalog={setLoadsCatalog} setLoadsSource={setLoadsSource}
         />
       )}
 

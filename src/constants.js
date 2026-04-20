@@ -545,17 +545,27 @@ function acceptableInverterTypes(sysType) {
 //  Fallback: si no existe coincidencia exacta con sysType, acepta la familia
 //  alternativa (hybrid sustituye a on-grid u off-grid cuando no hay stock exacto).
 //  Para sistemas off-grid sólo se acepta hybrid si declara `offGridCapable: true`.
-export function selectCompatibleInverter(panel, kwp, sysType, inverters, temps = {}) {
-  const coldTempC = temps.coldTempC ?? 10;
-  const hotTempC  = temps.hotTempC  ?? 65;
+export function selectCompatibleInverter(panel, kwp, sysType, inverters, opts = {}) {
+  const coldTempC = opts.coldTempC ?? 10;
+  const hotTempC  = opts.hotTempC  ?? 65;
+  // phases = fases aceptables (RETIE 240). [1] para monofásico/bifásico 120/240V,
+  // [3] para trifásico. Si no se provee, aceptamos cualquier fase.
+  const phases   = Array.isArray(opts.phases) && opts.phases.length ? opts.phases : null;
   const okTypes = acceptableInverterTypes(sysType);
+  const matchPhase = (i) => !phases || phases.includes(i.phase);
   const pool = inverters.filter(i => {
     if (!okTypes.includes(i.type)) return false;
-    // Restricción off-grid: sólo aceptar hybrid si el modelo soporta modo aislado.
     if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
+    if (!matchPhase(i)) return false;
     return true;
   });
   if (!pool.length) {
+    // Fallback: relajamos el filtro de fase primero (mejor tipo correcto que fase correcta).
+    const byType = inverters.filter(i => okTypes.includes(i.type)
+      && !(sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable));
+    if (byType.length) {
+      return [...byType].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp))[0];
+    }
     // Último recurso — no existe nada del tipo correcto; devolver el inversor
     // más cercano en potencia para evitar crash, la UI debe advertir.
     const any = [...inverters].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp));

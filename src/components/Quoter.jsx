@@ -15,6 +15,7 @@ import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
 import { aiRecommend, aiConfigured } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
+import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
@@ -23,6 +24,14 @@ const Q0 = {
   transportZone: 'N1', dept: 'Meta', address: '',
   availableArea: '', wantsExcedentes: false,
   name: '', company: '', phone: '', email: '',
+  // Acometida / fase de la carga — RETIE Sección 240 (clasificación usuario final):
+  //   monofasico  = 1F+N, 120V (cargas muy pequeñas, poco común residencial)
+  //   bifasico    = 2F+N (split-phase), 120/240V (residencial típico en Colombia)
+  //   trifasico   = 3F+N, 208/220/440V (comercial/industrial o residencial grande)
+  // Se auto-sugiere según el consumo/potencia estimada y gobierna el filtro
+  // de inversores (phase 1 vs 3) en selectCompatibleInverter.
+  acometida: 'bifasico',
+  phaseManual: false,    // true = usuario forzó la acometida
   // Dimensionamiento de almacenamiento
   backupHours: 4,        // Horas de respaldo (Híbrido)
   autonomyDays: 1,       // Días sin sol (Off-grid)
@@ -42,21 +51,38 @@ const Q0 = {
   website: '',
 };
 
-// Presets típicos para finca/vivienda rural off-grid (editable por el usuario)
-const PRESET_LOADS = [
-  { name: 'Nevera', watts: 150, hours: 8, qty: 1 },
-  { name: 'Iluminación LED', watts: 10, hours: 5, qty: 8 },
-  { name: 'TV', watts: 80, hours: 4, qty: 1 },
-  { name: 'Ventilador', watts: 60, hours: 6, qty: 2 },
-  { name: 'Cargadores / electrónicos', watts: 100, hours: 3, qty: 1 },
-  { name: 'Bomba de agua', watts: 750, hours: 1, qty: 1 },
-];
-
 const uuid = () => `ld_${Math.random().toString(36).slice(2, 10)}`;
+
+// RETIE Sección 240 — selección de acometida por carga conectada.
+// La franja es aproximada y válida para Colombia (STR/SDL residencial); el
+// operador de red puede pedir trifásico por razones de calidad incluso en
+// cargas menores.
+function suggestAcometida(monthlyKwh, sysType) {
+  const kwh = Number(monthlyKwh || 0);
+  if (!kwh) return 'bifasico';
+  // Carga máxima instantánea estimada ≈ consumo mensual / 100 (factor coincidencia).
+  const estKw = kwh / 100;
+  if (estKw >= 20) return 'trifasico';
+  if (estKw < 3 && sysType === 'off-grid') return 'monofasico';
+  return 'bifasico';
+}
+
+const ACOMETIDA_INFO = {
+  monofasico: { label: 'Monofásico', volts: '120 V', hilos: '1F + N', retie: '240V ≤ 7 kW' },
+  bifasico:   { label: 'Bifásico',   volts: '120/240 V', hilos: '2F + N', retie: 'Residencial típico Colombia' },
+  trifasico:  { label: 'Trifásico',  volts: '208/220/440 V', hilos: '3F + N', retie: 'Comercial/industrial' },
+};
+
+// Mapeo acometida → fases del inversor (campo `phase` del catálogo).
+//   phase 1 = monofásico/bifásico (split-phase 120/240V, la mayoría residencial en Colombia)
+//   phase 3 = trifásico
+function phasesForAcometida(acometida) {
+  return acometida === 'trifasico' ? [3] : [1];
+}
 
 const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
 
-export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote }) {
+export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote, loadsCatalog }) {
   const [step, setStep] = useState(0);
   const [f, setF] = useState(Q0);
   const [res, setRes] = useState(null);
@@ -64,6 +90,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [done, setDone] = useState(false);
   const [resultTab, setResultTab] = useState('resumen');
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const loadsPresets = (Array.isArray(loadsCatalog) && loadsCatalog.length) ? loadsCatalog : DEFAULT_LOADS_CATALOG;
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
   const operator = operators[f.operatorId] || operators[0];
@@ -112,6 +139,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       u('monthlyKwh', String(loadMonthlyKwh));
     }
   }, [f.systemType, loadMonthlyKwh]);
+
+  // Auto-sugerencia de acometida (RETIE 240) según el consumo. Si el usuario
+  // la fija manualmente (phaseManual) no tocamos su elección.
+  const suggestedAcometida = suggestAcometida(f.monthlyKwh, f.systemType);
+  useEffect(() => {
+    if (f.phaseManual) return;
+    if (suggestedAcometida && suggestedAcometida !== f.acometida) {
+      u('acometida', suggestedAcometida);
+    }
+  }, [suggestedAcometida, f.phaseManual]);
 
   // Configuración del banco de baterías (serie/paralelo).
   // Series = bus ÷ tensión batería (ceil, mín 1). Paralelos = qty ÷ series.
@@ -255,7 +292,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     // Fase 1 — sizing rápido con temperaturas default para determinar actKwp.
     const sizingKwp = targetKwp || consumptionKwp;
-    const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters);
+    const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters, { phases: phasesForAcometida(f.acometida) });
     const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
 
     let pvgisAnnualKwh = null;
@@ -309,7 +346,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const bestAnnualKwh = pvwattsAnnualKwh || pvgisAnnualKwh || null;
     const productionSource = pvwattsAnnualKwh ? 'PVWatts' : pvgisAnnualKwh ? 'PVGIS' : 'PSH';
 
-    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, temps);
+    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
       { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
@@ -506,7 +543,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <label style={{ ...ss.lbl, marginBottom: 0 }}>Cuadro de cargas — off-grid no tiene factura</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 {(!f.loadItems || f.loadItems.length === 0) && (
-                  <button type="button" onClick={() => u('loadItems', PRESET_LOADS.map(x => ({ id: uuid(), ...x })))}
+                  <button type="button" onClick={() => u('loadItems', loadsPresets.slice(0, 6).map(x => ({ id: uuid(), name: x.name, watts: x.watts, hours: x.hours, qty: x.qty || 1 })))}
                     style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}66`, color: C.teal, borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
                     + cargas típicas
                   </button>
@@ -566,6 +603,32 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </select>
           <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
             Tarifa: <span style={{ color: C.teal }}>{operator.tariff} COP/kWh</span> · PSH: <span style={{ color: C.teal }}>{operator.psh} h/día</span>
+          </div>
+        </div>
+        <div style={{ marginBottom: 13 }}>
+          <label style={ss.lbl}>Acometida / fases de la carga (RETIE 240)</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {['monofasico', 'bifasico', 'trifasico'].map(ph => {
+              const info = ACOMETIDA_INFO[ph];
+              const active = f.acometida === ph;
+              return (
+                <button key={ph} type="button" onClick={() => { u('acometida', ph); u('phaseManual', true); }}
+                  style={{ flex: '1 1 140px', minWidth: 130, padding: '8px 10px', borderRadius: 7,
+                           border: `2px solid ${active ? C.teal : C.border}`,
+                           background: active ? `${C.teal}22` : 'transparent',
+                           color: active ? C.teal : '#fff', cursor: 'pointer',
+                           textAlign: 'left', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{info.label}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{info.hilos} · {info.volts}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+            {f.phaseManual ? 'Selección manual.' : `Sugerido por consumo: ${ACOMETIDA_INFO[suggestedAcometida].label}.`}
+            {' '}<span style={{ color: C.teal }}>{ACOMETIDA_INFO[f.acometida].retie}</span>
+            {' · '}El inversor se filtra por fase: {f.acometida === 'trifasico' ? 'trifásico (3F)' : 'monofásico / bifásico (1F)'}.
+            {f.phaseManual && <button type="button" onClick={() => u('phaseManual', false)} style={{ marginLeft: 8, background: 'transparent', border: 'none', color: C.teal, cursor: 'pointer', fontSize: 10, textDecoration: 'underline' }}>auto</button>}
           </div>
         </div>
         <div style={{ marginBottom: 8 }}>
@@ -1435,10 +1498,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
             {[
               ['Panel', `${panel.brand} ${panel.model}`], ['Potencia', `${panel.wp} Wp`],
-              ['Inversor', `${res.inv?.brand} ${res.inv?.model}`], ['Potencia inv.', `${res.inv?.kw} kW`],
+              ['Inversor', `${res.inv?.brand} ${res.inv?.model}`], ['Potencia inv.', `${res.inv?.kw} kW · ${res.inv?.phase === 3 ? 'trifásico' : 'monofásico/bifásico'}`],
+              ['Acometida', `${ACOMETIDA_INFO[f.acometida].label} (${ACOMETIDA_INFO[f.acometida].hilos} · ${ACOMETIDA_INFO[f.acometida].volts})`], ['Tipo sistema', f.systemType],
               ['Strings', `${res.ns} × ${res.ppss} paneles`], ['Ratio DC/AC', res.dca],
               ['Área techo', `${res.roof} m²`], ['Peso sistema', `${fmt(res.kgTotal)} kg`],
-              ...(needsB ? [['Baterías', `${f.battQty} × ${batt.brand} ${batt.model}`], ['Cap. total', `${res.tB} kWh`], ['Autonomía', `${res.aut} h`]] : []),
+              ...(needsB ? [
+                ['Baterías', `${f.battQty} × ${batt.brand} ${batt.model}`],
+                ['Config. banco', `${bankSeries}S × ${bankParallel}P · ${bankSeries * batt.voltage}V bus`],
+                ['Cap. total', `${res.tB} kWh`], ['Autonomía', `${res.aut} h`],
+              ] : []),
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${C.border}22`, gap: 4 }}>
                 <span style={{ fontSize: 10, color: C.muted }}>{k}</span>
