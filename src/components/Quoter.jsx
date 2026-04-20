@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import logo from '../logo.png';
 import {
-  C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
-  calcSystem, calcTransport, calcBudget, selectCompatibleInverter,
+  C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS, CARRIERS, ZONA_LABEL,
+  calcSystem, calcTransport, calcBudget, pickBestTransport, selectCompatibleInverter,
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
   tariffCU, excedentePriceFor, splitCU,
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR
@@ -21,7 +21,7 @@ import { getApplicableNormativa } from '../data/normativa';
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
   panelId: '', battId: '', battQty: 2,
-  transportZone: 'N1', dept: 'Meta', address: '',
+  destId: 'villavicencio', address: '',
   availableArea: '', wantsExcedentes: false,
   name: '', company: '', phone: '', email: '',
   // Acometida / fase de la carga — RETIE Sección 240 (clasificación usuario final):
@@ -89,8 +89,37 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [bgt, setBgt] = useState(null);
   const [done, setDone] = useState(false);
   const [resultTab, setResultTab] = useState('resumen');
+  const [loadPicker, setLoadPicker] = useState({ open: false, search: '', category: 'all' });
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
   const loadsPresets = (Array.isArray(loadsCatalog) && loadsCatalog.length) ? loadsCatalog : DEFAULT_LOADS_CATALOG;
+  const loadCategories = useMemo(() => {
+    const set = new Set(loadsPresets.map(x => x.category || 'Otros'));
+    return ['all', ...Array.from(set)];
+  }, [loadsPresets]);
+  const filteredLoadPresets = useMemo(() => {
+    const q = (loadPicker.search || '').trim().toLowerCase();
+    return loadsPresets.filter(x => {
+      if (loadPicker.category !== 'all' && (x.category || 'Otros') !== loadPicker.category) return false;
+      if (!q) return true;
+      return (x.name || '').toLowerCase().includes(q) || (x.category || '').toLowerCase().includes(q);
+    });
+  }, [loadsPresets, loadPicker.search, loadPicker.category]);
+  const addLoadFromPreset = (preset) => {
+    const cur = Array.isArray(f.loadItems) ? f.loadItems : [];
+    u('loadItems', [...cur, {
+      id: uuid(),
+      name: preset.name || '',
+      watts: Number(preset.watts || 0),
+      peakWatts: Number(preset.peakWatts || preset.watts || 0),
+      hours: Number(preset.hours || 0),
+      qty: Number(preset.qty || 1),
+      category: preset.category || '',
+    }]);
+  };
+  const addCustomLoad = () => {
+    const cur = Array.isArray(f.loadItems) ? f.loadItems : [];
+    u('loadItems', [...cur, { id: uuid(), name: '', watts: 0, peakWatts: 0, hours: 0, qty: 1 }]);
+  };
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
   const operator = operators[f.operatorId] || operators[0];
@@ -158,7 +187,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const bankParallel = bankSeries > 0 ? Math.floor(f.battQty / bankSeries) : f.battQty;
   const bankOrphan = f.battQty - bankSeries * bankParallel;
 
-  const dest = DESTINOS_COURIER.find(d => d.dept === f.dept) || DESTINOS_COURIER[0];
+  const dest = DESTINOS_COURIER.find(d => d.id === f.destId) || DESTINOS_COURIER[0];
 
   const [loadingPVGIS, setLoadingPVGIS] = useState(false);
   const [pvgisError, setPvgisError] = useState(null);
@@ -351,7 +380,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
       { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
 
-    const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
+    const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
+    const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const cuFull = tariffCU(operator);
     const cuMinusG = excedentePriceFor(operator);
@@ -367,7 +397,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                    : areaLimitsSystem ? 'area'
                    : 'consumo';
     setRes({ ...sys, inv: inv2, sizedFor, productionSource });
-    setBgt({ ...budget, sav: annualSav, roi, transport: transport.total, budgetUsd, trmDate: trmData?.date });
+    setBgt({
+      ...budget,
+      sav: annualSav, roi,
+      transport: transport.total,
+      transportCarrier: transport.label,
+      transportCarrierId: transport.carrierId,
+      transportQuotes: transportPick.quotes,
+      transportZone: dest.zona,
+      budgetUsd,
+      trmDate: trmData?.date,
+    });
     setAgpe({ ...benefit, spotSource: spot, tariffCU: cuFull, cuSplit });
   };
 
@@ -383,7 +423,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const payload = {
       id: Date.now(), date: new Date().toLocaleDateString('es-CO'),
       name: f.name, company: f.company, email: f.email, phone: f.phone,
-      address: f.address, city: f.dept, dept: f.dept, operator: operator.name,
+      address: f.address, city: dest.city, dept: dest.dept, operator: operator.name,
       systemType: f.systemType, monthlyKwh: f.monthlyKwh,
       lat: f.lat, lon: f.lon,
       shadeIndex: f.shadeIndex, shadeSource: f.shadeSource,
@@ -543,17 +583,90 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <label style={{ ...ss.lbl, marginBottom: 0 }}>Cuadro de cargas — off-grid no tiene factura</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 {(!f.loadItems || f.loadItems.length === 0) && (
-                  <button type="button" onClick={() => u('loadItems', loadsPresets.slice(0, 6).map(x => ({ id: uuid(), name: x.name, watts: x.watts, hours: x.hours, qty: x.qty || 1 })))}
+                  <button type="button" onClick={() => u('loadItems', loadsPresets.slice(0, 6).map(x => ({ id: uuid(), name: x.name, watts: x.watts, peakWatts: x.peakWatts || x.watts, hours: x.hours, qty: x.qty || 1, category: x.category })))}
                     style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}66`, color: C.teal, borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
                     + cargas típicas
                   </button>
                 )}
-                <button type="button" onClick={() => u('loadItems', [...(f.loadItems || []), { id: uuid(), name: '', watts: 0, hours: 0, qty: 1 }])}
+                <button type="button" onClick={() => setLoadPicker(s => ({ ...s, open: !s.open }))}
+                  style={{ background: loadPicker.open ? `${C.teal}22` : 'transparent', border: `1px solid ${loadPicker.open ? C.teal : C.border}`, color: loadPicker.open ? C.teal : '#fff', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                  + agregar del catálogo ▾
+                </button>
+                <button type="button" onClick={addCustomLoad}
                   style={{ background: 'transparent', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10 }}>
-                  + agregar
+                  + personalizada
                 </button>
               </div>
             </div>
+            {loadPicker.open && (
+              <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 7, padding: 10, marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Buscar (ej: nevera, ordeñadora, bomba 2 HP)..."
+                    value={loadPicker.search}
+                    onChange={e => setLoadPicker(s => ({ ...s, search: e.target.value }))}
+                    style={{ ...ss.inp, padding: '6px 9px', fontSize: 11, flex: '1 1 220px' }}
+                  />
+                  <button type="button" onClick={() => setLoadPicker({ open: false, search: '', category: 'all' })}
+                    style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 5, padding: '5px 9px', cursor: 'pointer', fontSize: 10 }}>
+                    cerrar
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {loadCategories.map(cat => (
+                    <button key={cat} type="button"
+                      onClick={() => setLoadPicker(s => ({ ...s, category: cat }))}
+                      style={{
+                        background: loadPicker.category === cat ? C.teal : 'transparent',
+                        border: `1px solid ${loadPicker.category === cat ? C.teal : C.border}`,
+                        color: loadPicker.category === cat ? '#001014' : C.muted,
+                        borderRadius: 12, padding: '3px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+                      }}>
+                      {cat === 'all' ? `Todas (${loadsPresets.length})` : cat}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ maxHeight: 260, overflowY: 'auto', border: `1px solid ${C.border}`, borderRadius: 6 }}>
+                  {filteredLoadPresets.length === 0 ? (
+                    <div style={{ padding: '12px', fontSize: 11, color: C.muted, textAlign: 'center' }}>
+                      No hay coincidencias. Prueba otro término o usa "+ personalizada".
+                    </div>
+                  ) : filteredLoadPresets.map((p, idx) => (
+                    <div key={`${p.name}-${idx}`}
+                      onClick={() => addLoadFromPreset(p)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.5fr 60px',
+                        gap: 8, alignItems: 'center',
+                        padding: '7px 10px',
+                        borderBottom: `1px solid ${C.border}`,
+                        cursor: 'pointer', fontSize: 11,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = `${C.teal}18`}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div>
+                        <div style={{ color: '#fff', fontWeight: 600 }}>{p.name}</div>
+                        <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{p.category || 'Otros'}</div>
+                      </div>
+                      <div style={{ color: C.teal, fontWeight: 600 }}>{p.watts} W</div>
+                      <div style={{ color: C.muted }}>{p.hours} h/día</div>
+                      <div style={{ color: C.muted }}>x{p.qty || 1}</div>
+                      <div style={{ textAlign: 'right' }}>
+                        {p.peakWatts && p.peakWatts > p.watts ? (
+                          <span style={{ fontSize: 9, color: C.orange }} title="Potencia de arranque (inductiva)">pico {p.peakWatts}W</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 6, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <span>Click en una fila para agregarla al cuadro. Puedes ajustarla después.</span>
+                  <span>{filteredLoadPresets.length} / {loadsPresets.length} resultados</span>
+                </div>
+              </div>
+            )}
             {(f.loadItems || []).length === 0 ? (
               <div style={{ background: C.dark, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '14px 12px', fontSize: 11, color: C.muted, textAlign: 'center' }}>
                 Agrega las cargas de tu finca/vivienda (nevera, luces, TV, bomba...) o carga la plantilla típica.
@@ -912,18 +1025,28 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   if (step === 4) return (
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
-        <div style={ss.h2}>Departamento de instalación</div>
+        <div style={ss.h2}>Ciudad de instalación</div>
         <div style={{ marginBottom: 14 }}>
-          <label style={ss.lbl}>Departamento destino</label>
-          <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.dept} onChange={e => u('dept', e.target.value)}>
-            {DESTINOS_COURIER.map(d => <option key={d.dept} value={d.dept}>{d.dept} — {d.capital} ({d.tiempo})</option>)}
+          <label style={ss.lbl}>Ciudad destino (incluye cabeceras y ciudades intermedias)</label>
+          <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.destId} onChange={e => u('destId', e.target.value)}>
+            {Array.from(new Set(DESTINOS_COURIER.map(d => d.dept))).map(dp => (
+              <optgroup key={dp} label={dp}>
+                {DESTINOS_COURIER.filter(d => d.dept === dp).map(d => (
+                  <option key={d.id} value={d.id}>{d.city} ({d.tiempo} · {ZONA_LABEL[d.zona]})</option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </div>
         {dest && (
           <div style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}33`, borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-              <span style={{ fontSize: 11, color: C.muted }}>Zona Interrapidísimo:</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: C.teal }}>{INTER_ZONAS[dest.zona]?.label}</span>
+              <span style={{ fontSize: 11, color: C.muted }}>Destino:</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.teal }}>{dest.city}, {dest.dept}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+              <span style={{ fontSize: 11, color: C.muted }}>Zona de tarifa:</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.teal }}>{ZONA_LABEL[dest.zona]}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
               <span style={{ fontSize: 11, color: C.muted }}>Tiempo de entrega:</span>
@@ -936,7 +1059,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         )}
         <div style={{ fontSize: 10, color: C.muted, background: C.dark, borderRadius: 6, padding: '9px 12px' }}>
-          📦 El costo de transporte vía Interrapidísimo se incluye en el presupuesto Sección B. Tarifas vigentes jul 2025 – jul 2026.
+          📦 El cotizador evalúa {Object.keys(CARRIERS).length} transportadoras ({Object.values(CARRIERS).map(c => c.label).join(', ')}) y selecciona la más económica por destino y peso del sistema. Tarifas referenciales 2025-2026.
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
           <button style={ss.ghost} onClick={() => setStep(3)}>← Atrás</button>
@@ -1046,7 +1169,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div style={{ ...ss.card, textAlign: 'center', padding: '22px', borderColor: C.teal }}>
           <div style={{ fontSize: 9, color: C.teal, letterSpacing: 3, fontWeight: 700, marginBottom: 5, textTransform: 'uppercase' }}>Pre-dimensionamiento</div>
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
-          <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {f.dept}</div>
+          <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {dest.city}, {dest.dept}</div>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
             {/* Fuente de producción — preferencia: PVWatts > PVGIS > PSH */}
             {res.productionSource === 'PVWatts' && (
@@ -1056,7 +1179,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             )}
             {res.productionSource === 'PVGIS' && (
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}>
-                ✓ PVGIS · {dest.capital}
+                ✓ PVGIS · {dest.city}
               </span>
             )}
             {res.productionSource === 'PSH' && (
@@ -1257,7 +1380,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       systemType: f.systemType,
                       monthlyKwh: Number(f.monthlyKwh),
                       operator: operator.name, psh,
-                      location: { dept: f.dept, lat: f.lat, lon: f.lon, address: f.address || roofQuery || '' },
+                      location: { dept: dest.dept, city: dest.city, lat: f.lat, lon: f.lon, address: f.address || roofQuery || '' },
                       panel: { brand: panel.brand, model: panel.model, wp: panel.wp },
                       inverter: res.inv ? { brand: res.inv.brand, model: res.inv.model, kw: res.inv.kw, type: res.inv.type } : null,
                       battery: needsB ? { brand: batt.brand, model: batt.model, kwh: batt.kwh, voltage: batt.voltage, qty: f.battQty, totalKwh: +(batt.kwh * f.battQty).toFixed(2) } : null,
@@ -1349,6 +1472,45 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               );
             })}
           </div>
+          {needsB && batt && f.battQty > 0 && (
+            <>
+              <div style={{ fontSize: 12, color: C.muted, margin: '4px 0 8px' }}>
+                Banco de baterías: {bankSeries}S × {bankParallel}P ·
+                {' '}bus DC a <span style={{ color: C.yellow }}>{bankSeries * batt.voltage} V</span> ·
+                {' '}total <span style={{ color: C.yellow }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</span>
+                {bankOrphan > 0 && <span style={{ color: C.orange }}> · ⚠ {bankOrphan} sobrante{bankOrphan > 1 ? 's' : ''}</span>}
+              </div>
+              <div style={{ background: C.dark, border: `1px dashed ${C.yellow}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                {Array.from({ length: bankParallel }).map((_, pIdx) => (
+                  <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: pIdx < bankParallel - 1 ? 9 : 0 }}>
+                    <div style={{ fontSize: 12, color: C.yellow, fontWeight: 700, minWidth: 44, letterSpacing: 0.5 }}>P{pIdx + 1}</div>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+                      {Array.from({ length: bankSeries }).map((_, sIdx) => (
+                        <React.Fragment key={sIdx}>
+                          <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 4, padding: '4px 8px', minWidth: 62, textAlign: 'center' }}>
+                            <div style={{ fontSize: 9, color: C.muted, lineHeight: 1 }}>🔋</div>
+                            <div style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>{batt.voltage}V</div>
+                            <div style={{ fontSize: 9, color: C.yellow }}>{batt.kwh}kWh</div>
+                          </div>
+                          {sIdx < bankSeries - 1 && (
+                            <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>—</div>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted, minWidth: 96, textAlign: 'right' }}>
+                      {bankSeries} en serie · {(bankSeries * batt.kwh).toFixed(2)} kWh
+                    </div>
+                  </div>
+                ))}
+                {bankParallel > 1 && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.yellow}33`, fontSize: 10, color: C.muted, textAlign: 'center', letterSpacing: 0.5 }}>
+                    ↕ {bankParallel} ramas en paralelo al bus {bankSeries * batt.voltage}V
+                  </div>
+                )}
+              </div>
+            </>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap', padding: '6px 0 14px' }}>
             <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
             <div style={{ fontSize: 18, color: C.teal }}>→</div>
@@ -1384,6 +1546,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         </div>
         )}
+
+        {showTecnico && res.inv && (() => {
+          const expected = phasesForAcometida(f.acometida);
+          const phaseOk = expected.includes(res.inv.phase);
+          if (phaseOk) return null;
+          return (
+            <div style={{ ...ss.card, background: `${C.orange}12`, border: `1px solid ${C.orange}55` }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.orange, marginBottom: 6 }}>⚠ Inversor de fase distinta a la acometida</div>
+              <div style={{ fontSize: 11, color: C.text, lineHeight: 1.55 }}>
+                Acometida configurada: <strong style={{ color: C.teal }}>{ACOMETIDA_INFO[f.acometida].label}</strong>
+                {' '}({ACOMETIDA_INFO[f.acometida].hilos} · {ACOMETIDA_INFO[f.acometida].volts}).
+                {' '}Inversor seleccionado: <strong>{res.inv.brand} {res.inv.model}</strong> — <strong style={{ color: C.orange }}>{res.inv.phase === 3 ? 'trifásico' : 'monofásico/bifásico'}</strong>.
+                <br />
+                No hay stock del tipo/fase exactos en el catálogo. Opciones: (a) cambiar la acometida arriba si el operador de red lo permite, (b) agregar un inversor compatible en BackOffice → Inversores, o (c) contactar a ALEBAS para disponibilidad especial.
+              </div>
+            </div>
+          );
+        })()}
 
         {showTecnico && (() => {
           const v = validateLayout(panel, res.inv, res.ppss, res.ns);
@@ -1544,12 +1724,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ))}
             <div style={{ borderTop: `1px solid ${C.teal}22`, margin: '8px 0' }} />
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, fontWeight: 600 }}>SECCIÓN B — Instalación y servicios (+{pricing.iva}% IVA)</div>
-            {[['Estructura', bgt.st], ['Cableado', bgt.ca], ['Protecciones', bgt.pt], ['Instalación certificada', bgt.ins], ['Ingeniería y diseño', bgt.eng], ['Trámites ' + operator.name, bgt.emsa], ['Transporte Interrapidísimo', bgt.transport], ['IVA ' + pricing.iva + '%', bgt.iva], ['Subtotal B', bgt.sB]].map(([l, v], i, arr) => (
-              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: i === arr.length - 1 ? 11 : 10 }}>
-                <span style={{ color: i === arr.length - 1 ? '#fff' : C.muted }}>{l}</span>
+            {[['Estructura', bgt.st], ['Cableado', bgt.ca], ['Protecciones', bgt.pt], ['Instalación certificada', bgt.ins], ['Ingeniería y diseño', bgt.eng], ['Trámites ' + operator.name, bgt.emsa], [`Transporte ${bgt.transportCarrier || '-'}`, bgt.transport, 'transport'], ['IVA ' + pricing.iva + '%', bgt.iva], ['Subtotal B', bgt.sB]].map(([l, v, kind], i, arr) => (
+              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: i === arr.length - 1 ? 11 : 10 }}
+                title={kind === 'transport' && Array.isArray(bgt.transportQuotes) ? bgt.transportQuotes.map(q => `${q.label}: ${fmtCOP(q.total)}`).join('\n') : ''}>
+                <span style={{ color: i === arr.length - 1 ? '#fff' : C.muted }}>
+                  {l}
+                  {kind === 'transport' && bgt.transportQuotes && bgt.transportQuotes.length > 1 && (
+                    <span style={{ color: C.teal, fontSize: 9, marginLeft: 6 }}>(mejor de {bgt.transportQuotes.length})</span>
+                  )}
+                </span>
                 <span style={{ color: '#fff', fontWeight: i === arr.length - 1 ? 700 : 400 }}>{fmtCOP(v)}</span>
               </div>
             ))}
+            {Array.isArray(bgt.transportQuotes) && bgt.transportQuotes.length > 1 && (
+              <details style={{ marginTop: 4, marginBottom: 4, fontSize: 9 }}>
+                <summary style={{ color: C.muted, cursor: 'pointer' }}>Comparar {bgt.transportQuotes.length} transportadoras ▾</summary>
+                <div style={{ marginTop: 6, paddingLeft: 6 }}>
+                  {bgt.transportQuotes.map((q, idx) => (
+                    <div key={q.carrierId} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', color: idx === 0 ? C.teal : C.muted }}>
+                      <span>{idx === 0 ? '✓ ' : '  '}{q.label}</span>
+                      <span>{fmtCOP(q.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             <div style={{ borderTop: `1px solid ${C.teal}33`, paddingTop: 9, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
               <div>
                 <div style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>TOTAL ESTIMADO</div>
@@ -1709,7 +1908,7 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB }) {
             </span>
           </div>
           <div style={{ color: C.muted, fontSize: 10, marginBottom: 18, letterSpacing: 0.3 }}>
-            {operator.name} · {f.dept} · {elapsed}s
+            {operator.name} · {dest.city}, {dest.dept} · {elapsed}s
           </div>
 
           <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6 }}>
