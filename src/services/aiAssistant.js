@@ -1,10 +1,10 @@
-// Claude-powered assistant via n8n.
+// Asistente IA vía n8n — cadena de revisión interna (modelo abstraído en el backend).
 // Expected n8n workflow at /webhook/ai-recommend:
 //   Input: {
 //     context: 'sizing' | 'review' | 'explain',
 //     payload: { ...anything the tool wants to send... }
 //   }
-//   Server prompts Claude (claude-sonnet-4-6 recommended) with strict JSON output.
+//   Server orquesta el modelo (configurable) y devuelve JSON estricto.
 //   Output: {
 //     summary: string,         // 1–2 frases
 //     findings: string[],      // observaciones clave

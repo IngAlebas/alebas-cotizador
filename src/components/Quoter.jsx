@@ -36,9 +36,23 @@ const Q0 = {
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null,
+  // Cuadro de cargas — usado en off-grid (no hay factura)
+  loadItems: [],
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
   website: '',
 };
+
+// Presets típicos para finca/vivienda rural off-grid (editable por el usuario)
+const PRESET_LOADS = [
+  { name: 'Nevera', watts: 150, hours: 8, qty: 1 },
+  { name: 'Iluminación LED', watts: 10, hours: 5, qty: 8 },
+  { name: 'TV', watts: 80, hours: 4, qty: 1 },
+  { name: 'Ventilador', watts: 60, hours: 6, qty: 2 },
+  { name: 'Cargadores / electrónicos', watts: 100, hours: 3, qty: 1 },
+  { name: 'Bomba de agua', watts: 750, hours: 1, qty: 1 },
+];
+
+const uuid = () => `ld_${Math.random().toString(36).slice(2, 10)}`;
 
 const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
 
@@ -86,6 +100,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   }, [needsB, suggestedBattQty, f.battManual]);
 
+  // Cuadro de cargas → consumo mensual (off-grid no tiene factura).
+  const loadDailyKwh = (f.loadItems || []).reduce(
+    (s, it) => s + (Number(it.watts || 0) * Number(it.hours || 0) * Number(it.qty || 0)) / 1000,
+    0
+  );
+  const loadMonthlyKwh = +(loadDailyKwh * 30).toFixed(0);
+  useEffect(() => {
+    if (f.systemType !== 'off-grid') return;
+    if (loadMonthlyKwh > 0 && String(loadMonthlyKwh) !== f.monthlyKwh) {
+      u('monthlyKwh', String(loadMonthlyKwh));
+    }
+  }, [f.systemType, loadMonthlyKwh]);
+
+  // Configuración del banco de baterías (serie/paralelo).
+  // Series = bus ÷ tensión batería (ceil, mín 1). Paralelos = qty ÷ series.
+  const bankSeries = batt && batt.voltage > 0
+    ? Math.max(1, Math.round(f.busVoltage / batt.voltage))
+    : 1;
+  const bankParallel = bankSeries > 0 ? Math.floor(f.battQty / bankSeries) : f.battQty;
+  const bankOrphan = f.battQty - bankSeries * bankParallel;
+
   const dest = DESTINOS_COURIER.find(d => d.dept === f.dept) || DESTINOS_COURIER[0];
 
   const [loadingPVGIS, setLoadingPVGIS] = useState(false);
@@ -95,7 +130,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [nasaData, setNasaData] = useState(null);
   const [pvwData, setPvwData] = useState(null);
   const [trm, setTrm] = useState(null);
-  // Lookup de techo (Google Solar + Claude fallback vía n8n)
+  // Lookup de techo (Google Solar + IA fallback vía n8n)
   const [roofQuery, setRoofQuery] = useState('');
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
@@ -465,11 +500,65 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
         <div style={ss.h2}>Consumo y operador de red</div>
-        <div style={{ marginBottom: 13 }}>
-          <label style={ss.lbl}>Consumo mensual (kWh) — del recibo de energía</label>
-          <input type="number" style={ss.inp} placeholder="Ej: 450" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Busca "Energía activa" o "kWh consumidos" en tu factura</div>
-        </div>
+        {f.systemType === 'off-grid' ? (
+          <div style={{ marginBottom: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+              <label style={{ ...ss.lbl, marginBottom: 0 }}>Cuadro de cargas — off-grid no tiene factura</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {(!f.loadItems || f.loadItems.length === 0) && (
+                  <button type="button" onClick={() => u('loadItems', PRESET_LOADS.map(x => ({ id: uuid(), ...x })))}
+                    style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}66`, color: C.teal, borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                    + cargas típicas
+                  </button>
+                )}
+                <button type="button" onClick={() => u('loadItems', [...(f.loadItems || []), { id: uuid(), name: '', watts: 0, hours: 0, qty: 1 }])}
+                  style={{ background: 'transparent', border: `1px solid ${C.border}`, color: '#fff', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontSize: 10 }}>
+                  + agregar
+                </button>
+              </div>
+            </div>
+            {(f.loadItems || []).length === 0 ? (
+              <div style={{ background: C.dark, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '14px 12px', fontSize: 11, color: C.muted, textAlign: 'center' }}>
+                Agrega las cargas de tu finca/vivienda (nevera, luces, TV, bomba...) o carga la plantilla típica.
+              </div>
+            ) : (
+              <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.7fr 0.5fr 28px', gap: 6, fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, padding: '2px 0 6px' }}>
+                  <span>Carga</span><span>Watts</span><span>Horas/día</span><span>Cant.</span><span></span>
+                </div>
+                {f.loadItems.map(it => {
+                  const kwhDay = (Number(it.watts || 0) * Number(it.hours || 0) * Number(it.qty || 0)) / 1000;
+                  return (
+                    <div key={it.id} style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.7fr 0.5fr 28px', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                      <input style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} placeholder="Ej: Nevera" value={it.name}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, name: e.target.value } : x))} />
+                      <input type="number" style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} placeholder="W" value={it.watts}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, watts: e.target.value } : x))} />
+                      <input type="number" step="0.1" style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} placeholder="h/día" value={it.hours}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, hours: e.target.value } : x))} />
+                      <input type="number" style={{ ...ss.inp, padding: '6px 8px', fontSize: 11 }} value={it.qty}
+                        onChange={e => u('loadItems', f.loadItems.map(x => x.id === it.id ? { ...x, qty: e.target.value } : x))} />
+                      <button type="button" title={`${kwhDay.toFixed(2)} kWh/día`}
+                        onClick={() => u('loadItems', f.loadItems.filter(x => x.id !== it.id))}
+                        style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 4, cursor: 'pointer', fontSize: 12, height: 30 }}>×</button>
+                    </div>
+                  );
+                })}
+                <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                  <span style={{ color: C.muted }}>Total estimado</span>
+                  <span style={{ color: C.teal, fontWeight: 700 }}>{loadDailyKwh.toFixed(2)} kWh/día · {loadMonthlyKwh} kWh/mes</span>
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Suma aproximada. Ajusta watts y horas según tus equipos reales.</div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 13 }}>
+            <label style={ss.lbl}>Consumo mensual (kWh) — del recibo de energía</label>
+            <input type="number" style={ss.inp} placeholder="Ej: 450" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Busca "Energía activa" o "kWh consumidos" en tu factura</div>
+          </div>
+        )}
         <div style={{ marginBottom: 13 }}>
           <label style={ss.lbl}>Operador de red / empresa de energía</label>
           <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.operatorId} onChange={e => u('operatorId', parseInt(e.target.value))}>
@@ -512,7 +601,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {f.roofLookupSource && (
             <div style={{ fontSize: 10, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
               Fuente: <span style={{ color: C.teal, fontWeight: 600 }}>
-                {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Claude IA (estimación)' : f.roofLookupSource}
+                {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Estimación asistida' : f.roofLookupSource}
               </span>
               {f.lat != null && f.lon != null && <> · {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
               {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
@@ -712,11 +801,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 )}
               </div>
               {batt && f.battQty > 0 && (
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
-                  Banco total: <strong style={{ color: C.teal }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</strong> · {f.battQty} × {batt.kwh} kWh
-                  {requiredBankKwh > 0 && (batt.kwh * f.battQty) < requiredBankKwh && (
-                    <span style={{ color: C.orange, marginLeft: 6 }}>⚠ bajo lo requerido</span>
-                  )}
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.6 }}>
+                  <div>
+                    Banco total: <strong style={{ color: C.teal }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</strong> · {f.battQty} × {batt.kwh} kWh
+                    {requiredBankKwh > 0 && (batt.kwh * f.battQty) < requiredBankKwh && (
+                      <span style={{ color: C.orange, marginLeft: 6 }}>⚠ bajo lo requerido</span>
+                    )}
+                  </div>
+                  <div>
+                    Configuración: <strong style={{ color: C.teal }}>{bankSeries}S × {bankParallel}P</strong>
+                    {' '}({bankSeries} en serie a {bankSeries * batt.voltage}V · {bankParallel} ramas en paralelo)
+                    {bankOrphan > 0 && (
+                      <span style={{ color: C.orange, marginLeft: 6 }}>
+                        ⚠ {bankOrphan} batería{bankOrphan > 1 ? 's' : ''} sobrante{bankOrphan > 1 ? 's' : ''} — ajusta la cantidad a múltiplo de {bankSeries}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1140,17 +1240,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </ul>
                   </div>
                 )}
-                {(aiData.provider || aiData.tokens?.in) && (
-                  <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
-                    {aiData.provider && <span>Modelo: <span style={{ color: C.teal }}>{aiData.provider}</span></span>}
-                    {aiData.tokens?.in > 0 && <span> · {(aiData.tokens.in + (aiData.tokens.out || 0)).toLocaleString('es-CO')} tokens</span>}
-                  </div>
-                )}
+                <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
+                  Cadena de revisión interna
+                </div>
               </div>
             )}
             {!aiData && !aiError && !aiLoading && (
               <div style={{ fontSize: 11, color: C.muted }}>
-                Claude Haiku revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
+                Revisión técnica interna del sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
               </div>
             )}
           </div>
@@ -1194,6 +1291,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
                   <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Baterías</div>
                   <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{f.battQty} × {batt.kwh} kWh</div>
+                  <div style={{ fontSize: 10, color: C.yellow, marginTop: 3 }}>{bankSeries}S × {bankParallel}P · {bankSeries * batt.voltage}V bus</div>
                 </div>
                 <div style={{ fontSize: 18, color: C.teal }}>→</div>
               </>

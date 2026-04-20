@@ -513,25 +513,61 @@ export function inverterCompatibility(panel, inverter, coldTempC = 10, hotTempC 
   return { feasible, ppsMaxVolt, ppsMaxMppt, ppsMin };
 }
 
-// Scoring de selección de inversor. Criterios (suma ponderada):
-//   +10000 compatible con el panel (pps_min ≤ pps_max)
-//   +2000  DC/AC en [0.9, 1.25] (rango óptimo)
+// Rango óptimo de DC/AC ratio por tipo de sistema.
+//   on-grid: 1.10–1.35 (sobredimensionar paneles aprovecha horas de hombro sin clipping severo)
+//   hybrid : 1.00–1.25 (excedente carga baterías; ratios altos empiezan a clippear)
+//   off-grid: 0.95–1.15 (sin red, cualquier excedente se pierde una vez llenas las baterías)
+const DCAC_RANGE = {
+  'on-grid':  { min: 1.10, max: 1.35, ideal: 1.20 },
+  'hybrid':   { min: 1.00, max: 1.25, ideal: 1.15 },
+  'off-grid': { min: 0.95, max: 1.15, ideal: 1.05 },
+};
+
+// Familias de inversor aceptables según tipo de sistema.
+//   on-grid : on-grid (principal) | hybrid (fallback, inyecta pero más caro y sobra función batería)
+//   hybrid  : hybrid (único — requiere carga de baterías + inyección)
+//   off-grid: off-grid (principal) | hybrid (fallback sólo si el modelo declara `offGridCapable`)
+function acceptableInverterTypes(sysType) {
+  if (sysType === 'on-grid')  return ['on-grid', 'hybrid'];
+  if (sysType === 'hybrid')   return ['hybrid'];
+  if (sysType === 'off-grid') return ['off-grid', 'hybrid'];
+  return [sysType];
+}
+
+// Scoring de selección de inversor. Prioriza compatibilidad eléctrica y tipo exacto:
+//   +10000 compatible con el panel (Voc frío y Vmp caliente dentro del rango)
+//   +5000  corriente DC factible (Idc_max / Imp por MPPT suficiente para los strings)
+//   +3000  tipo coincide exactamente con sysType (vs. familia aceptable)
+//   +2000  DC/AC dentro del rango recomendado para el sysType
 //   +500   stock disponible esta semana (inv.stock?.qty > 0)
-//   -|DC/AC - 1.1|·100   penalización por alejarse del ratio ideal
-//   -0.1·|kW - kwp|      desempate por proximidad de potencia
-// Así garantizamos que el cotizador SIEMPRE seleccione un equipo cuya
-// configuración de strings sea eléctricamente posible, priorizando lo
-// disponible en inventario.
+//   -|DC/AC - ideal|·100   penalización por alejarse del ratio ideal del sysType
+//   -0.1·|kW - kwp|        desempate por proximidad de potencia
+//  Fallback: si no existe coincidencia exacta con sysType, acepta la familia
+//  alternativa (hybrid sustituye a on-grid u off-grid cuando no hay stock exacto).
+//  Para sistemas off-grid sólo se acepta hybrid si declara `offGridCapable: true`.
 export function selectCompatibleInverter(panel, kwp, sysType, inverters, temps = {}) {
   const coldTempC = temps.coldTempC ?? 10;
   const hotTempC  = temps.hotTempC  ?? 65;
-  const typed = inverters.filter(i => i.type === sysType);
-  if (!typed.length) return inverters[0];
-  const scored = typed.map(inv => {
+  const okTypes = acceptableInverterTypes(sysType);
+  const pool = inverters.filter(i => {
+    if (!okTypes.includes(i.type)) return false;
+    // Restricción off-grid: sólo aceptar hybrid si el modelo soporta modo aislado.
+    if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
+    return true;
+  });
+  if (!pool.length) {
+    // Último recurso — no existe nada del tipo correcto; devolver el inversor
+    // más cercano en potencia para evitar crash, la UI debe advertir.
+    const any = [...inverters].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp));
+    return any[0] || inverters[0];
+  }
+  const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
+  const scored = pool.map(inv => {
     const compat = inverterCompatibility(panel, inv, coldTempC, hotTempC);
     const dcAc = inv.kw ? kwp / inv.kw : 0;
-    const ratioGood = dcAc >= 0.9 && dcAc <= 1.25;
+    const ratioGood = dcAc >= range.min && dcAc <= range.max;
     const stock = inv.stock?.qty > 0;
+    const exactType = inv.type === sysType;
 
     // Check Idc_max feasibility: can this inverter handle all the strings
     // required for kwp without exceeding its DC current rating?
@@ -548,9 +584,10 @@ export function selectCompatibleInverter(panel, kwp, sysType, inverters, temps =
     let score = 0;
     if (compat.feasible) score += 10000;
     if (currentFeasible) score += 5000;
+    if (exactType) score += 3000;
     if (ratioGood) score += 2000;
     if (stock) score += 500;
-    score -= Math.abs(dcAc - 1.1) * 100;
+    score -= Math.abs(dcAc - range.ideal) * 100;
     score -= Math.abs(inv.kw - kwp) * 0.1;
     return { inv, score, compat, dcAc };
   });
@@ -560,18 +597,28 @@ export function selectCompatibleInverter(panel, kwp, sysType, inverters, temps =
 
 // Wrapper legado — usa selectCompatibleInverter cuando hay un panel,
 // cae al scoring por kW cuando no. Mantiene compatibilidad con llamadas
-// que sólo conocen kWp y tipo.
+// que sólo conocen kWp y tipo. Aplica la misma política de familias
+// aceptables (hybrid sustituye a on-grid/off-grid cuando falta stock exacto).
 export function autoInverter(kwp, sysType, inverters, panel) {
   if (panel) return selectCompatibleInverter(panel, kwp, sysType, inverters);
-  const typed = inverters.filter(i => i.type === sysType);
-  if (!typed.length) return inverters[0];
-  const targetMin = kwp * 0.9;
-  const targetMax = kwp * 1.25;
-  const inRange = typed.filter(i => i.kw >= targetMin && i.kw <= targetMax).sort((a, b) => a.kw - b.kw);
+  const okTypes = acceptableInverterTypes(sysType);
+  const pool = inverters.filter(i => {
+    if (!okTypes.includes(i.type)) return false;
+    if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
+    return true;
+  });
+  if (!pool.length) return inverters[0];
+  const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
+  const targetMin = kwp / range.max;
+  const targetMax = kwp / range.min;
+  // Prioriza tipo exacto > rango kW > cercanía en potencia.
+  const exact = pool.filter(i => i.type === sysType);
+  const primary = exact.length ? exact : pool;
+  const inRange = primary.filter(i => i.kw >= targetMin && i.kw <= targetMax).sort((a, b) => a.kw - b.kw);
   if (inRange.length) return inRange[0];
-  const above = typed.filter(i => i.kw >= targetMin).sort((a, b) => a.kw - b.kw);
+  const above = primary.filter(i => i.kw >= targetMin).sort((a, b) => a.kw - b.kw);
   if (above.length) return above[0];
-  return [...typed].sort((a, b) => b.kw - a.kw)[0];
+  return [...primary].sort((a, b) => b.kw - a.kw)[0];
 }
 
 // Valida que el layout de strings sea eléctricamente compatible con el inversor:
