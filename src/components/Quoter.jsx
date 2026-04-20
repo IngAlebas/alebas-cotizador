@@ -59,7 +59,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const areaMaxPanels = hasArea ? Math.floor(areaVal / 2.2) : 0;
   const areaMaxKwp = hasArea ? parseFloat((areaMaxPanels * panel.wp / 1000).toFixed(2)) : 0;
   const areaAllowsExcedentes = gridExport && hasArea && areaMaxKwp > consumptionKwp;
-  const targetKwp = (f.wantsExcedentes && areaAllowsExcedentes) ? areaMaxKwp : null;
+  // Cuando el área es la restricción activa (techo < 100% consumo), capamos al máximo
+  // que cabe físicamente — no tiene sentido cotizar más paneles de los que entran.
+  const areaLimitsSystem = hasArea && areaMaxKwp < consumptionKwp;
+  const targetKwp = (f.wantsExcedentes && areaAllowsExcedentes) ? areaMaxKwp
+                  : areaLimitsSystem ? areaMaxKwp
+                  : null;
 
   // Off-grid no puede tener excedentes; si el usuario cambia el tipo,
   // o reduce el área, desactivar el toggle automáticamente.
@@ -141,7 +146,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     const budgetUsd = trmData?.cop_per_usd ? parseFloat((budget.tot / trmData.cop_per_usd).toFixed(0)) : null;
 
-    setRes({ ...sys, inv: inv2, sizedFor: f.wantsExcedentes && areaAllowsExcedentes ? 'excedentes' : 'consumo', productionSource });
+    const sizedFor = (f.wantsExcedentes && areaAllowsExcedentes) ? 'excedentes'
+                   : areaLimitsSystem ? 'area'
+                   : 'consumo';
+    setRes({ ...sys, inv: inv2, sizedFor, productionSource });
     setBgt({ ...budget, sav: annualSav, roi, transport: transport.total, budgetUsd, trmDate: trmData?.date });
     setAgpe({ ...benefit, spotSource: spot, tariffCU: operator.tariff });
   };
@@ -466,8 +474,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 🌡 NASA POWER · T celda {nasaData.cellTempCold}°C/{nasaData.cellTempHot}°C
               </span>
             )}
-            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: res.sizedFor === 'excedentes' ? `${C.yellow}22` : `${C.teal}22`, color: res.sizedFor === 'excedentes' ? C.yellow : C.teal, border: `1px solid ${(res.sizedFor === 'excedentes' ? C.yellow : C.teal)}55` }}>
-              {res.sizedFor === 'excedentes' ? '⚡ Dimensionado con excedentes' : '⌂ Dimensionado por consumo'}
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
+              background: res.sizedFor === 'excedentes' ? `${C.yellow}22` : res.sizedFor === 'area' ? `${C.orange}22` : `${C.teal}22`,
+              color: res.sizedFor === 'excedentes' ? C.yellow : res.sizedFor === 'area' ? C.orange : C.teal,
+              border: `1px solid ${(res.sizedFor === 'excedentes' ? C.yellow : res.sizedFor === 'area' ? C.orange : C.teal)}55` }}>
+              {res.sizedFor === 'excedentes' ? '⚡ Dimensionado con excedentes'
+               : res.sizedFor === 'area' ? '⚠ Limitado por área disponible'
+               : '⌂ Dimensionado por consumo'}
             </span>
           </div>
         </div>
