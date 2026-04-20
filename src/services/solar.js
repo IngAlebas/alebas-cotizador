@@ -2,20 +2,17 @@
 // Expected n8n workflow at /webhook/solar-roof:
 //   Input:  { address?: string, lat?: number, lon?: number }
 //   Flow:   1) geocode address if coords missing (Google Geocoding)
-//           2) call Google Solar API buildingInsights:findClosest
-//           3) if Solar API returns 404/no data -> ask Claude to estimate
+//           2) buildingInsights:findClosest (area, panels, shade)
+//           3) dataLayers:get (imagery URLs, annualFlux, hourlyShade)
+//           4) if Solar API returns no data -> ask Claude to estimate
 //   Output: {
 //     lat, lon,
-//     areaM2,             // usable roof area for panels
-//     maxPanels?,         // integer (Solar API hint)
-//     tiltDeg?,           // suggested tilt
-//     azimuthDeg?,        // suggested azimuth (0=N, 90=E, 180=S, 270=W)
-//     sunshineHoursYear?, // Google Solar API yearly sunshine
-//     shadeIndex?,        // 0..1 — relative to unshaded peers (Google dataLayers)
-//     shadeSource?,       // 'google-datalayers' | 'heuristic'
-//     source,             // 'google' | 'claude' | 'mixed'
-//     confidence,         // 0..1
-//     notes?              // string
+//     areaM2, maxPanels?, tiltDeg?, azimuthDeg?, sunshineHoursYear?,
+//     shadeIndex?, shadeSource?,
+//     roofSegments?: [{ azimuthDegrees, pitchDegrees, areaMeters2, sunshineHoursPerYear }],
+//     imagery?: { dsmUrl, rgbUrl, maskUrl, annualFluxUrl, monthlyFluxUrl,
+//                 hourlyShadeUrls[], imageryDate, imageryQuality },
+//     source, confidence, notes?
 //   }
 
 import { n8nPost, n8nConfigured } from './n8n';
@@ -46,6 +43,8 @@ export async function lookupRoof({ address, lat, lon } = {}) {
     sunshineHoursYear: data.sunshineHoursYear != null ? Number(data.sunshineHoursYear) : null,
     shadeIndex: data.shadeIndex != null ? Number(data.shadeIndex) : null,
     shadeSource: data.shadeSource || null,
+    roofSegments: Array.isArray(data.roofSegments) ? data.roofSegments : [],
+    imagery: data.imagery || null,
     source: data.source || 'unknown',
     confidence: data.confidence != null ? Number(data.confidence) : null,
     notes: data.notes || '',
