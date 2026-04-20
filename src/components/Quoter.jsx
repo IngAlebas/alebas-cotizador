@@ -10,6 +10,8 @@ import { fetchPVWatts } from '../services/pvwatts';
 import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
+import { lookupRoof, solarConfigured } from '../services/solar';
+import { aiRecommend, aiConfigured } from '../services/aiAssistant';
 import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
@@ -18,6 +20,14 @@ const Q0 = {
   transportZone: 'N1', dept: 'Meta', address: '',
   availableArea: '', wantsExcedentes: false,
   name: '', company: '', phone: '', email: '',
+  // Dimensionamiento de almacenamiento
+  backupHours: 4,        // Horas de respaldo (Híbrido)
+  autonomyDays: 1,       // Días sin sol (Off-grid)
+  criticalPct: 50,       // % del consumo diario a respaldar (hybrid)
+  busVoltage: 48,        // Tensión del bus DC de baterías
+  battManual: false,     // true = usuario editó cantidad manualmente
+  // Ubicación / área (Google Solar API vía n8n)
+  lat: null, lon: null, roofLookupAt: null, roofLookupSource: null, roofLookupNotes: '',
 };
 
 const STEPS = ['Tipo', 'Consumo', 'Transporte', 'Contacto', 'Resultado'];
@@ -32,10 +42,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
-  const batt = batteries.find(b => b.id === f.battId) || batteries[0];
   const operator = operators[f.operatorId] || operators[0];
   const psh = operator.psh;
   const needsB = f.systemType !== 'on-grid';
+
+  // Baterías compatibles con el voltaje del bus DC seleccionado.
+  // Si ninguna coincide exactamente (p.ej. 51.2V LFP vs 48V nominal), caemos al catálogo completo.
+  const battsForBus = batteries.filter(b => Math.round(b.voltage) === Math.round(f.busVoltage));
+  const battPool = battsForBus.length ? battsForBus : batteries;
+  const batt = battPool.find(b => b.id === f.battId) || battPool[0] || batteries[0];
+
+  // kWh de respaldo requeridos por el usuario, según tipo de sistema.
+  // Fórmula estándar: E = (consumo_diario × critico × horas_backup/24) / (DoD × eta_round_trip)
+  // DoD 0.8 (LFP), eta 0.9 round-trip. Off-grid: horas = días × 24 y critico = 100%.
+  const DoD = 0.8, eta = 0.9;
+  const dailyKwh = f.monthlyKwh ? parseFloat(f.monthlyKwh) / 30 : 0;
+  const hoursBackup = f.systemType === 'off-grid'
+    ? (parseFloat(f.autonomyDays) || 0) * 24
+    : (parseFloat(f.backupHours) || 0);
+  const critPct = f.systemType === 'off-grid' ? 100 : (parseFloat(f.criticalPct) || 0);
+  const criticalDailyKwh = dailyKwh * (critPct / 100);
+  const backupKwh = criticalDailyKwh * (hoursBackup / 24);
+  const requiredBankKwh = backupKwh > 0 ? backupKwh / (DoD * eta) : 0;
+  const suggestedBattQty = (needsB && batt?.kwh > 0 && requiredBankKwh > 0)
+    ? Math.max(1, Math.ceil(requiredBankKwh / batt.kwh))
+    : 0;
+  // Cuando el usuario no ha editado manualmente la cantidad, seguimos la sugerencia.
+  useEffect(() => {
+    if (!needsB) return;
+    if (f.battManual) return;
+    if (suggestedBattQty > 0 && suggestedBattQty !== f.battQty) {
+      u('battQty', suggestedBattQty);
+    }
+  }, [needsB, suggestedBattQty, f.battManual]);
 
   const dest = DESTINOS_COURIER.find(d => d.dept === f.dept) || DESTINOS_COURIER[0];
 
@@ -46,6 +85,33 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [nasaData, setNasaData] = useState(null);
   const [pvwData, setPvwData] = useState(null);
   const [trm, setTrm] = useState(null);
+  // Lookup de techo (Google Solar + Claude fallback vía n8n)
+  const [roofQuery, setRoofQuery] = useState('');
+  const [roofLoading, setRoofLoading] = useState(false);
+  const [roofError, setRoofError] = useState(null);
+  // Recomendación IA post-cálculo
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiData, setAiData] = useState(null);
+  const [aiError, setAiError] = useState(null);
+
+  const onLookupRoof = async () => {
+    const q = (roofQuery || '').trim();
+    if (!q) { setRoofError('Ingresa una dirección o ciudad'); return; }
+    setRoofError(null); setRoofLoading(true);
+    try {
+      const r = await lookupRoof({ address: q });
+      if (r.areaM2 != null && !Number.isNaN(r.areaM2)) u('availableArea', String(Math.round(r.areaM2)));
+      if (r.lat != null) u('lat', r.lat);
+      if (r.lon != null) u('lon', r.lon);
+      u('roofLookupSource', r.source);
+      u('roofLookupNotes', r.notes || '');
+      u('roofLookupAt', new Date().toISOString());
+    } catch (e) {
+      setRoofError(e.message || 'Error consultando techo');
+    } finally {
+      setRoofLoading(false);
+    }
+  };
 
   // Sistemas off-grid están aislados de la red: no pueden entregar
   // excedentes. Los on-grid e híbridos sí (marco AGPE — CREG 174/2021).
@@ -255,17 +321,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           ))}
         </div>
         {needsB && (
-          <div>
-            <label style={ss.lbl}>Batería</label>
-            <select style={{ ...ss.inp, marginBottom: 11, cursor: 'pointer' }} value={f.battId || batteries[0]?.id} onChange={e => u('battId', e.target.value)}>
-              {batteries.map(b => <option key={b.id} value={b.id}>{b.brand} {b.model} — {b.kwh} kWh — {fmtCOP(b.price)}</option>)}
-            </select>
-            <label style={ss.lbl}>Número de baterías</label>
-            <div style={{ display: 'flex', gap: 7 }}>
-              {[1, 2, 3, 4, 6, 8].map(n => (
-                <button key={n} onClick={() => u('battQty', n)} style={{ width: 38, height: 38, borderRadius: 6, border: `2px solid ${f.battQty === n ? C.teal : C.border}`, background: f.battQty === n ? `${C.teal}22` : 'transparent', color: f.battQty === n ? C.teal : '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>{n}</button>
-              ))}
-            </div>
+          <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 8, padding: '10px 12px', fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+            El dimensionamiento del banco de baterías requiere conocer tu consumo. Lo configuramos en el siguiente paso con tu autonomía, tensión del bus y batería compatible.
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
@@ -303,7 +360,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div style={{ marginBottom: 8 }}>
           <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
           <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Si la conoces, validamos cuánto de tu consumo puede cubrir tu techo</div>
+          {solarConfigured() && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
+                placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
+                value={roofQuery}
+                onChange={e => setRoofQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onLookupRoof(); } }}
+              />
+              <button
+                type="button"
+                onClick={onLookupRoof}
+                disabled={roofLoading}
+                style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
+              >
+                {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
+              </button>
+            </div>
+          )}
+          {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
+          {f.roofLookupSource && (
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 5 }}>
+              Fuente: <span style={{ color: C.teal, fontWeight: 600 }}>
+                {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Claude IA (estimación)' : f.roofLookupSource}
+              </span>
+              {f.lat != null && f.lon != null && <> · {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
+              {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
+            </div>
+          )}
+          {!solarConfigured() && (
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Si la conoces, validamos cuánto de tu consumo puede cubrir tu techo</div>
+          )}
         </div>
         {f.monthlyKwh && (() => {
           const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78);
@@ -353,6 +442,105 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           );
         })()}
+        {needsB && f.monthlyKwh && (
+          <div style={{ marginTop: 14, border: `1px solid ${C.teal}44`, borderRadius: 8, padding: '12px 13px', background: `${C.teal}08` }}>
+            <div style={{ fontWeight: 700, color: C.teal, fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
+              🔋 Almacenamiento {f.systemType === 'off-grid' ? '(Off-grid)' : '(Híbrido)'}
+            </div>
+            {f.systemType === 'off-grid' ? (
+              <div style={{ marginBottom: 10 }}>
+                <label style={ss.lbl}>Autonomía — días sin sol que debe cubrir el banco</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[0.5, 1, 1.5, 2, 3].map(d => (
+                    <button key={d} type="button" onClick={() => u('autonomyDays', d)}
+                      style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: `2px solid ${f.autonomyDays === d ? C.teal : C.border}`, background: f.autonomyDays === d ? `${C.teal}22` : 'transparent', color: f.autonomyDays === d ? C.teal : '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                      {d < 1 ? `${d * 24}h` : `${d}d`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={ss.lbl}>Horas de respaldo al cortar la red</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[2, 4, 6, 8, 12].map(h => (
+                      <button key={h} type="button" onClick={() => u('backupHours', h)}
+                        style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: `2px solid ${f.backupHours === h ? C.teal : C.border}`, background: f.backupHours === h ? `${C.teal}22` : 'transparent', color: f.backupHours === h ? C.teal : '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                        {h}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={ss.lbl}>% del consumo a respaldar (cargas críticas)</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[25, 40, 50, 70, 100].map(p => (
+                      <button key={p} type="button" onClick={() => u('criticalPct', p)}
+                        style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: `2px solid ${f.criticalPct === p ? C.teal : C.border}`, background: f.criticalPct === p ? `${C.teal}22` : 'transparent', color: f.criticalPct === p ? C.teal : '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>
+                        {p}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            <div style={{ marginBottom: 10 }}>
+              <label style={ss.lbl}>Tensión del bus DC (según inversor)</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[24, 48].map(v => (
+                  <button key={v} type="button" onClick={() => { u('busVoltage', v); u('battId', ''); u('battManual', false); }}
+                    style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: `2px solid ${f.busVoltage === v ? C.teal : C.border}`, background: f.busVoltage === v ? `${C.teal}22` : 'transparent', color: f.busVoltage === v ? C.teal : '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                    {v}V
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>48V es el estándar para la mayoría de inversores híbridos/off-grid residenciales.</div>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={ss.lbl}>Batería (filtradas por tensión {f.busVoltage}V)</label>
+              <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.battId || batt?.id || ''} onChange={e => { u('battId', e.target.value); u('battManual', false); }}>
+                {battPool.map(b => <option key={b.id} value={b.id}>{b.brand} {b.model} — {b.kwh} kWh — {b.voltage}V — {fmtCOP(b.price)}</option>)}
+              </select>
+              {!battsForBus.length && (
+                <div style={{ fontSize: 10, color: C.orange, marginTop: 4 }}>⚠ No hay baterías en {f.busVoltage}V en el catálogo — mostrando todas.</div>
+              )}
+            </div>
+            <div style={{ background: `${C.dark}`, border: `1px solid ${C.border}`, borderRadius: 6, padding: '9px 11px', fontSize: 11, color: '#fff', marginBottom: 10 }}>
+              <div>Capacidad requerida: <strong style={{ color: C.teal }}>{requiredBankKwh.toFixed(2)} kWh</strong> <span style={{ color: C.muted }}>(DoD {Math.round(DoD * 100)}% · η {Math.round(eta * 100)}%)</span></div>
+              <div style={{ marginTop: 2, color: C.muted }}>
+                Cobertura: {criticalDailyKwh.toFixed(2)} kWh/día × {hoursBackup}h ÷ {Math.round(DoD * eta * 100)}%
+              </div>
+            </div>
+            <div>
+              <label style={ss.lbl}>
+                Número de baterías
+                {suggestedBattQty > 0 && <span style={{ color: C.muted, fontWeight: 400, fontSize: 10, marginLeft: 8 }}>sugerido: {suggestedBattQty}</span>}
+              </label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                {[1, 2, 3, 4, 6, 8, 10, 12].map(n => (
+                  <button key={n} type="button" onClick={() => { u('battQty', n); u('battManual', true); }}
+                    style={{ width: 38, height: 36, borderRadius: 6, border: `2px solid ${f.battQty === n ? C.teal : C.border}`, background: f.battQty === n ? `${C.teal}22` : 'transparent', color: f.battQty === n ? C.teal : '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+                    {n}
+                  </button>
+                ))}
+                {f.battManual && (
+                  <button type="button" onClick={() => u('battManual', false)} style={{ marginLeft: 6, background: 'none', border: `1px solid ${C.muted}`, color: C.muted, borderRadius: 5, padding: '5px 9px', cursor: 'pointer', fontSize: 10 }}>
+                    ↺ auto
+                  </button>
+                )}
+              </div>
+              {batt && f.battQty > 0 && (
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+                  Banco total: <strong style={{ color: C.teal }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</strong> · {f.battQty} × {batt.kwh} kWh
+                  {requiredBankKwh > 0 && (batt.kwh * f.battQty) < requiredBankKwh && (
+                    <span style={{ color: C.orange, marginLeft: 6 }}>⚠ bajo lo requerido</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
           <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
           <button style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }} onClick={() => { if (f.monthlyKwh) setStep(3); }}>Siguiente →</button>
@@ -594,6 +782,79 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           ))}
         </div>
+        )}
+
+        {showResumen && aiConfigured() && (
+          <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                <span style={{ color: C.yellow }}>✦</span> Asistente IA — Revisión técnica
+              </div>
+              <button
+                type="button"
+                disabled={aiLoading}
+                onClick={async () => {
+                  setAiError(null); setAiLoading(true);
+                  try {
+                    const out = await aiRecommend('review', {
+                      systemType: f.systemType,
+                      monthlyKwh: Number(f.monthlyKwh),
+                      operator: operator.name, psh,
+                      location: { dept: f.dept, lat: f.lat, lon: f.lon, address: f.address || roofQuery || '' },
+                      panel: { brand: panel.brand, model: panel.model, wp: panel.wp },
+                      inverter: res.inv ? { brand: res.inv.brand, model: res.inv.model, kw: res.inv.kw, type: res.inv.type } : null,
+                      battery: needsB ? { brand: batt.brand, model: batt.model, kwh: batt.kwh, voltage: batt.voltage, qty: f.battQty, totalKwh: +(batt.kwh * f.battQty).toFixed(2) } : null,
+                      storageReqKwh: +requiredBankKwh.toFixed(2),
+                      backup: f.systemType === 'off-grid' ? { autonomyDays: f.autonomyDays } : { hours: f.backupHours, criticalPct: f.criticalPct },
+                      result: { kwp: res.actKwp, numPanels: res.numPanels, monthlyProdKwh: res.mp, coverage: res.cov, annualProdKwh: res.ap, roofM2: res.roof, strings: res.ns, panelsPerString: res.ppss },
+                      budget: { total: bgt.tot, roi: bgt.roi },
+                      roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
+                    });
+                    setAiData(out);
+                  } catch (e) { setAiError(e.message || 'Error IA'); }
+                  finally { setAiLoading(false); }
+                }}
+                style={{ ...ss.btn, background: C.yellow, color: '#000', padding: '7px 13px', fontSize: 11, opacity: aiLoading ? 0.6 : 1 }}
+              >
+                {aiLoading ? '⏳ Analizando…' : aiData ? '↻ Volver a analizar' : '✦ Analizar con IA'}
+              </button>
+            </div>
+            {aiError && <div style={{ fontSize: 11, color: C.orange }}>⚠ {aiError}</div>}
+            {aiData && (
+              <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.55 }}>
+                {aiData.summary && <div style={{ marginBottom: 8 }}>{aiData.summary}</div>}
+                {aiData.findings?.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Hallazgos</div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {aiData.findings.map((x, i) => <li key={i} style={{ marginBottom: 3 }}>{x}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {aiData.warnings?.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, color: C.orange, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Alertas</div>
+                    <ul style={{ margin: 0, paddingLeft: 18, color: C.orange }}>
+                      {aiData.warnings.map((x, i) => <li key={i} style={{ marginBottom: 3 }}>{x}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {aiData.suggestions?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, color: C.yellow, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Sugerencias</div>
+                    <ul style={{ margin: 0, paddingLeft: 18, color: C.yellow }}>
+                      {aiData.suggestions.map((x, i) => <li key={i} style={{ marginBottom: 3 }}>{x}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            {!aiData && !aiError && !aiLoading && (
+              <div style={{ fontSize: 11, color: C.muted }}>
+                Claude revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
+              </div>
+            )}
+          </div>
         )}
 
         {showTecnico && (
