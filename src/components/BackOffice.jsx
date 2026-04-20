@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import logo from '../logo.png';
-import { C, fmt, fmtCOP } from '../constants';
+import { C, fmt, fmtCOP, OPERATORS } from '../constants';
+import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 
 function EqMgr({ title, items, upd, fields, ss }) {
   const [edit, setEdit] = useState(null);
@@ -177,7 +178,143 @@ function InstallersMgr({ installers, ss }) {
   );
 }
 
-export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, quotes, installers }) {
+function OperatorsMgr({ operators, upd, ss }) {
+  const [edit, setEdit] = useState(null);
+  const [form, setForm] = useState({});
+  const [adding, setAdding] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
+  const [spot, setSpot] = useState(null);
+
+  const startAdd = () => { setAdding(true); setEdit(null); setForm({ sic: '', name: '', fullName: '', region: '', tariff: 0, psh: 4.5 }); };
+  const startEdit = o => { setEdit(o.name); setAdding(false); setForm({ ...o }); };
+  const cancel = () => { setEdit(null); setAdding(false); setForm({}); };
+  const save = () => {
+    if (adding) upd([...operators, form]);
+    else upd(operators.map(o => o.name === edit ? { ...form } : o));
+    cancel();
+  };
+  const del = name => upd(operators.filter(o => o.name !== name));
+  const resetDefaults = () => upd(OPERATORS);
+
+  const syncXM = async () => {
+    setSyncStatus({ loading: true });
+    try {
+      const data = await fetchAgentsList();
+      const xmCodes = new Set(data.operators.map(o => o.sic).filter(Boolean));
+      const matched = operators.filter(o => o.sic && xmCodes.has(o.sic)).length;
+      setSyncStatus({ ok: true, total: data.operators.length, matched, syncedAt: data.syncedAt, cached: data.cached });
+    } catch (err) {
+      setSyncStatus({ error: err.message });
+    }
+  };
+
+  const syncSpot = async () => {
+    try {
+      const p = await fetchSpotPrice(30);
+      setSpot(p);
+    } catch (err) {
+      setSpot({ error: err.message });
+    }
+  };
+
+  const fields = [
+    { k: 'sic', l: 'SIC' },
+    { k: 'name', l: 'Nombre' },
+    { k: 'fullName', l: 'Razón social' },
+    { k: 'region', l: 'Departamento(s)' },
+    { k: 'tariff', l: 'Tarifa COP/kWh', t: 'number' },
+    { k: 'psh', l: 'PSH (h/día)', t: 'number' },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ ...ss.h2, margin: 0 }}>Operadores de Red ({operators.length})</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button style={ss.btn} onClick={syncXM} disabled={syncStatus?.loading}>{syncStatus?.loading ? 'Sincronizando…' : '⟳ Sync XM'}</button>
+          <button style={ss.btn} onClick={syncSpot}>$ Precio bolsa</button>
+          <button style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={resetDefaults}>Restaurar defaults</button>
+          <button style={ss.btn} onClick={startAdd}>+ Agregar</button>
+        </div>
+      </div>
+
+      {syncStatus?.ok && (
+        <div style={{ background: `${C.green}12`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
+          ✓ XM sync · {syncStatus.matched} / {operators.filter(o => o.sic).length} OR locales validados contra {syncStatus.total} agentes XM {syncStatus.cached ? '(caché)' : ''} · {new Date(syncStatus.syncedAt).toLocaleString('es-CO')}
+        </div>
+      )}
+      {syncStatus?.error && (
+        <div style={{ background: `${C.red}12`, border: `1px solid ${C.red}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.red }}>
+          ⚠ Sync falló: {syncStatus.error}. Probable bloqueo CORS — usar proxy backend en producción.
+        </div>
+      )}
+      {spot?.cop_per_kwh != null && (
+        <div style={{ background: `${C.yellow}12`, border: `1px solid ${C.yellow}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          $ Precio bolsa XM últimos {spot.periodDays}d: <strong>{spot.cop_per_kwh} COP/kWh</strong> · referencia para excedentes AGPE {spot.cached ? '(caché)' : ''}
+        </div>
+      )}
+      {spot?.error && (
+        <div style={{ background: `${C.red}12`, border: `1px solid ${C.red}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.red }}>
+          ⚠ Bolsa XM: {spot.error}
+        </div>
+      )}
+
+      <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}22`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+        Códigos SIC oficiales de XM (Sinergox). Tarifas son referencia residencial estrato 4 sin subsidio — actualizables manualmente o por scrapers de PDFs mensuales (próxima iteración). PSH usa estimación regional; PVGIS lo sobreescribe en el cálculo final.
+      </div>
+
+      {adding && (
+        <div style={ss.card}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+            {fields.map(fl => (
+              <div key={fl.k}><label style={ss.lbl}>{fl.l}</label>
+                <input type={fl.t || 'text'} style={ss.inp} value={form[fl.k] || ''} onChange={e => setForm(p => ({ ...p, [fl.k]: fl.t === 'number' ? parseFloat(e.target.value) || 0 : e.target.value }))} />
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+              <button style={ss.btn} onClick={save}>Guardar</button>
+              <button style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={cancel}>×</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={ss.card}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>{[...fields.map(fl => fl.l), ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {operators.map(op => edit === op.name
+              ? (<tr key={op.name}><td colSpan={fields.length + 1} style={{ padding: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                    {fields.map(fl => (
+                      <div key={fl.k}><label style={ss.lbl}>{fl.l}</label>
+                        <input type={fl.t || 'text'} style={ss.inp} value={form[fl.k] ?? ''} onChange={e => setForm(p => ({ ...p, [fl.k]: fl.t === 'number' ? parseFloat(e.target.value) || 0 : e.target.value }))} />
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+                      <button style={ss.btn} onClick={save}>Guardar</button>
+                      <button style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={cancel}>×</button>
+                    </div>
+                  </div>
+                </td></tr>)
+              : (<tr key={op.name}>
+                {fields.map(fl => <td key={fl.k} style={ss.td}>{op[fl.k] || '—'}</td>)}
+                <td style={ss.td}>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <button style={ss.btn} onClick={() => startEdit(op)}>Editar</button>
+                    <button style={ss.del} onClick={() => del(op.name)}>×</button>
+                  </div>
+                </td>
+              </tr>)
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers }) {
   const ss = {
     wrap: { display: 'flex', minHeight: 'calc(100vh - 54px)' },
     side: { width: 185, background: '#08151e', borderRight: `1px solid ${C.border}`, padding: '12px 8px', flexShrink: 0 },
@@ -193,7 +330,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '11px 13px' },
   };
 
-  const NAV = [['dashboard', '◈', 'Dashboard'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores']];
+  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores']];
 
   const tot = quotes.length, nv = quotes.filter(q => q.status === 'nuevo').length;
   const kp = quotes.reduce((s, q) => s + parseFloat(q.results?.actKwp || 0), 0).toFixed(1);
@@ -243,6 +380,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'inverters' && <EqMgr title="Inversores" items={inverters} upd={uI} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'kw', l: 'kW', t: 'number' }, { k: 'type', l: 'Tipo', t: 'select', opts: ['on-grid', 'hybrid', 'off-grid'] }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
         {tab === 'batteries' && <EqMgr title="Baterías" items={batteries} upd={uB} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'kwh', l: 'kWh', t: 'number' }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
+        {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
         {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} />}
         {tab === 'installers' && <InstallersMgr installers={installers} ss={ss} />}
       </main>

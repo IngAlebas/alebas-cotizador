@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   C, storage,
-  DEFAULT_PANELS, DEFAULT_INVERTERS, DEFAULT_BATTERIES, DEFAULT_PRICING
+  DEFAULT_PANELS, DEFAULT_INVERTERS, DEFAULT_BATTERIES, DEFAULT_PRICING, OPERATORS
 } from './constants';
 import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
@@ -15,6 +15,7 @@ export default function App() {
   const [inverters, setInverters] = useState(DEFAULT_INVERTERS);
   const [batteries, setBatteries] = useState(DEFAULT_BATTERIES);
   const [pricing, setPricing] = useState(DEFAULT_PRICING);
+  const [operators, setOperators] = useState(OPERATORS);
   const [quotes, setQuotes] = useState([]);
   const [installers, setInstallers] = useState([]);
 
@@ -26,6 +27,7 @@ export default function App() {
     g('al:inverters', setInverters);
     g('al:batteries', setBatteries);
     g('al:pricing', setPricing);
+    g('al:operators', setOperators);
     g('al:quotes', setQuotes);
     g('al:installers', setInstallers);
   }, []);
@@ -35,6 +37,7 @@ export default function App() {
   const uI = d => { setInverters(d); sv('al:inverters', d); };
   const uB = d => { setBatteries(d); sv('al:batteries', d); };
   const uPr = d => { setPricing(d); sv('al:pricing', d); };
+  const uOp = d => { setOperators(d); sv('al:operators', d); };
   const addQ = q => { const n = [q, ...quotes]; setQuotes(n); sv('al:quotes', n); };
   const addInst = i => { const n = [i, ...installers]; setInstallers(n); sv('al:installers', n); };
 
@@ -71,6 +74,7 @@ export default function App() {
         <Quoter
           panels={panels} inverters={inverters}
           batteries={batteries} pricing={pricing}
+          operators={operators}
           addQuote={addQ}
         />
       )}
@@ -82,6 +86,7 @@ export default function App() {
           inverters={inverters} uI={uI}
           batteries={batteries} uB={uB}
           pricing={pricing} uPr={uPr}
+          operators={operators} uOp={uOp}
           quotes={quotes} installers={installers}
         />
       )}
