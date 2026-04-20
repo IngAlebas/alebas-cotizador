@@ -121,22 +121,44 @@ export const DEFAULT_PANELS = [
 ];
 
 export const DEFAULT_INVERTERS = [
+  // ───── On-grid monofásico (residencial) ─────
   { id: 'i1', brand: 'Growatt', model: 'MIN 3000TL-XH',      kw: 3,  phase: 1, price: 1850000, type: 'on-grid',  kg: 14,
-    vocMax: 550, mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
+    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
   { id: 'i2', brand: 'Growatt', model: 'MIN 5000TL-XH',      kw: 5,  phase: 1, price: 2450000, type: 'on-grid',  kg: 19,
-    vocMax: 550, mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
-  { id: 'i3', brand: 'Growatt', model: 'MID 10KTL3-X2',      kw: 10, phase: 3, price: 4200000, type: 'on-grid',  kg: 32,
-    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 2, idcMax: 25, efficiency: 98.4, vac: 400 },
+    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
   { id: 'i4', brand: 'Solis',   model: 'S6-GR1P5K-M',        kw: 5,  phase: 1, price: 2550000, type: 'on-grid',  kg: 20,
-    vocMax: 600, mpptVmin: 90,  mpptVmax: 520, mpptCount: 2, idcMax: 16, efficiency: 97.5, vac: 240 },
-  { id: 'i5', brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000, type: 'hybrid',   kg: 22,
-    vocMax: 550, mpptVmin: 120, mpptVmax: 450, mpptCount: 2, idcMax: 13.5, efficiency: 97.5, vac: 240 },
-  { id: 'i6', brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000, type: 'hybrid',   kg: 36,
-    vocMax: 1000, mpptVmin: 200, mpptVmax: 800, mpptCount: 2, idcMax: 25, efficiency: 98.2, vac: 400 },
-  { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3,  phase: 1, price: 3200000, type: 'off-grid', kg: 17,
+    vocMax: 600,  mpptVmin: 90,  mpptVmax: 520, mpptCount: 2, idcMax: 16,   efficiency: 97.5, vac: 240 },
+  // ───── On-grid trifásico (comercial / industrial) ─────
+  { id: 'i3',  brand: 'Growatt', model: 'MID 10KTL3-X2',    kw: 10,  phase: 3, price: 4200000,  type: 'on-grid', kg: 32,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 2, idcMax: 25,   efficiency: 98.4, vac: 400 },
+  { id: 'i9',  brand: 'Growatt', model: 'MID 15KTL3-X2',    kw: 15,  phase: 3, price: 6200000,  type: 'on-grid', kg: 42,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400 },
+  { id: 'i10', brand: 'Growatt', model: 'MID 20KTL3-X2',    kw: 20,  phase: 3, price: 7900000,  type: 'on-grid', kg: 45,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400 },
+  { id: 'i11', brand: 'Growatt', model: 'MAX 30KTL3-LV',    kw: 30,  phase: 3, price: 10500000, type: 'on-grid', kg: 58,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 3, idcMax: 36,   efficiency: 98.6, vac: 400 },
+  { id: 'i12', brand: 'Growatt', model: 'MAX 50KTL3-LV',    kw: 50,  phase: 3, price: 15800000, type: 'on-grid', kg: 75,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 4, idcMax: 36,   efficiency: 98.6, vac: 400 },
+  { id: 'i13', brand: 'Growatt', model: 'MAX 100KTL3-X LV', kw: 100, phase: 3, price: 29500000, type: 'on-grid', kg: 84,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 1000, mpptCount: 10, idcMax: 30, efficiency: 98.7, vac: 400 },
+  { id: 'i14', brand: 'Sungrow', model: 'SG125CX-P2',       kw: 125, phase: 3, price: 36000000, type: 'on-grid', kg: 95,
+    vocMax: 1500, mpptVmin: 200, mpptVmax: 1300, mpptCount: 12, idcMax: 30, efficiency: 98.7, vac: 800 },
+  // ───── Híbrido (con baterías, on-grid + backup) ─────
+  { id: 'i5',  brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000,  type: 'hybrid', kg: 22,
+    vocMax: 550,  mpptVmin: 120, mpptVmax: 450, mpptCount: 2, idcMax: 13.5, efficiency: 97.5, vac: 240 },
+  { id: 'i6',  brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000,  type: 'hybrid', kg: 36,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 800, mpptCount: 2, idcMax: 25,   efficiency: 98.2, vac: 400 },
+  { id: 'i15', brand: 'Solis',   model: 'S6-EH3P15K-H',       kw: 15, phase: 3, price: 10800000, type: 'hybrid', kg: 45,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 3, idcMax: 30,   efficiency: 98.3, vac: 400 },
+  { id: 'i16', brand: 'Solis',   model: 'S6-EH3P30K-H',       kw: 30, phase: 3, price: 18500000, type: 'hybrid', kg: 62,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 3, idcMax: 32,   efficiency: 98.4, vac: 400 },
+  // ───── Off-grid (aislados, ZNI) ─────
+  { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3, phase: 1, price: 3200000, type: 'off-grid', kg: 17,
     vocMax: 500, mpptVmin: 120, mpptVmax: 430, mpptCount: 1, idcMax: 18, efficiency: 96.5, vac: 240 },
-  { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4,  phase: 1, price: 5500000, type: 'off-grid', kg: 28,
-    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 20, efficiency: 96, vac: 230 },
+  { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4, phase: 1, price: 5500000, type: 'off-grid', kg: 28,
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 20, efficiency: 96,   vac: 230 },
+  { id: 'i17',brand: 'Victron', model: 'Quattro 10000VA',     kw: 8, phase: 1, price: 14500000, type: 'off-grid', kg: 45,
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 30, efficiency: 96,   vac: 230 },
 ];
 
 export const DEFAULT_BATTERIES = [
@@ -167,11 +189,44 @@ export const DEPTS = [
 export const fmt = n => new Intl.NumberFormat('es-CO').format(Math.round(n));
 export const fmtCOP = n => `$${fmt(n)}`;
 
+// Calcula paneles por string (pps) y número de strings (ns) respetando los
+// límites eléctricos del inversor. Si el panel o inversor no tiene specs,
+// cae a la heurística antigua (700V nominal / 40V panel).
+//   - pps_max_volt: limitado por Vdc_max (Voc en frío × pps ≤ vocMax × 0.95)
+//   - pps_max_mppt: limitado por el techo MPPT (Vmp STC × pps ≤ mpptVmax × 0.97)
+//   - pps_min: piso MPPT en caliente (Vmp caliente × pps ≥ mpptVmin × 1.05)
+// El resultado prioriza usar strings largas para reducir corrientes en paralelo.
+export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC = 65) {
+  const hasSpecs = panel?.voc && inverter?.vocMax && inverter?.mpptVmax;
+  if (!hasSpecs) {
+    const pps = Math.floor(700 / 40);
+    const ns = Math.max(1, Math.ceil(numPanels / pps));
+    return { pps, ns, ppss: Math.ceil(numPanels / ns), specsSource: 'heuristic' };
+  }
+  const tcVoc = panel.tempCoeffVoc ?? -0.28;
+  const tcPmax = panel.tempCoeffPmax ?? -0.35;
+  const vocCold = panel.voc * (1 + (tcVoc / 100) * (coldTempC - 25));
+  const vmpHot = panel.vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
+  const ppsMaxVolt = Math.floor((inverter.vocMax * 0.95) / vocCold);
+  const ppsMaxMppt = Math.floor((inverter.mpptVmax * 0.97) / panel.vmp);
+  const ppsMin = inverter.mpptVmin ? Math.ceil((inverter.mpptVmin * 1.05) / vmpHot) : 1;
+  let pps = Math.max(1, Math.min(ppsMaxVolt, ppsMaxMppt));
+  if (pps < ppsMin) pps = ppsMin; // se marcará como error en validateLayout
+  pps = Math.min(pps, numPanels);
+  const ns = Math.max(1, Math.ceil(numPanels / pps));
+  const ppss = Math.ceil(numPanels / ns);
+  return { pps, ns, ppss, specsSource: 'inverter-limited' };
+}
+
 // opts.pvgisAnnualKwh: si se pasa, sobreescribe la producción heurística (PSH).
 // opts.targetKwp: si se pasa, dimensiona al kWp objetivo en lugar del consumo
 //   (útil cuando el cliente quiere sobredimensionar para generar excedentes).
 // Cap por MAX_KWP_AGPE para evitar dimensionar fuera del alcance regulatorio.
-export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh, opts = {}) {
+// inv: puede ser el objeto inversor completo (preferido, para usar specs
+// eléctricos reales al dimensionar strings) o un número (kW) legado.
+export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) {
+  const invObj = (typeof inv === 'object' && inv !== null) ? inv : { kw: inv };
+  const invKw = invObj.kw;
   const PR = 0.78;
   const daily = monthlyKwh / 30;
   const consumptionKwp = daily / (psh * PR);
@@ -196,9 +251,7 @@ export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh, opts = {}
   const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
-  const pps = Math.floor(700 / 40);
-  const ns = Math.ceil(numPanels / pps);
-  const ppss = Math.ceil(numPanels / ns);
+  const { pps, ns, ppss } = sizeStrings(panel, invObj, numPanels);
   const roof = parseFloat((numPanels * 2.2).toFixed(0));
   const tB = bUnit && bQty ? parseFloat((bQty * bUnit.kwh).toFixed(1)) : 0;
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
@@ -271,10 +324,24 @@ export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, 
   };
 }
 
+// Selecciona el inversor más cercano al kWp del sistema respetando la
+// relación DC/AC típica (0.9–1.25). Si ningún inversor individual cubre
+// el rango, cae al MÁS GRANDE disponible del tipo (no al más pequeño —
+// eso producía layouts imposibles en sistemas comerciales).
+// Nota: sistemas > inversor más grande requieren múltiples unidades;
+// esto se resuelve en v2 (arreglos en paralelo).
 export function autoInverter(kwp, sysType, inverters) {
   const typed = inverters.filter(i => i.type === sysType);
-  const fit = typed.filter(i => i.kw >= kwp * 0.75).sort((a, b) => a.kw - b.kw);
-  return fit[0] || typed[0] || inverters[0];
+  if (!typed.length) return inverters[0];
+  const targetMin = kwp * 0.9;   // inversor levemente sub-dimensionado permitido
+  const targetMax = kwp * 1.25;  // sobredim. razonable para reservar crecimiento
+  const inRange = typed.filter(i => i.kw >= targetMin && i.kw <= targetMax).sort((a, b) => a.kw - b.kw);
+  if (inRange.length) return inRange[0];
+  const above = typed.filter(i => i.kw >= targetMin).sort((a, b) => a.kw - b.kw);
+  if (above.length) return above[0];
+  // Ningún inversor alcanza — devolver el más grande del tipo para que al
+  // menos el cálculo de strings tenga Vdc_max/MPPT amplios.
+  return [...typed].sort((a, b) => b.kw - a.kw)[0];
 }
 
 // Valida que el layout de strings sea eléctricamente compatible con el inversor:

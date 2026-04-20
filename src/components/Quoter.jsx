@@ -69,7 +69,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sizingKwp = targetKwp || consumptionKwp;
     const inv = autoInverter(sizingKwp, f.systemType, inverters);
     // Primer cálculo con PSH para conocer kWp actual y poder llamar a PVGIS
-    const sysBase = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
+    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
 
     // En paralelo: PVGIS (irradiancia regional) y XM (precio bolsa nacional).
     // Si XM falla por CORS caemos a 0; calcAGPEBenefit lo maneja.
@@ -89,8 +89,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       setLoadingPVGIS(false);
     }
 
-    const sys = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh, targetKwp });
-    const inv2 = autoInverter(sys.actKwp, f.systemType, inverters);
+    // Recalcular con PVGIS; usa el inversor ya elegido para que el dimensionamiento
+    // de strings sea consistente con el que se mostrará y valide.
+    const inv2 = autoInverter(sysBase.actKwp, f.systemType, inverters);
+    const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh, targetKwp });
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp, { gridExport });
