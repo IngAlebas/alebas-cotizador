@@ -328,7 +328,10 @@ function OperatorsMgr({ operators, upd, ss }) {
       )}
       {syncStatus?.error && (
         <div style={{ background: `${C.red}12`, border: `1px solid ${C.red}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.red }}>
-          ⚠ Sync falló: {syncStatus.error}. Probable bloqueo CORS — usar proxy backend en producción.
+          ⚠ Sync XM falló: {syncStatus.error}.{' '}
+          {window.location.hostname === 'localhost'
+            ? 'En desarrollo local el proxy /api/xm no está disponible — usa los datos estáticos de la tabla o despliega en Vercel.'
+            : 'Reintenta en unos minutos o actualiza manualmente.'}
         </div>
       )}
       {spot?.cop_per_kwh != null && (

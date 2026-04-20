@@ -22,12 +22,26 @@ export default function App() {
   const [suppliers, setSuppliers] = useState([]);
 
   useEffect(() => {
+    // Union-merge equipment lists: keep saved items (custom prices/specs) AND
+    // inject any new default items added since the user's last visit.
+    const gMerge = (k, defaults, setter) => {
+      try {
+        const r = storage.get(k);
+        if (r?.value) {
+          const saved = JSON.parse(r.value);
+          const ids = new Set(saved.map(x => x.id));
+          const merged = [...saved, ...defaults.filter(d => !ids.has(d.id))];
+          setter(merged);
+          return;
+        }
+      } catch {}
+    };
     const g = (k, s) => {
       try { const r = storage.get(k); if (r?.value) s(JSON.parse(r.value)); } catch {}
     };
-    g('al:panels', setPanels);
-    g('al:inverters', setInverters);
-    g('al:batteries', setBatteries);
+    gMerge('al:panels', DEFAULT_PANELS, setPanels);
+    gMerge('al:inverters', DEFAULT_INVERTERS, setInverters);
+    gMerge('al:batteries', DEFAULT_BATTERIES, setBatteries);
     g('al:pricing', setPricing);
     g('al:operators', setOperators);
     g('al:quotes', setQuotes);

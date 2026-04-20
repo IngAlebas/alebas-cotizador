@@ -256,7 +256,7 @@ export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC
   if (!hasSpecs) {
     const pps = Math.floor(700 / 40);
     const ns = Math.max(1, Math.ceil(numPanels / pps));
-    return { pps, ns, ppss: Math.ceil(numPanels / ns), specsSource: 'heuristic', feasible: true };
+    return { pps, ns, ppss: Math.ceil(numPanels / ns), specsSource: 'heuristic', feasible: true, actualPanels: numPanels, currentLimited: false };
   }
   const tcVoc = panel.tempCoeffVoc ?? -0.28;
   const tcPmax = panel.tempCoeffPmax ?? -0.35;
@@ -267,15 +267,27 @@ export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC
   const ppsHardMax = Math.max(1, Math.min(ppsMaxVolt, ppsMaxMppt));
   const ppsMin = inverter.mpptVmin ? Math.ceil((inverter.mpptVmin * 1.05) / vmpHot) : 1;
   const feasible = ppsMin <= ppsHardMax;
-  // NUNCA subimos pps por encima de ppsHardMax — eso violaba Vdc_max.
-  // Si ppsMin > ppsHardMax, el inversor es incompatible con este panel y
-  // feasible=false; se usa ppsHardMax como best effort y selectCompatibleInverter
-  // debería elegir otro equipo.
-  let pps = feasible ? ppsHardMax : ppsHardMax;
+  let pps = ppsHardMax; // Never exceed ppsHardMax → Vdc_max safe
   pps = Math.min(pps, numPanels);
-  const ns = Math.max(1, Math.ceil(numPanels / pps));
-  const ppss = Math.ceil(numPanels / ns);
-  return { pps, ns, ppss, specsSource: 'inverter-limited', feasible, ppsMin, ppsHardMax };
+  let ns = Math.max(1, Math.ceil(numPanels / pps));
+
+  // Cap ns by Idc_max: max parallel strings per MPPT = floor(idcMax / imp).
+  // If the resulting ns is smaller, the system is current-limited and
+  // calcSystem will reduce actKwp to the panels that can actually be wired.
+  let currentLimited = false;
+  if (inverter.idcMax && panel.imp) {
+    const mpptCount = Math.max(1, inverter.mpptCount || 1);
+    const maxStrPerMppt = Math.max(1, Math.floor(inverter.idcMax / panel.imp));
+    const maxNsCurrent = maxStrPerMppt * mpptCount;
+    if (ns > maxNsCurrent) {
+      ns = maxNsCurrent;
+      currentLimited = true;
+    }
+  }
+
+  const actualPanels = Math.min(ns * pps, numPanels);
+  const ppss = Math.ceil(actualPanels / ns); // clean pps after capping
+  return { pps, ns, ppss, specsSource: 'inverter-limited', feasible, ppsMin, ppsHardMax, actualPanels, currentLimited };
 }
 
 // opts.pvgisAnnualKwh: si se pasa, sobreescribe la producción heurística (PSH).
@@ -293,7 +305,11 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;
   const kwpN = Math.min(rawTarget, MAX_KWP_AGPE);
   const cappedByRegulation = rawTarget > MAX_KWP_AGPE;
-  const numPanels = Math.ceil(kwpN * 1000 / panel.wp);
+  const numPanelsIdeal = Math.ceil(kwpN * 1000 / panel.wp);
+  // sizeStrings may cap ns when Idc_max would be exceeded; actualPanels reflects
+  // the true number that can be wired. We use it for all energy/financial calcs.
+  const { pps, ns, ppss, actualPanels, currentLimited } = sizeStrings(panel, invObj, numPanelsIdeal);
+  const numPanels = currentLimited ? actualPanels : numPanelsIdeal;
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
 
   let dp, mp, ap;
@@ -311,7 +327,6 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
-  const { pps, ns, ppss } = sizeStrings(panel, invObj, numPanels);
   const roof = parseFloat((numPanels * 2.2).toFixed(0));
   const tB = bUnit && bQty ? parseFloat((bQty * bUnit.kwh).toFixed(1)) : 0;
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
@@ -321,7 +336,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
   const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
-  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation };
+  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited };
 }
 
 export function calcTransport(zonas, zona, kgTotal, valorDec) {
@@ -417,8 +432,22 @@ export function selectCompatibleInverter(panel, kwp, sysType, inverters) {
     const dcAc = inv.kw ? kwp / inv.kw : 0;
     const ratioGood = dcAc >= 0.9 && dcAc <= 1.25;
     const stock = inv.stock?.qty > 0;
+
+    // Check Idc_max feasibility: can this inverter handle all the strings
+    // required for kwp without exceeding its DC current rating?
+    let currentFeasible = true;
+    if (panel.wp > 0 && panel.imp && inv.idcMax && inv.mpptCount) {
+      const numP = Math.ceil(kwp * 1000 / panel.wp);
+      const ppsForCheck = Math.max(1, compat.ppsHardMax || Math.floor(700 / 40));
+      const nsNeeded = Math.ceil(numP / ppsForCheck);
+      const maxStrPerMppt = Math.max(1, Math.floor(inv.idcMax / panel.imp));
+      const maxNsCurrent = maxStrPerMppt * Math.max(1, inv.mpptCount);
+      currentFeasible = nsNeeded <= maxNsCurrent;
+    }
+
     let score = 0;
     if (compat.feasible) score += 10000;
+    if (currentFeasible) score += 5000;
     if (ratioGood) score += 2000;
     if (stock) score += 500;
     score -= Math.abs(dcAc - 1.1) * 100;
