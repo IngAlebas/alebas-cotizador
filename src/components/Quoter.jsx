@@ -1130,7 +1130,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   );
 
   // STEP 5: Results — pantalla de carga dinámica con orquestación de herramientas
-  if (step === 5 && (!res || !bgt)) return <LoadingSystem C={C} ss={ss} logo={logo} f={f} operator={operator} needsB={needsB} />;
+  if (step === 5 && (!res || !bgt)) return <LoadingSystem C={C} ss={ss} logo={logo} f={f} operator={operator} needsB={needsB} dest={dest} />;
 
   if (step === 5 && res && bgt) {
     if (done) return (
@@ -1845,7 +1845,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
 // Pantalla de carga animada — muestra la orquestación de herramientas en vivo.
 // No bloquea: es solo visual. El cálculo real corre en paralelo en calculate().
-function LoadingSystem({ C, ss, logo, f, operator, needsB }) {
+function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
   const tools = useMemo(() => [
     { icon: '☀', name: 'PVGIS', desc: 'Irradiancia satelital JRC (UE)' },
     { icon: '📊', name: 'NREL PVWatts', desc: 'Producción anual con pérdidas reales' },
