@@ -1067,6 +1067,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             style={{ ...ss.btn, opacity: loadingPVGIS ? 0.4 : 1 }}
             disabled={loadingPVGIS}
             onClick={async () => {
+              setResultTab('resumen');
               setStep(5);
               await calculate();
             }}
@@ -1147,7 +1148,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ fontSize: 12, color: C.teal, marginTop: 2, fontWeight: 600 }}>Inversión aprox: {fmtCOP(bgt.tot)}</div>
           </div>
           <br />
-          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); setPvgisError(null); setXmError(null); setAgpe(null); }}>Nueva cotización</button>
+          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); setPvgisError(null); setXmError(null); setAgpe(null); setResultTab('resumen'); }}>Nueva cotización</button>
         </div>
       </div>
     );
@@ -1157,13 +1158,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       ['tecnico', '⚙', 'Técnico'],
       ['presupuesto', '◈', 'Presupuesto'],
       ['normativo', '§', 'Normativo'],
+      ['observaciones', '✎', 'Observaciones'],
     ];
-    const TAB_ORDER = ['resumen', 'tecnico', 'presupuesto', 'normativo'];
-    const TAB_LABEL = { resumen: 'Resumen', tecnico: 'Técnico', presupuesto: 'Presupuesto', normativo: 'Marco normativo' };
+    const TAB_ORDER = ['resumen', 'tecnico', 'presupuesto', 'normativo', 'observaciones'];
+    const TAB_LABEL = { resumen: 'Resumen', tecnico: 'Técnico', presupuesto: 'Presupuesto', normativo: 'Marco normativo', observaciones: 'Observaciones' };
     const showResumen = resultTab === 'resumen';
     const showTecnico = resultTab === 'tecnico';
     const showPresupuesto = resultTab === 'presupuesto';
     const showNormativo = resultTab === 'normativo';
+    const showObservaciones = resultTab === 'observaciones';
     return (
       <div style={ss.wrap}>
         <div style={{ ...ss.card, textAlign: 'center', padding: '22px', borderColor: C.teal }}>
@@ -1736,18 +1739,38 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <span style={{ color: '#fff', fontWeight: i === arr.length - 1 ? 700 : 400 }}>{fmtCOP(v)}</span>
               </div>
             ))}
-            {Array.isArray(bgt.transportQuotes) && bgt.transportQuotes.length > 1 && (
-              <details style={{ marginTop: 4, marginBottom: 4, fontSize: 9 }}>
-                <summary style={{ color: C.muted, cursor: 'pointer' }}>Comparar {bgt.transportQuotes.length} transportadoras ▾</summary>
-                <div style={{ marginTop: 6, paddingLeft: 6 }}>
-                  {bgt.transportQuotes.map((q, idx) => (
-                    <div key={q.carrierId} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', color: idx === 0 ? C.teal : C.muted }}>
-                      <span>{idx === 0 ? '✓ ' : '  '}{q.label}</span>
-                      <span>{fmtCOP(q.total)}</span>
-                    </div>
-                  ))}
+            {Array.isArray(bgt.transportQuotes) && bgt.transportQuotes.length > 0 && (
+              <div style={{ background: `${C.teal}08`, border: `1px solid ${C.teal}22`, borderRadius: 6, padding: '8px 10px', marginTop: 4, marginBottom: 4, fontSize: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 4 }}>
+                  <span style={{ color: C.teal, fontWeight: 700 }}>✓ {bgt.transportCarrier}</span>
+                  <span style={{ color: C.muted, fontSize: 9 }}>
+                    Zona {ZONA_LABEL[bgt.transportZone] || bgt.transportZone} · {fmt(res.kgTotal)} kg · {dest.tiempo}
+                  </span>
                 </div>
-              </details>
+                {bgt.transportQuotes[0]?.note && (
+                  <div style={{ color: C.muted, fontSize: 9, marginBottom: 4, fontStyle: 'italic' }}>
+                    {bgt.transportQuotes[0].note}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.muted }}>
+                  <span>Flete: {fmtCOP(bgt.transportQuotes[0]?.flete || 0)}</span>
+                  <span>Sobreflete 2%: {fmtCOP(bgt.transportQuotes[0]?.sf || 0)}</span>
+                </div>
+                {bgt.transportQuotes.length > 1 && (
+                  <details style={{ marginTop: 6, fontSize: 9 }}>
+                    <summary style={{ color: C.muted, cursor: 'pointer' }}>Comparar {bgt.transportQuotes.length} transportadoras ▾</summary>
+                    <div style={{ marginTop: 6, paddingLeft: 6 }}>
+                      {bgt.transportQuotes.map((q, idx) => (
+                        <div key={q.carrierId} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: idx === 0 ? C.teal : C.muted, borderBottom: idx < bgt.transportQuotes.length - 1 ? `1px solid ${C.border}22` : 'none' }}>
+                          <span style={{ flex: 1 }}>{idx === 0 ? '✓ ' : '  '}{q.label}</span>
+                          <span style={{ marginRight: 8, fontSize: 8, color: C.muted, fontStyle: 'italic' }}>{q.note}</span>
+                          <span style={{ minWidth: 80, textAlign: 'right' }}>{fmtCOP(q.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
             )}
             <div style={{ borderTop: `1px solid ${C.teal}33`, paddingTop: 9, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
               <div>
@@ -1814,6 +1837,109 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           );
         })()}
 
+        {showObservaciones && (() => {
+          const area = parseFloat(f.availableArea) || 0;
+          const idealPanels = Math.ceil(consumptionKwp * 1000 / panel.wp);
+          const idealArea = Math.ceil(idealPanels * m2PerPanel);
+          const areaLimited = res.sizedFor === 'area';
+          const obs = [];
+
+          if (res.cappedByRegulation) {
+            obs.push({ type: 'warn', title: `Sistema acotado a ${MAX_KWP_AGPE} kWp por normativa`, text: `Tu consumo requeriría más de ${MAX_KWP_AGPE} kWp pero el alcance AGPE Mayor (CREG 174/2021) limita el cotizador. Para sistemas mayores se requiere ingeniería distribuida (GD) — contacto con ALEBAS para propuesta separada.` });
+          }
+          if (areaLimited) {
+            obs.push({ type: 'warn', title: `Cobertura parcial (${res.cov}%) por área disponible`, text: `El techo declarado (${area} m²) no alcanza para el 100% de tu consumo. Se requerirían ~${idealArea} m² para cubrir ${f.monthlyKwh} kWh/mes. Alternativas: ampliar área, usar paneles de mayor eficiencia o complementar con un segundo sistema.` });
+          }
+          if (f.systemType === 'off-grid' && res.mp > (parseFloat(f.monthlyKwh) || 0) * 1.1) {
+            obs.push({ type: 'info', title: 'Excedente off-grid no monetizable', text: 'El sistema genera más que el consumo. Al no estar conectado al SIN, el excedente se desperdicia (dump load). Considera cargas diferibles: bombeo, termotanque, climatización o ampliar banco.' });
+          }
+          if (res.inv) {
+            const expected = phasesForAcometida(f.acometida);
+            if (!expected.includes(res.inv.phase)) {
+              obs.push({ type: 'warn', title: 'Fase de inversor distinta a acometida', text: `Acometida ${ACOMETIDA_INFO[f.acometida].label} no coincide con inversor ${res.inv.brand} ${res.inv.model} (${res.inv.phase === 3 ? 'trifásico' : 'mono/bifásico'}). Requiere validación con operador de red o cambio de equipo.` });
+            }
+          }
+          if (needsB && bankOrphan > 0) {
+            obs.push({ type: 'warn', title: `${bankOrphan} batería${bankOrphan > 1 ? 's' : ''} sobrante${bankOrphan > 1 ? 's' : ''} en el banco`, text: `Con ${f.battQty} baterías y configuración ${bankSeries}S×${bankParallel}P quedan ${bankOrphan} unidades sin usar. Ajusta la cantidad para múltiplos de ${bankSeries} o replantea la tensión del bus DC.` });
+          }
+          if (!dest?.lat || !dest?.lon) {
+            obs.push({ type: 'info', title: 'Sin coordenadas precisas del destino', text: 'La producción se estima con PSH regional. Para mayor precisión, consulta las APIs PVGIS/PVWatts/NASA — se activan con lat/lon del predio.' });
+          }
+          if (xmError) {
+            obs.push({ type: 'info', title: 'Bolsa XM no disponible temporalmente', text: `El cálculo de excedentes usa tarifa CU del operador como fallback. ${xmError}.` });
+          }
+          if (pvgisError) {
+            obs.push({ type: 'info', title: 'PVGIS no respondió', text: `Se usa PVWatts/PSH. ${pvgisError}.` });
+          }
+          if (bgt.budgetUsd) {
+            obs.push({ type: 'info', title: 'Equivalencia USD referencial', text: `TRM ${bgt.trmDate} · ${fmt(trm?.cop_per_usd)} COP/USD. El valor en USD es informativo; la factura final se emite en COP.` });
+          }
+
+          return (
+            <div style={{ ...ss.card, borderColor: `${C.yellow}55`, background: `${C.yellow}05` }}>
+              <div style={{ textAlign: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${C.yellow}33` }}>
+                <div style={{ fontSize: 10, color: C.yellow, letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Notas de la cotización</div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>✎ Observaciones</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>Puntos relevantes para revisar antes de la propuesta detallada</div>
+              </div>
+
+              <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: C.teal, fontWeight: 700, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>📦 Transporte seleccionado</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
+                  <div><span style={{ color: C.muted }}>Transportadora:</span> <strong style={{ color: '#fff' }}>{bgt.transportCarrier || '-'}</strong></div>
+                  <div><span style={{ color: C.muted }}>Zona tarifa:</span> <strong style={{ color: '#fff' }}>{ZONA_LABEL[bgt.transportZone] || bgt.transportZone}</strong></div>
+                  <div><span style={{ color: C.muted }}>Destino:</span> <strong style={{ color: '#fff' }}>{dest.city}, {dest.dept}</strong></div>
+                  <div><span style={{ color: C.muted }}>Tiempo entrega:</span> <strong style={{ color: '#fff' }}>{dest.tiempo}</strong></div>
+                  <div><span style={{ color: C.muted }}>Distancia:</span> <strong style={{ color: '#fff' }}>~{dest.km} km desde Bogotá</strong></div>
+                  <div><span style={{ color: C.muted }}>Peso sistema:</span> <strong style={{ color: '#fff' }}>{fmt(res.kgTotal)} kg</strong></div>
+                  <div><span style={{ color: C.muted }}>Flete:</span> <strong style={{ color: '#fff' }}>{fmtCOP(bgt.transportQuotes?.[0]?.flete || 0)}</strong></div>
+                  <div><span style={{ color: C.muted }}>Sobreflete 2%:</span> <strong style={{ color: '#fff' }}>{fmtCOP(bgt.transportQuotes?.[0]?.sf || 0)}</strong></div>
+                </div>
+                {bgt.transportQuotes?.[0]?.note && (
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 8, fontStyle: 'italic' }}>ℹ {bgt.transportQuotes[0].note}</div>
+                )}
+                {Array.isArray(bgt.transportQuotes) && bgt.transportQuotes.length > 1 && (
+                  <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.border}55` }}>
+                    <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, letterSpacing: 0.4, textTransform: 'uppercase' }}>Cotizaciones evaluadas ({bgt.transportQuotes.length})</div>
+                    {bgt.transportQuotes.map((q, idx) => (
+                      <div key={q.carrierId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 10, color: idx === 0 ? C.teal : C.muted, borderBottom: idx < bgt.transportQuotes.length - 1 ? `1px solid ${C.border}22` : 'none' }}>
+                        <span style={{ flex: 1, fontWeight: idx === 0 ? 700 : 400 }}>{idx === 0 ? '✓ ' : '  '}{q.label}</span>
+                        <span style={{ flex: 2, fontSize: 9, fontStyle: 'italic', marginLeft: 6 }}>{q.note}</span>
+                        <span style={{ minWidth: 90, textAlign: 'right', fontWeight: idx === 0 ? 700 : 400 }}>{fmtCOP(q.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {obs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  {obs.map((o, i) => {
+                    const col = o.type === 'warn' ? C.orange : C.teal;
+                    const icon = o.type === 'warn' ? '⚠' : 'ℹ';
+                    return (
+                      <div key={i} style={{ background: `${col}10`, border: `1px solid ${col}44`, borderRadius: 7, padding: '11px 13px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: col, marginBottom: 4, display: 'flex', gap: 6 }}>
+                          <span>{icon}</span><span style={{ flex: 1 }}>{o.title}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.55 }}>{o.text}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ background: `${C.green}10`, border: `1px solid ${C.green}44`, borderRadius: 7, padding: '11px 13px', fontSize: 12, color: C.green, textAlign: 'center' }}>
+                  ✓ Sin observaciones críticas — el dimensionamiento se ajusta a la normativa y al área disponible.
+                </div>
+              )}
+
+              <div style={{ marginTop: 14, fontSize: 11, color: C.muted, lineHeight: 1.6, fontStyle: 'italic', paddingTop: 10, borderTop: `1px solid ${C.border}33` }}>
+                Los cálculos usan datos públicos (PVGIS, NASA POWER, XM, Banrep) y precios mayoristas referenciales. La propuesta final requiere visita técnica y validación RETIE.
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Navegación entre tabs + CTA final */}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', padding: '8px 0 14px' }}>
           {resultTab !== TAB_ORDER[0] && (
@@ -1831,7 +1957,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </button>
           )}
         </div>
-        {showNormativo && (
+        {(showNormativo || showObservaciones) && (
           <div style={{ textAlign: 'center', padding: '0 0 20px' }}>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero SolarHub · ALEBAS te contacta en menos de 24 h</div>
             <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
