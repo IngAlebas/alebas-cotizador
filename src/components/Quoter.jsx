@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
-  calcSystem, calcTransport, calcBudget, autoInverter, calcAGPEBenefit, MAX_KWP_AGPE
+  calcSystem, calcTransport, calcBudget, autoInverter, calcAGPEBenefit, MAX_KWP_AGPE,
+  validateLayout
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchSpotPrice } from '../services/xm';
@@ -518,6 +519,55 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ))}
           </div>
         </div>
+
+        {(() => {
+          const v = validateLayout(panel, res.inv, res.ppss, res.ns);
+          const hasSpecs = panel?.voc && res.inv?.vocMax;
+          if (!hasSpecs) {
+            return (
+              <div style={ss.card}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6 }}>⚙ Validación de layout (pendiente)</div>
+                <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+                  Faltan specs eléctricos (Voc, Vmp, Idc_max, rango MPPT) del panel o inversor seleccionado. Ve al BackOffice → Paneles / Inversores → <strong style={{ color: C.yellow }}>🔍 Importar desde CEC</strong> para enriquecer el catálogo con datos oficiales NREL/CEC.
+                </div>
+              </div>
+            );
+          }
+          const statusBg = v.ok && v.warnings.length === 0 ? `${C.green}12` : v.ok ? `${C.yellow}10` : `${C.red}12`;
+          const statusBorder = v.ok && v.warnings.length === 0 ? `${C.green}44` : v.ok ? `${C.yellow}44` : `${C.red}44`;
+          const statusColor = v.ok && v.warnings.length === 0 ? C.green : v.ok ? C.yellow : C.red;
+          const statusLabel = v.ok && v.warnings.length === 0 ? '✓ Layout compatible' : v.ok ? '⚠ Advertencias' : '✗ Layout inválido';
+          return (
+            <div style={{ ...ss.card, background: statusBg, border: `1px solid ${statusBorder}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>⚙ Validación eléctrica del layout</div>
+                <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}55`, fontWeight: 700 }}>{statusLabel}</span>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
+                Voc en frío @10°C · Vmp en caliente @65°C · corriente por MPPT. Basado en {panel.source === 'CEC' ? 'datos CEC/NREL' : 'datasheet del fabricante'}.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: v.errors.length || v.warnings.length ? 10 : 0 }}>
+                {[
+                  ['Voc frío / Vdc_max', `${v.metrics.stringVocCold} / ${v.metrics.vocMax} V`],
+                  ['Vmp STC', `${v.metrics.stringVmpStc} V`],
+                  ['Vmp caliente / min', `${v.metrics.stringVmpHot} / ${v.metrics.mpptMin} V`],
+                  ['I/MPPT', `${v.metrics.currentPerMppt} / ${v.metrics.idcMax} A`],
+                ].map(([l, val]) => (
+                  <div key={l} style={{ background: C.dark, borderRadius: 5, padding: '7px 8px', textAlign: 'center', border: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
+                    <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginTop: 2 }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+              {v.errors.map((e, i) => (
+                <div key={`e${i}`} style={{ fontSize: 10, color: C.red, padding: '5px 0', display: 'flex', gap: 6 }}><span>✗</span><span style={{ flex: 1 }}>{e}</span></div>
+              ))}
+              {v.warnings.map((w, i) => (
+                <div key={`w${i}`} style={{ fontSize: 10, color: C.yellow, padding: '5px 0', display: 'flex', gap: 6 }}><span>⚠</span><span style={{ flex: 1 }}>{w}</span></div>
+              ))}
+            </div>
+          );
+        })()}
 
         {agpe && (
           <div style={ss.card}>

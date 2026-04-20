@@ -104,28 +104,45 @@ export const SERVI_ZONAS = {
 export const SOBREFLETE = 0.02;
 
 // ==================== EQUIPMENT DEFAULTS ====================
+// Schema extendido con specs eléctricos (Voc, Vmp, Isc, Imp, coef. temp.)
+// y de inversores (vocMax, mppt range, idcMax, mpptCount). Estos campos
+// se pueden enriquecer desde la base CEC / NREL SAM vía BackOffice.
+// Los defaults son valores típicos de datasheet — importar desde CEC
+// garantiza precisión oficial para validar layouts y construir unifilares.
 export const DEFAULT_PANELS = [
-  { id: 'p1', brand: 'JA Solar',       model: 'JAM72S20-545MR',  wp: 545, price: 290000, kg: 24.9 },
-  { id: 'p2', brand: 'Risen Energy',   model: 'RSM144-7-550M',   wp: 550, price: 285000, kg: 25.5 },
-  { id: 'p3', brand: 'Canadian Solar', model: 'CS6W-550MS',      wp: 550, price: 280000, kg: 25.0 },
-  { id: 'p4', brand: 'Trina Solar',    model: 'TSM-550DE09',     wp: 550, price: 295000, kg: 25.5 },
+  { id: 'p1', brand: 'JA Solar',       model: 'JAM72S20-545MR',  wp: 545, price: 290000, kg: 24.9,
+    voc: 49.75, vmp: 41.8, isc: 13.85, imp: 13.04, tempCoeffPmax: -0.35, tempCoeffVoc: -0.275, cellCount: 144 },
+  { id: 'p2', brand: 'Risen Energy',   model: 'RSM144-7-550M',   wp: 550, price: 285000, kg: 25.5,
+    voc: 49.8, vmp: 41.95, isc: 13.95, imp: 13.11, tempCoeffPmax: -0.35, tempCoeffVoc: -0.28, cellCount: 144 },
+  { id: 'p3', brand: 'Canadian Solar', model: 'CS6W-550MS',      wp: 550, price: 280000, kg: 25.0,
+    voc: 49.8, vmp: 41.7, isc: 13.95, imp: 13.19, tempCoeffPmax: -0.34, tempCoeffVoc: -0.26, cellCount: 144 },
+  { id: 'p4', brand: 'Trina Solar',    model: 'TSM-550DE09',     wp: 550, price: 295000, kg: 25.5,
+    voc: 49.9, vmp: 41.9, isc: 13.93, imp: 13.13, tempCoeffPmax: -0.34, tempCoeffVoc: -0.25, cellCount: 144 },
 ];
 
 export const DEFAULT_INVERTERS = [
-  { id: 'i1', brand: 'Growatt', model: 'MIN 3000TL-XH',      kw: 3,  phase: 1, price: 1850000, type: 'on-grid',  kg: 14 },
-  { id: 'i2', brand: 'Growatt', model: 'MIN 5000TL-XH',      kw: 5,  phase: 1, price: 2450000, type: 'on-grid',  kg: 19 },
-  { id: 'i3', brand: 'Growatt', model: 'MID 10KTL3-X2',      kw: 10, phase: 3, price: 4200000, type: 'on-grid',  kg: 32 },
-  { id: 'i4', brand: 'Solis',   model: 'S6-GR1P5K-M',        kw: 5,  phase: 1, price: 2550000, type: 'on-grid',  kg: 20 },
-  { id: 'i5', brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000, type: 'hybrid',   kg: 22 },
-  { id: 'i6', brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000, type: 'hybrid',   kg: 36 },
-  { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3,  phase: 1, price: 3200000, type: 'off-grid', kg: 17 },
-  { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4,  phase: 1, price: 5500000, type: 'off-grid', kg: 28 },
+  { id: 'i1', brand: 'Growatt', model: 'MIN 3000TL-XH',      kw: 3,  phase: 1, price: 1850000, type: 'on-grid',  kg: 14,
+    vocMax: 550, mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
+  { id: 'i2', brand: 'Growatt', model: 'MIN 5000TL-XH',      kw: 5,  phase: 1, price: 2450000, type: 'on-grid',  kg: 19,
+    vocMax: 550, mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
+  { id: 'i3', brand: 'Growatt', model: 'MID 10KTL3-X2',      kw: 10, phase: 3, price: 4200000, type: 'on-grid',  kg: 32,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 2, idcMax: 25, efficiency: 98.4, vac: 400 },
+  { id: 'i4', brand: 'Solis',   model: 'S6-GR1P5K-M',        kw: 5,  phase: 1, price: 2550000, type: 'on-grid',  kg: 20,
+    vocMax: 600, mpptVmin: 90,  mpptVmax: 520, mpptCount: 2, idcMax: 16, efficiency: 97.5, vac: 240 },
+  { id: 'i5', brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000, type: 'hybrid',   kg: 22,
+    vocMax: 550, mpptVmin: 120, mpptVmax: 450, mpptCount: 2, idcMax: 13.5, efficiency: 97.5, vac: 240 },
+  { id: 'i6', brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000, type: 'hybrid',   kg: 36,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 800, mpptCount: 2, idcMax: 25, efficiency: 98.2, vac: 400 },
+  { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3,  phase: 1, price: 3200000, type: 'off-grid', kg: 17,
+    vocMax: 500, mpptVmin: 120, mpptVmax: 430, mpptCount: 1, idcMax: 18, efficiency: 96.5, vac: 240 },
+  { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4,  phase: 1, price: 5500000, type: 'off-grid', kg: 28,
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 20, efficiency: 96, vac: 230 },
 ];
 
 export const DEFAULT_BATTERIES = [
-  { id: 'b1', brand: 'Pylontech', model: 'US3000C',         kwh: 3.5, price: 3200000, kg: 37 },
-  { id: 'b2', brand: 'BYD',       model: 'Battery-Box HVS 7.7', kwh: 7.7, price: 7500000, kg: 80 },
-  { id: 'b3', brand: 'Hubble',    model: 'AM-10',           kwh: 10,  price: 9800000, kg: 95 },
+  { id: 'b1', brand: 'Pylontech', model: 'US3000C',             kwh: 3.5, price: 3200000, kg: 37, voltage: 48,  chemistry: 'LFP', maxDischargeA: 74,  cycles: 6000 },
+  { id: 'b2', brand: 'BYD',       model: 'Battery-Box HVS 7.7', kwh: 7.7, price: 7500000, kg: 80, voltage: 409, chemistry: 'LFP', maxDischargeA: 25,  cycles: 8000 },
+  { id: 'b3', brand: 'Hubble',    model: 'AM-10',               kwh: 10,  price: 9800000, kg: 95, voltage: 51.2,chemistry: 'LFP', maxDischargeA: 150, cycles: 6000 },
 ];
 
 export const DEFAULT_PRICING = {
@@ -258,6 +275,75 @@ export function autoInverter(kwp, sysType, inverters) {
   const typed = inverters.filter(i => i.type === sysType);
   const fit = typed.filter(i => i.kw >= kwp * 0.75).sort((a, b) => a.kw - b.kw);
   return fit[0] || typed[0] || inverters[0];
+}
+
+// Valida que el layout de strings sea eléctricamente compatible con el inversor:
+//  1. Voc corregido por temperatura fría × strLen ≤ Vdc_max del inversor.
+//     Usa tempCoeffVoc (%/°C) y una temperatura de diseño fría (NEC 690.7
+//     para Colombia: ~5°C en zonas de mayor altitud; default 10°C).
+//  2. Vmp corregido × strLen dentro del rango MPPT [mpptVmin, mpptVmax]
+//     (caliente reduce Vmp → puede salir por debajo del piso MPPT).
+//  3. Imp (corriente por string) ≤ idcMax / mpptCount.
+//  4. numStrings ≤ mpptCount × 2 (típico: 2 strings por MPPT en paralelo).
+// Retorna { ok, errors: [], warnings: [], metrics: {...} } para mostrar
+// en el Quoter paso 5 junto al unifilar.
+export function validateLayout(panel, inverter, panelsPerString, numStrings, coldTempC = 10, hotTempC = 65) {
+  const errors = [];
+  const warnings = [];
+  if (!panel || !inverter) return { ok: false, errors: ['Panel o inversor no definido'], warnings: [], metrics: {} };
+
+  const voc = panel.voc || 0;
+  const vmp = panel.vmp || 0;
+  const imp = panel.imp || 0;
+  const tcVoc = panel.tempCoeffVoc || -0.28; // %/°C
+  const tcPmax = panel.tempCoeffPmax || -0.35;
+  const vocMax = inverter.vocMax || 0;
+  const mpptMin = inverter.mpptVmin || 0;
+  const mpptMax = inverter.mpptVmax || 0;
+  const mpptCount = inverter.mpptCount || 1;
+  const idcMax = inverter.idcMax || 0;
+
+  // Voc en frío (suma por string)
+  const vocCold = voc * (1 + (tcVoc / 100) * (coldTempC - 25));
+  const stringVocCold = vocCold * panelsPerString;
+  // Vmp en caliente (coef Pmax es cercano al de Vmp en términos %)
+  const vmpHot = vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
+  const stringVmpHot = vmpHot * panelsPerString;
+  const stringVmpStc = vmp * panelsPerString;
+  const stringsPerMppt = Math.ceil(numStrings / mpptCount);
+  const currentPerMppt = imp * stringsPerMppt;
+
+  if (vocMax && stringVocCold > vocMax) {
+    errors.push(`Voc en frío por string (${stringVocCold.toFixed(1)}V @ ${coldTempC}°C) supera Vdc_max del inversor (${vocMax}V). Reducir paneles por string.`);
+  } else if (vocMax && stringVocCold > vocMax * 0.95) {
+    warnings.push(`Voc en frío (${stringVocCold.toFixed(1)}V) muy cerca del límite (${vocMax}V). Margen <5%.`);
+  }
+  if (mpptMax && stringVmpStc > mpptMax) {
+    errors.push(`Vmp STC por string (${stringVmpStc.toFixed(1)}V) supera techo MPPT (${mpptMax}V). Inversor no podrá seguir el punto de máxima potencia.`);
+  }
+  if (mpptMin && stringVmpHot < mpptMin) {
+    warnings.push(`Vmp en caliente (${stringVmpHot.toFixed(1)}V @ ${hotTempC}°C) cae por debajo del piso MPPT (${mpptMin}V). Pérdida de producción al mediodía.`);
+  }
+  if (idcMax && currentPerMppt > idcMax) {
+    errors.push(`Corriente por MPPT (${currentPerMppt.toFixed(1)}A con ${stringsPerMppt} strings) supera Idc_max (${idcMax}A). Reducir strings en paralelo.`);
+  }
+  if (numStrings > mpptCount * 2) {
+    warnings.push(`${numStrings} strings en ${mpptCount} MPPT → ${stringsPerMppt} strings por MPPT. Validar combinador/fusibles.`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    metrics: {
+      stringVocCold: parseFloat(stringVocCold.toFixed(1)),
+      stringVmpStc: parseFloat(stringVmpStc.toFixed(1)),
+      stringVmpHot: parseFloat(stringVmpHot.toFixed(1)),
+      currentPerMppt: parseFloat(currentPerMppt.toFixed(2)),
+      stringsPerMppt,
+      vocMax, mpptMin, mpptMax, idcMax, mpptCount,
+    },
+  };
 }
 
 // localStorage helpers (replaces window.storage for production)

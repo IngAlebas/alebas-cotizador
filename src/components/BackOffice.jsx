@@ -2,6 +2,83 @@ import React, { useState } from 'react';
 import logo from '../logo.png';
 import { C, fmt, fmtCOP, OPERATORS } from '../constants';
 import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
+import { searchCECPanels, searchCECInverters } from '../services/cec';
+
+// Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
+// specs eléctricos oficiales. onImport recibe el objeto normalizado y
+// debe mapearlo al schema local (agregando precio, kg, etc. faltantes).
+function CECImportModal({ type, onClose, onImport, ss }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
+
+  const doSearch = async () => {
+    if (!q.trim()) return;
+    setLoading(true); setError(null);
+    try {
+      const fn = type === 'panel' ? searchCECPanels : searchCECInverters;
+      const data = await fn(q, 25);
+      setResults(data.results || []);
+      setInfo({ total: data.total, count: data.count, cached: data.cached });
+    } catch (e) {
+      setError(e.message);
+      setResults([]);
+    }
+    setLoading(false);
+  };
+
+  const onKey = e => { if (e.key === 'Enter') doSearch(); };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, width: '100%', maxWidth: 760, maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Importar desde CEC / NREL SAM</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Base oficial de California Energy Commission · {type === 'panel' ? 'paneles' : 'inversores'} certificados</div>
+          </div>
+          <button style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={onClose}>×</button>
+        </div>
+
+        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}22`, display: 'flex', gap: 8 }}>
+          <input autoFocus style={{ ...ss.inp, flex: 1 }} placeholder={type === 'panel' ? 'Ej: JA Solar 545, Canadian Solar 550, Trina 610…' : 'Ej: Growatt MIN, Solis 5K, SMA Sunny Boy…'} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} />
+          <button style={ss.btn} onClick={doSearch} disabled={loading}>{loading ? 'Buscando…' : 'Buscar'}</button>
+        </div>
+
+        {error && <div style={{ padding: '10px 18px', color: C.red, fontSize: 11 }}>⚠ {error}</div>}
+        {info && <div style={{ padding: '6px 18px', color: C.muted, fontSize: 10 }}>{info.count} de {fmt(info.total)} en base CEC {info.cached ? '· caché local' : ''}</div>}
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+          {results.length === 0 && !loading && !error && (
+            <div style={{ padding: '40px 18px', textAlign: 'center', color: C.muted, fontSize: 12 }}>
+              {q ? 'Escribe y busca para ver resultados.' : 'Base CEC: ~22.000 paneles y ~6.000 inversores certificados. Los resultados incluyen Voc, Vmp, Isc, Imp y coeficientes de temperatura oficiales.'}
+            </div>
+          )}
+          {results.map((r, idx) => (
+            <div key={idx} style={{ padding: '10px 18px', borderBottom: `1px solid ${C.border}22`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: '#fff', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.fullName || `${r.brand} ${r.model}`}</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
+                  {type === 'panel'
+                    ? `${r.wp || '?'}Wp · Voc ${r.voc?.toFixed(1) || '?'}V · Vmp ${r.vmp?.toFixed(1) || '?'}V · Isc ${r.isc?.toFixed(2) || '?'}A · Imp ${r.imp?.toFixed(2) || '?'}A · ${r.cellCount || '?'} celdas · γ ${r.tempCoeffPmax?.toFixed(3) || '?'}%/°C`
+                    : `${r.kw?.toFixed(1) || '?'}kW · ${r.phase}Φ ${r.vac}V · Vdc_max ${r.vocMax || '?'}V · MPPT ${r.mpptVmin || '?'}–${r.mpptVmax || '?'}V · Idc_max ${r.idcMax || '?'}A`
+                  }
+                </div>
+              </div>
+              <button style={{ ...ss.btn, padding: '5px 11px' }} onClick={() => onImport(r)}>+ Importar</button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding: '10px 18px', borderTop: `1px solid ${C.border}`, fontSize: 10, color: C.muted }}>
+          Fuente: NREL System Advisor Model · base actualizada trimestralmente · datos curados por CEC.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EqMgr({ title, items, upd, fields, ss }) {
   const [edit, setEdit] = useState(null);
@@ -314,6 +391,114 @@ function OperatorsMgr({ operators, upd, ss }) {
   );
 }
 
+// Wrapper que combina el EqMgr local con un botón de importación CEC.
+// Al importar, mezcla los specs eléctricos oficiales con valores razonables
+// de precio/kg que el admin puede ajustar antes de guardar.
+function PanelsTab({ panels, uP, ss }) {
+  const [showCEC, setShowCEC] = useState(false);
+  const [justImported, setJustImported] = useState(null);
+  const onImport = (cec) => {
+    const newPanel = {
+      id: 'eq_' + Date.now(),
+      brand: cec.brand || '',
+      model: cec.model || '',
+      wp: cec.wp || 0,
+      price: 290000, // admin debe ajustar precio local
+      kg: cec.length_m && cec.width_m ? parseFloat((cec.length_m * cec.width_m * 12).toFixed(1)) : 25,
+      voc: cec.voc, vmp: cec.vmp, isc: cec.isc, imp: cec.imp,
+      tempCoeffPmax: cec.tempCoeffPmax,
+      tempCoeffVoc: cec.tempCoeffVoc,
+      cellCount: cec.cellCount,
+      technology: cec.technology,
+      source: 'CEC',
+    };
+    uP([...panels, newPanel]);
+    setJustImported(`${newPanel.brand} ${newPanel.model}`);
+    setShowCEC(false);
+    setTimeout(() => setJustImported(null), 3500);
+  };
+  return (
+    <div>
+      {justImported && (
+        <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
+          ✓ Importado desde CEC: <strong>{justImported}</strong>. Ajusta precio local antes de usar en el cotizador.
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button style={{ ...ss.btn, background: C.yellow, color: '#050d12' }} onClick={() => setShowCEC(true)}>🔍 Importar desde CEC</button>
+      </div>
+      <EqMgr title="Paneles solares" items={panels} upd={uP} ss={ss} fields={[
+        { k: 'brand', l: 'Marca', t: 'text' },
+        { k: 'model', l: 'Modelo', t: 'text' },
+        { k: 'wp', l: 'Wp', t: 'number' },
+        { k: 'voc', l: 'Voc (V)', t: 'number' },
+        { k: 'vmp', l: 'Vmp (V)', t: 'number' },
+        { k: 'isc', l: 'Isc (A)', t: 'number' },
+        { k: 'imp', l: 'Imp (A)', t: 'number' },
+        { k: 'tempCoeffVoc', l: 'β Voc (%/°C)', t: 'number' },
+        { k: 'price', l: 'Precio COP', t: 'number' },
+      ]} />
+      {showCEC && <CECImportModal type="panel" ss={ss} onClose={() => setShowCEC(false)} onImport={onImport} />}
+    </div>
+  );
+}
+
+function InvertersTab({ inverters, uI, ss }) {
+  const [showCEC, setShowCEC] = useState(false);
+  const [justImported, setJustImported] = useState(null);
+  const onImport = (cec) => {
+    const vac = cec.vac || 240;
+    const type = vac >= 380 ? 'on-grid' : 'on-grid'; // por defecto; admin puede cambiar
+    const newInv = {
+      id: 'eq_' + Date.now(),
+      brand: cec.brand || '',
+      model: cec.model || '',
+      kw: cec.kw ? parseFloat(cec.kw.toFixed(2)) : 0,
+      phase: cec.phase || 1,
+      vac,
+      type,
+      price: 2500000,
+      kg: 20,
+      vocMax: cec.vocMax,
+      mpptVmin: cec.mpptVmin,
+      mpptVmax: cec.mpptVmax,
+      mpptCount: 2, // CEC no publica mpptCount; default típico
+      idcMax: cec.idcMax,
+      efficiency: 97.5,
+      source: 'CEC',
+    };
+    uI([...inverters, newInv]);
+    setJustImported(`${newInv.brand} ${newInv.model}`);
+    setShowCEC(false);
+    setTimeout(() => setJustImported(null), 3500);
+  };
+  return (
+    <div>
+      {justImported && (
+        <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
+          ✓ Importado desde CEC: <strong>{justImported}</strong>. Verifica tipo (on-grid/hybrid/off-grid), mpptCount y precio antes de usar.
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button style={{ ...ss.btn, background: C.yellow, color: '#050d12' }} onClick={() => setShowCEC(true)}>🔍 Importar desde CEC</button>
+      </div>
+      <EqMgr title="Inversores" items={inverters} upd={uI} ss={ss} fields={[
+        { k: 'brand', l: 'Marca', t: 'text' },
+        { k: 'model', l: 'Modelo', t: 'text' },
+        { k: 'kw', l: 'kW', t: 'number' },
+        { k: 'type', l: 'Tipo', t: 'select', opts: ['on-grid', 'hybrid', 'off-grid'] },
+        { k: 'vocMax', l: 'Vdc_max (V)', t: 'number' },
+        { k: 'mpptVmin', l: 'MPPT min (V)', t: 'number' },
+        { k: 'mpptVmax', l: 'MPPT max (V)', t: 'number' },
+        { k: 'idcMax', l: 'Idc_max (A)', t: 'number' },
+        { k: 'mpptCount', l: '# MPPT', t: 'number' },
+        { k: 'price', l: 'Precio COP', t: 'number' },
+      ]} />
+      {showCEC && <CECImportModal type="inverter" ss={ss} onClose={() => setShowCEC(false)} onImport={onImport} />}
+    </div>
+  );
+}
+
 export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers }) {
   const ss = {
     wrap: { display: 'flex', minHeight: 'calc(100vh - 54px)' },
@@ -376,8 +561,8 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
             </div>
           </div>
         )}
-        {tab === 'panels' && <EqMgr title="Paneles solares" items={panels} upd={uP} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'wp', l: 'Wp', t: 'number' }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
-        {tab === 'inverters' && <EqMgr title="Inversores" items={inverters} upd={uI} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'kw', l: 'kW', t: 'number' }, { k: 'type', l: 'Tipo', t: 'select', opts: ['on-grid', 'hybrid', 'off-grid'] }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
+        {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
+        {tab === 'inverters' && <InvertersTab inverters={inverters} uI={uI} ss={ss} />}
         {tab === 'batteries' && <EqMgr title="Baterías" items={batteries} upd={uB} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'kwh', l: 'kWh', t: 'number' }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
