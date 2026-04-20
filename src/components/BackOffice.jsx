@@ -4,6 +4,7 @@ import { C, fmt, fmtCOP, OPERATORS } from '../constants';
 import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 import { searchCECPanels, searchCECInverters } from '../services/cec';
 import { searchBatteries } from '../services/batteries';
+import { fetchTRM } from '../services/trm';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -133,6 +134,14 @@ function EqMgr({ title, items, upd, fields, ss }) {
 function PriceMgr({ pricing, upd, ss }) {
   const [form, setForm] = useState(pricing);
   const [saved, setSaved] = useState(false);
+  const [trmData, setTrmData] = useState(null);
+  const [trmLoading, setTrmLoading] = useState(false);
+
+  React.useEffect(() => {
+    setTrmLoading(true);
+    fetchTRM().then(d => setTrmData(d)).catch(() => {}).finally(() => setTrmLoading(false));
+  }, []);
+
   const fields = [
     { k: 'structure_per_panel', l: 'Estructura/panel (COP)' },
     { k: 'cabling_per_kwp', l: 'Cableado/kWp' },
@@ -146,7 +155,23 @@ function PriceMgr({ pricing, upd, ss }) {
   return (
     <div>
       <div style={ss.h2}>Configuración de precios</div>
-      <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}22`, borderRadius: 7, padding: '9px 12px', marginBottom: 13, fontSize: 11, color: C.muted }}>
+      {/* TRM widget */}
+      <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '9px 14px', marginBottom: 13, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>TRM (COP/USD)</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.yellow }}>
+            {trmLoading ? '…' : trmData?.cop_per_usd ? `$${fmt(trmData.cop_per_usd)}` : '—'}
+          </div>
+        </div>
+        {trmData && (
+          <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.7 }}>
+            <div>Vigencia: {trmData.date}</div>
+            <div>Fuente: {trmData.source}</div>
+            <div style={{ color: C.teal }}>Actualiza precios en USD → precio panel / TRM = precio COP</div>
+          </div>
+        )}
+      </div>
+      <div style={{ background: `${C.teal}08`, border: `1px solid ${C.border}`, borderRadius: 7, padding: '9px 12px', marginBottom: 13, fontSize: 11, color: C.muted }}>
         Actualiza según cotizaciones reales del mercado. Los cambios aplican inmediatamente en el cotizador.
       </div>
       <div style={ss.card}>
@@ -695,6 +720,11 @@ function SuppliersMgr({ suppliers, uSupp, ss }) {
 }
 
 export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp }) {
+  const [dashTrm, setDashTrm] = React.useState(null);
+  React.useEffect(() => {
+    fetchTRM().then(d => setDashTrm(d)).catch(() => {});
+  }, []);
+
   const ss = {
     wrap: { display: 'flex', minHeight: 'calc(100vh - 54px)' },
     side: { width: 185, background: '#08151e', borderRight: `1px solid ${C.border}`, padding: '12px 8px', flexShrink: 0 },
@@ -738,10 +768,15 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'dashboard' && (
           <div>
             <div style={ss.h2}>Dashboard</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 9, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 9, marginBottom: 16 }}>
               {[['Cotizaciones', tot, C.teal], ['Sin procesar', nv, C.yellow], ['kWp cotizados', kp, '#fff'], ['Pipeline', `$${fmt(pl / 1e6)}M`, C.teal]].map(([l, v, col]) => (
                 <div key={l} style={ss.stat}><div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>{l}</div><div style={{ fontSize: 18, fontWeight: 700, color: col }}>{v}</div></div>
               ))}
+              <div style={ss.stat}>
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, textTransform: 'uppercase' }}>TRM COP/USD</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.yellow }}>{dashTrm?.cop_per_usd ? `$${fmt(dashTrm.cop_per_usd)}` : '—'}</div>
+                {dashTrm?.date && <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>{dashTrm.date}</div>}
+              </div>
             </div>
             <div style={ss.card}>
               <div style={{ fontWeight: 600, color: '#fff', marginBottom: 11, fontSize: 13 }}>Últimas cotizaciones</div>

@@ -6,7 +6,10 @@ import {
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
+import { fetchPVWatts } from '../services/pvwatts';
+import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
+import { fetchTRM } from '../services/trm';
 import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
@@ -39,6 +42,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [pvgisError, setPvgisError] = useState(null);
   const [xmError, setXmError] = useState(null);
   const [agpe, setAgpe] = useState(null);
+  const [nasaData, setNasaData] = useState(null);
+  const [pvwData, setPvwData] = useState(null);
+  const [trm, setTrm] = useState(null);
 
   // Sistemas off-grid están aislados de la red: no pueden entregar
   // excedentes. Los on-grid e híbridos sí (marco AGPE — CREG 174/2021).
@@ -66,40 +72,77 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
     if (!kwh) return;
+
+    // Fase 1 — sizing rápido con temperaturas default para determinar actKwp.
     const sizingKwp = targetKwp || consumptionKwp;
     const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters);
-    // Primer cálculo con PSH para conocer kWp actual y poder llamar a PVGIS
     const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
 
-    // En paralelo: PVGIS (irradiancia regional) y XM (precio bolsa nacional).
-    // Si XM falla por CORS caemos a 0; calcAGPEBenefit lo maneja.
     let pvgisAnnualKwh = null;
+    let pvwattsAnnualKwh = null;
     let spot = null;
+    let nasa = null;
+    let trmData = null;
+
     if (sysBase.actKwp > 0) {
       setLoadingPVGIS(true);
       setPvgisError(null);
       setXmError(null);
-      const pvgisP = (dest?.lat && dest?.lon)
-        ? fetchPVProduction({ lat: dest.lat, lon: dest.lon, kwp: sysBase.actKwp }).catch(err => { setPvgisError(err.message); return null; })
-        : Promise.resolve(null);
-      const xmP = fetchSpotPrice(30).catch(err => { setXmError(err.message); return null; });
-      const [pv, sp] = await Promise.all([pvgisP, xmP]);
+
+      const hasCoords = !!(dest?.lat && dest?.lon);
+
+      // Fase 2 — todas las APIs en paralelo: PVGIS, PVWatts, NASA POWER, XM, TRM.
+      const [pv, pvw, nasaRes, sp, trmRes] = await Promise.all([
+        hasCoords
+          ? fetchPVProduction({ lat: dest.lat, lon: dest.lon, kwp: sysBase.actKwp })
+              .catch(err => { setPvgisError(err.message); return null; })
+          : Promise.resolve(null),
+        hasCoords
+          ? fetchPVWatts(dest.lat, dest.lon, sysBase.actKwp)
+              .catch(() => null)
+          : Promise.resolve(null),
+        hasCoords
+          ? fetchNASAPower(dest.lat, dest.lon)
+              .catch(() => null)
+          : Promise.resolve(null),
+        fetchSpotPrice(30).catch(err => { setXmError(err.message); return null; }),
+        fetchTRM().catch(() => null),
+      ]);
+
       if (pv) pvgisAnnualKwh = pv.annualKwh;
+      if (pvw) pvwattsAnnualKwh = pvw.annualKwh;
+      nasa = nasaRes;
       spot = sp;
+      trmData = trmRes;
+
+      setNasaData(nasa);
+      setPvwData(pvw);
+      setTrm(trmData);
       setLoadingPVGIS(false);
     }
 
-    // Recalcular con PVGIS; usa el inversor ya elegido para que el dimensionamiento
-    // de strings sea consistente con el que se mostrará y valide.
-    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters);
-    const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh, targetKwp });
+    // Fase 3 — recalcular con temperaturas reales (NASA POWER) y mejor estimación
+    // de producción: PVWatts (pérdidas reales) > PVGIS > PSH heurístico.
+    const temps = nasa
+      ? { coldTempC: nasa.cellTempCold, hotTempC: nasa.cellTempHot }
+      : {};
+    const bestAnnualKwh = pvwattsAnnualKwh || pvgisAnnualKwh || null;
+    const productionSource = pvwattsAnnualKwh ? 'PVWatts' : pvgisAnnualKwh ? 'PVGIS' : 'PSH';
+
+    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, temps);
+    const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
+      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, ...temps });
+
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp, { gridExport });
     const annualSav = benefit.totalAnual;
     const roi = annualSav > 0 ? parseFloat((budget.tot / annualSav).toFixed(1)) : 0;
-    setRes({ ...sys, inv: inv2, sizedFor: f.wantsExcedentes && areaAllowsExcedentes ? 'excedentes' : 'consumo' });
-    setBgt({ ...budget, sav: annualSav, roi, transport: transport.total });
+
+    const budgetUsd = trmData?.cop_per_usd ? parseFloat((budget.tot / trmData.cop_per_usd).toFixed(0)) : null;
+
+    setRes({ ...sys, inv: inv2, sizedFor: f.wantsExcedentes && areaAllowsExcedentes ? 'excedentes' : 'consumo', productionSource });
+    setBgt({ ...budget, sav: annualSav, roi, transport: transport.total, budgetUsd, trmDate: trmData?.date });
     setAgpe({ ...benefit, spotSource: spot, tariffCU: operator.tariff });
   };
 
@@ -402,17 +445,30 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
           <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {f.dept}</div>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: res.dataSource === 'PVGIS' ? `${C.green}22` : `${C.gray}22`, color: res.dataSource === 'PVGIS' ? C.green : C.muted, border: `1px solid ${res.dataSource === 'PVGIS' ? C.green : C.gray}55` }}>
-              {res.dataSource === 'PVGIS' ? '✓ Datos PVGIS · ' + dest.capital : 'Estimación PSH'}
-            </span>
+            {/* Fuente de producción — preferencia: PVWatts > PVGIS > PSH */}
+            {res.productionSource === 'PVWatts' && (
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.green}22`, color: C.green, border: `1px solid ${C.green}55` }}>
+                ✓ NREL PVWatts v8 · {pvwData?.solradAnnual} kWh/m²/año
+              </span>
+            )}
+            {res.productionSource === 'PVGIS' && (
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}>
+                ✓ PVGIS · {dest.capital}
+              </span>
+            )}
+            {res.productionSource === 'PSH' && (
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.gray ?? '#555'}22`, color: C.muted, border: `1px solid #55555555` }}>
+                Estimación PSH regional
+              </span>
+            )}
+            {nasaData && (
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.yellow}22`, color: C.yellow, border: `1px solid ${C.yellow}55` }}>
+                🌡 NASA POWER · T celda {nasaData.cellTempCold}°C/{nasaData.cellTempHot}°C
+              </span>
+            )}
             <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: res.sizedFor === 'excedentes' ? `${C.yellow}22` : `${C.teal}22`, color: res.sizedFor === 'excedentes' ? C.yellow : C.teal, border: `1px solid ${(res.sizedFor === 'excedentes' ? C.yellow : C.teal)}55` }}>
               {res.sizedFor === 'excedentes' ? '⚡ Dimensionado con excedentes' : '⌂ Dimensionado por consumo'}
             </span>
-            {pvgisError && (
-              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}55` }}>
-                PVGIS sin datos — usando PSH
-              </span>
-            )}
           </div>
         </div>
 
@@ -709,12 +765,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             ))}
             <div style={{ borderTop: `1px solid ${C.teal}33`, paddingTop: 9, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-              <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>TOTAL ESTIMADO</span>
+              <div>
+                <div style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>TOTAL ESTIMADO</div>
+                {bgt.budgetUsd && (
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                    ≈ USD ${fmt(bgt.budgetUsd)} · TRM {bgt.trmDate} · ${fmt(trm?.cop_per_usd)} COP/USD
+                  </div>
+                )}
+              </div>
               <span style={{ color: C.yellow, fontWeight: 800, fontSize: 20 }}>{fmtCOP(bgt.tot)}</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 9 }}>
-            {[['Ahorro anual', fmtCOP(bgt.sav), C.teal], ['ROI', `${bgt.roi} años`, C.yellow], ['Transporte', fmtCOP(bgt.transport), C.gray]].map(([l, v, col]) => (
+            {[['Ahorro anual', fmtCOP(bgt.sav), C.teal], ['ROI', `${bgt.roi} años`, C.yellow], ['Transporte', fmtCOP(bgt.transport), C.muted]].map(([l, v, col]) => (
               <div key={l} style={{ ...ss.stat, flex: 1 }}><div style={{ fontSize: 9, color: C.muted }}>{l}</div><div style={{ fontSize: 13, fontWeight: 700, color: col, marginTop: 3 }}>{v}</div></div>
             ))}
           </div>

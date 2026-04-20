@@ -305,10 +305,12 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;
   const kwpN = Math.min(rawTarget, MAX_KWP_AGPE);
   const cappedByRegulation = rawTarget > MAX_KWP_AGPE;
+  const coldTempC = opts.coldTempC ?? 10;  // Temperatura mínima de celda (NASA POWER o default NEC 690.7)
+  const hotTempC  = opts.hotTempC  ?? 65;  // Temperatura máxima de celda (NASA POWER + offset NOCT)
   const numPanelsIdeal = Math.ceil(kwpN * 1000 / panel.wp);
   // sizeStrings may cap ns when Idc_max would be exceeded; actualPanels reflects
   // the true number that can be wired. We use it for all energy/financial calcs.
-  const { pps, ns, ppss, actualPanels, currentLimited } = sizeStrings(panel, invObj, numPanelsIdeal);
+  const { pps, ns, ppss, actualPanels, currentLimited } = sizeStrings(panel, invObj, numPanelsIdeal, coldTempC, hotTempC);
   const numPanels = currentLimited ? actualPanels : numPanelsIdeal;
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
 
@@ -424,11 +426,13 @@ export function inverterCompatibility(panel, inverter, coldTempC = 10, hotTempC 
 // Así garantizamos que el cotizador SIEMPRE seleccione un equipo cuya
 // configuración de strings sea eléctricamente posible, priorizando lo
 // disponible en inventario.
-export function selectCompatibleInverter(panel, kwp, sysType, inverters) {
+export function selectCompatibleInverter(panel, kwp, sysType, inverters, temps = {}) {
+  const coldTempC = temps.coldTempC ?? 10;
+  const hotTempC  = temps.hotTempC  ?? 65;
   const typed = inverters.filter(i => i.type === sysType);
   if (!typed.length) return inverters[0];
   const scored = typed.map(inv => {
-    const compat = inverterCompatibility(panel, inv);
+    const compat = inverterCompatibility(panel, inv, coldTempC, hotTempC);
     const dcAc = inv.kw ? kwp / inv.kw : 0;
     const ratioGood = dcAc >= 0.9 && dcAc <= 1.25;
     const stock = inv.stock?.qty > 0;
