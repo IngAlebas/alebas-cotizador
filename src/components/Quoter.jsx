@@ -283,6 +283,64 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
         </div>
 
         <div style={ss.card}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>▣ Preview del layout y strings</div>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
+            Techo aprox. {res.roof} m² · {res.numPanels} paneles en {res.ns} string{res.ns > 1 ? 's' : ''} · {panel.wp} Wp c/u
+          </div>
+          <div style={{ background: C.dark, border: `1px dashed ${C.teal}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+            {Array.from({ length: res.ns }).map((_, sIdx) => {
+              const remaining = res.numPanels - sIdx * res.ppss;
+              const panelsInString = Math.min(res.ppss, remaining);
+              const stringColors = [C.teal, C.yellow, '#4ade80', '#fb923c', '#a78bfa', '#f472b6'];
+              const col = stringColors[sIdx % stringColors.length];
+              return (
+                <div key={sIdx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: sIdx < res.ns - 1 ? 7 : 0 }}>
+                  <div style={{ fontSize: 9, color: col, fontWeight: 700, minWidth: 38, letterSpacing: 0.5 }}>ST{sIdx + 1}</div>
+                  <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1 }}>
+                    {Array.from({ length: panelsInString }).map((_, pIdx) => (
+                      <div key={pIdx} style={{ width: 16, height: 11, background: `${col}33`, border: `1px solid ${col}`, borderRadius: 2 }} />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 9, color: C.muted, minWidth: 56, textAlign: 'right' }}>{panelsInString} paneles</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', flexWrap: 'wrap', padding: '4px 0 10px' }}>
+            <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
+            <div style={{ fontSize: 14, color: C.teal }}>→</div>
+            <div style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}`, borderRadius: 6, padding: '6px 11px', textAlign: 'center' }}>
+              <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Inversor</div>
+              <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginTop: 1 }}>{res.inv?.brand} {res.inv?.kw} kW</div>
+            </div>
+            <div style={{ fontSize: 14, color: C.teal }}>→</div>
+            {needsB && (
+              <>
+                <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 6, padding: '6px 11px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Baterías</div>
+                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginTop: 1 }}>{f.battQty} × {batt.kwh} kWh</div>
+                </div>
+                <div style={{ fontSize: 14, color: C.teal }}>→</div>
+              </>
+            )}
+            <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>AC · Carga</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+            {[
+              ['Strings', `${res.ns} × ${res.ppss}`],
+              ['Paneles', res.numPanels],
+              ['DC/AC', res.dca],
+              ['Área', `${res.roof} m²`],
+            ].map(([l, v]) => (
+              <div key={l} style={{ background: C.dark, borderRadius: 5, padding: '7px 8px', textAlign: 'center', border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
+                <div style={{ fontSize: 12, color: C.teal, fontWeight: 700, marginTop: 2 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>⚡ Configuración técnica</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
             {[
