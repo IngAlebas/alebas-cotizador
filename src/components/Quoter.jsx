@@ -497,26 +497,47 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         {(() => {
           const area = parseFloat(f.availableArea);
           if (!area || area <= 0) return null;
-          const reqArea = res.roof;
-          const enough = area >= reqArea;
-          const maxPanels = Math.floor(area / 2.2);
-          const maxKwp = parseFloat((maxPanels * panel.wp / 1000).toFixed(2));
-          const maxMonthlyKwh = Math.round(maxKwp * psh * 0.78 * 30);
-          const maxCov = Math.min(Math.round((maxMonthlyKwh / parseFloat(f.monthlyKwh)) * 100), 100);
-          const col = enough ? C.green : C.orange;
+          const areaLimited = res.sizedFor === 'area';
+          // Área ideal para 100% de consumo (sin cap de techo)
+          const idealPanels = Math.ceil(consumptionKwp * 1000 / panel.wp);
+          const idealArea = Math.ceil(idealPanels * 2.2);
+          const enough = !areaLimited && area >= idealArea;
+          const col = (enough && !areaLimited) ? C.green : C.orange;
           return (
             <div style={{ background: `${col}12`, border: `1px solid ${col}55`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: col, marginBottom: 6, letterSpacing: 0.4, textTransform: 'uppercase' }}>
                 {enough ? '✓ Área disponible suficiente' : '⚠ Área disponible limita el sistema'}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: 11 }}>
-                <div><div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Disponible</div><div style={{ color: '#fff', fontWeight: 600 }}>{area} m²</div></div>
-                <div><div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Requerida (100%)</div><div style={{ color: '#fff', fontWeight: 600 }}>{reqArea} m²</div></div>
-                <div><div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Máx. por área</div><div style={{ color: col, fontWeight: 700 }}>{maxKwp} kWp · {maxCov}%</div></div>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Disponible</div>
+                  <div style={{ color: '#fff', fontWeight: 600 }}>{area} m²</div>
+                </div>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Requerida (100%)</div>
+                  <div style={{ color: '#fff', fontWeight: 600 }}>{idealArea} m²</div>
+                </div>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Máx. por área</div>
+                  <div style={{ color: col, fontWeight: 700 }}>{res.actKwp} kWp · {res.cov}%</div>
+                </div>
               </div>
-              {!enough && (
+              {areaLimited && (
+                <div style={{ marginTop: 10, background: `${C.orange}18`, borderRadius: 6, padding: '10px 12px', border: `1px solid ${C.orange}44` }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.orange, marginBottom: 3 }}>
+                    Cobertura real: {res.cov}% del consumo mensual
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.55 }}>
+                    Tu techo de <strong style={{ color: '#fff' }}>{area} m²</strong> permite hasta <strong style={{ color: C.orange }}>{res.numPanels} paneles · {res.actKwp} kWp</strong>, que generan ~{fmt(res.mp)} kWh/mes. Para cubrir el 100% ({f.monthlyKwh} kWh/mes) se necesitan ~<strong style={{ color: '#fff' }}>{idealArea} m²</strong> ({idealPanels} paneles).
+                  </div>
+                  <div style={{ fontSize: 10, color: C.orange, marginTop: 6, fontWeight: 600 }}>
+                    ⚠ Observación incluida en la propuesta: el sistema no cubre el 100% del consumo por restricción de área disponible.
+                  </div>
+                </div>
+              )}
+              {!areaLimited && !enough && (
                 <div style={{ fontSize: 10, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
-                  Tu techo permite hasta <strong style={{ color: col }}>{maxPanels} paneles ({maxKwp} kWp)</strong>, que generan ~{fmt(maxMonthlyKwh)} kWh/mes — cubre el {maxCov}% de tu consumo de {f.monthlyKwh} kWh/mes. El sistema cotizado abajo asume cobertura completa; ajusta con un ingeniero ALEBAS si tu área es la limitante.
+                  Tu techo permite hasta <strong style={{ color: col }}>{res.numPanels} paneles ({res.actKwp} kWp)</strong>. Para el 100% se necesitan ~{idealArea} m².
                 </div>
               )}
             </div>
@@ -732,6 +753,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 ))}
               </div>
+              {res.sizedFor === 'area' && (
+                <div style={{ marginTop: 10, background: `${C.orange}12`, border: `1px solid ${C.orange}44`, borderRadius: 6, padding: '9px 12px' }}>
+                  <div style={{ fontSize: 10, color: C.orange, fontWeight: 700, marginBottom: 3 }}>⚠ Observación — Cobertura parcial por área disponible</div>
+                  <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.55 }}>
+                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * 2.2)} m² de techo útil. Un ingeniero ALEBAS puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: 9, color: C.muted, marginTop: 10, lineHeight: 1.5, fontStyle: 'italic' }}>
                 {agpe.gridExport
                   ? 'Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.'
