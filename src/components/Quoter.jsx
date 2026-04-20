@@ -885,14 +885,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
+        {!f.monthlyKwh && (
+          <div style={{ marginTop: 14, padding: '10px 12px', background: `${C.yellow}12`, border: `1px solid ${C.yellow}55`, borderRadius: 7, fontSize: 11, color: C.yellow, lineHeight: 1.5 }}>
+            <strong>Falta el consumo mensual (kWh)</strong> — {f.systemType === 'off-grid'
+              ? 'agrega las cargas en el Cuadro de cargas de arriba (o usa el preset "+ cargas típicas"). El consumo mensual se calcula solo.'
+              : 'anótalo del recibo de energía ("Energía activa" / "kWh consumidos").'}
+            {' El área ('}{f.availableArea || '—'}{' m²) es opcional y ya la registramos.'}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
           <button style={ss.ghost} onClick={() => setStep(2)}>← Atrás</button>
           <button
-            style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }}
-            title={!f.monthlyKwh ? 'Ingresa el consumo mensual (kWh) arriba para continuar' : ''}
+            style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1, cursor: !f.monthlyKwh ? 'not-allowed' : 'pointer' }}
+            title={!f.monthlyKwh ? 'Ingresa el consumo mensual arriba para continuar' : ''}
             onClick={() => {
               if (f.monthlyKwh) { setStep(4); return; }
-              setRoofError('Ingresa tu consumo mensual (kWh) arriba para continuar.');
+              setRoofError('Falta el consumo mensual (kWh). El área manual ya está guardada.');
             }}
           >Siguiente →</button>
         </div>
