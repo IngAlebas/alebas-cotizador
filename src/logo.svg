@@ -1,4 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" fill="#ffffff"/>
-  <text x="256" y="340" font-family="Arial Black, Arial, sans-serif" font-size="380" font-weight="900" fill="#EFDB00" text-anchor="middle">a</text>
+
+  <!-- Bulbo: arco C desde arriba-derecha, sentido antihorario, hasta abajo-derecha -->
+  <!-- Centro del círculo ≈ (234,223), radio ≈ 179 -->
+  <path d="M 345,80 A 179,179 0 1,0 302,388"
+        fill="none" stroke="#01708B" stroke-width="26" stroke-linecap="round"/>
+
+  <!-- Base del bulbo: dos líneas convergentes hacia el filamento -->
+  <line x1="175" y1="383" x2="256" y2="436" stroke="#01708B" stroke-width="26" stroke-linecap="round"/>
+  <line x1="302" y1="388" x2="258" y2="436" stroke="#01708B" stroke-width="26" stroke-linecap="round"/>
+
+  <!-- Filamento: líneas horizontales de anchura decreciente -->
+  <line x1="222" y1="453" x2="296" y2="453" stroke="#01708B" stroke-width="15" stroke-linecap="round"/>
+  <line x1="230" y1="470" x2="288" y2="470" stroke="#01708B" stroke-width="15" stroke-linecap="round"/>
+  <line x1="238" y1="487" x2="280" y2="487" stroke="#01708B" stroke-width="15" stroke-linecap="round"/>
+
+  <!-- Letra "a" amarilla: círculo externo + trazo vertical derecho – agujero interior -->
+  <defs>
+    <mask id="amask">
+      <rect width="512" height="512" fill="white"/>
+      <!-- Agujero (counter) de la "a" -->
+      <circle cx="202" cy="268" r="56" fill="black"/>
+    </mask>
+  </defs>
+  <g mask="url(#amask)">
+    <!-- Cuerpo circular de la "a" -->
+    <circle cx="202" cy="268" r="91" fill="#EFDB00"/>
+    <!-- Trazo vertical derecho de la "a" (se une tangencialmente al círculo) -->
+    <rect x="280" y="180" width="33" height="179" rx="16" fill="#EFDB00"/>
+  </g>
+
+  <!-- Letra "i" amarilla -->
+  <!-- Punto (dot) de la "i" — se coloca justo donde el arco deja la abertura -->
+  <circle cx="350" cy="97" r="24" fill="#EFDB00"/>
+  <!-- Trazo vertical de la "i" -->
+  <rect x="334" y="190" width="31" height="166" rx="15" fill="#EFDB00"/>
 </svg>
