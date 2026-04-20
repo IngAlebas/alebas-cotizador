@@ -9,6 +9,7 @@ const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
   panelId: '', battId: '', battQty: 2,
   transportZone: 'N1', dept: 'Meta', address: '',
+  availableArea: '',
   name: '', company: '', phone: '', email: '',
 };
 
@@ -165,13 +166,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
             {panels.map(p => <option key={p.id} value={p.id}>{p.brand} {p.model} — {p.wp} Wp — {fmtCOP(p.price)}</option>)}
           </select>
         </div>
-        {f.monthlyKwh && (
-          <div style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '10px 13px', marginTop: 10, fontSize: 12 }}>
-            <span style={{ color: C.muted }}>Estimado: </span>
-            <strong style={{ color: C.teal }}>{((parseFloat(f.monthlyKwh) / 30) / (psh * 0.78)).toFixed(2)} kWp</strong>
-            <span style={{ color: C.muted }}> — {operator.name}</span>
-          </div>
-        )}
+        <div style={{ marginBottom: 8 }}>
+          <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
+          <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Si la conoces, validamos cuánto de tu consumo puede cubrir tu techo</div>
+        </div>
+        {f.monthlyKwh && (() => {
+          const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78);
+          const reqPanels = Math.ceil(reqKwp * 1000 / panel.wp);
+          const reqArea = reqPanels * 2.2;
+          const area = parseFloat(f.availableArea);
+          const hasArea = !!area && area > 0;
+          const enough = hasArea ? area >= reqArea : null;
+          const maxPanels = hasArea ? Math.floor(area / 2.2) : 0;
+          const maxKwp = hasArea ? (maxPanels * panel.wp / 1000) : 0;
+          const maxCov = hasArea && reqPanels > 0 ? Math.min(Math.round((maxPanels / reqPanels) * 100), 100) : 0;
+          const col = enough === null ? C.teal : enough ? C.green : C.orange;
+          return (
+            <div style={{ background: `${col}12`, border: `1px solid ${col}33`, borderRadius: 7, padding: '10px 13px', marginTop: 10, fontSize: 12 }}>
+              <div>
+                <span style={{ color: C.muted }}>Estimado: </span>
+                <strong style={{ color: C.teal }}>{reqKwp.toFixed(2)} kWp</strong>
+                <span style={{ color: C.muted }}> · {reqPanels} paneles · ~{reqArea.toFixed(0)} m² · {operator.name}</span>
+              </div>
+              {hasArea && (
+                <div style={{ marginTop: 6, fontSize: 11, color: enough ? C.green : C.orange }}>
+                  {enough
+                    ? `✓ Tus ${area} m² alcanzan para cubrir el 100% del consumo`
+                    : `⚠ Tus ${area} m² permiten máx. ${maxPanels} paneles (${maxKwp.toFixed(2)} kWp) — cubre ~${maxCov}% del consumo`}
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>
           <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
           <button style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1 }} onClick={() => { if (f.monthlyKwh) setStep(3); }}>Siguiente →</button>
@@ -271,6 +298,35 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
           <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {f.dept}</div>
         </div>
+
+        {(() => {
+          const area = parseFloat(f.availableArea);
+          if (!area || area <= 0) return null;
+          const reqArea = res.roof;
+          const enough = area >= reqArea;
+          const maxPanels = Math.floor(area / 2.2);
+          const maxKwp = parseFloat((maxPanels * panel.wp / 1000).toFixed(2));
+          const maxMonthlyKwh = Math.round(maxKwp * psh * 0.78 * 30);
+          const maxCov = Math.min(Math.round((maxMonthlyKwh / parseFloat(f.monthlyKwh)) * 100), 100);
+          const col = enough ? C.green : C.orange;
+          return (
+            <div style={{ background: `${col}12`, border: `1px solid ${col}55`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: col, marginBottom: 6, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                {enough ? '✓ Área disponible suficiente' : '⚠ Área disponible limita el sistema'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: 11 }}>
+                <div><div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Disponible</div><div style={{ color: '#fff', fontWeight: 600 }}>{area} m²</div></div>
+                <div><div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Requerida (100%)</div><div style={{ color: '#fff', fontWeight: 600 }}>{reqArea} m²</div></div>
+                <div><div style={{ color: C.muted, fontSize: 9, textTransform: 'uppercase' }}>Máx. por área</div><div style={{ color: col, fontWeight: 700 }}>{maxKwp} kWp · {maxCov}%</div></div>
+              </div>
+              {!enough && (
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+                  Tu techo permite hasta <strong style={{ color: col }}>{maxPanels} paneles ({maxKwp} kWp)</strong>, que generan ~{fmt(maxMonthlyKwh)} kWh/mes — cubre el {maxCov}% de tu consumo de {f.monthlyKwh} kWh/mes. El sistema cotizado abajo asume cobertura completa; ajusta con un ingeniero ALEBAS si tu área es la limitante.
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 9, marginBottom: 12 }}>
           {[['Paneles', res.numPanels, 'unidades'], ['Prod. mensual', fmt(res.mp), 'kWh/mes'], ['Cobertura', res.cov, '%'], ['Prod. anual', fmt(res.ap), 'kWh/año'], ['CO₂ evitado', fmt(res.co2), 'kg/año'], ['ROI', bgt.roi, 'años']].map(([l, v, u]) => (
