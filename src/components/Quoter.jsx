@@ -198,24 +198,53 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // STEP 0: Welcome
   if (step === 0) return (
     <div style={ss.wrap}>
-      <div style={{ ...ss.card, textAlign: 'center', padding: '44px 22px', borderColor: C.teal }}>
-        <img src={logo} alt="ALEBAS" style={{ height: 60, borderRadius: 6, marginBottom: 14 }} />
-        <div style={{ color: C.teal, fontSize: 11, letterSpacing: 3, marginBottom: 18, fontWeight: 600 }}>COTIZADOR SOLAR FOTOVOLTAICO</div>
-        <div style={{ color: C.muted, fontSize: 14, maxWidth: 400, margin: '0 auto 22px', lineHeight: 1.7 }}>
-          Pre-dimensionamiento profesional de tu sistema fotovoltaico. Resultado inmediato con precios reales del mercado colombiano.
-        </div>
-        <div style={{ display: 'flex', gap: 7, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 24 }}>
-          {['✓ 20 operadores de red', '✓ Ley 1715 · CREG 174/2021 · CREG 135/2021', '✓ RETIE + Código de Medida (CREG 038/2014)'].map(t => (
-            <span key={t} style={{ background: `${C.teal}15`, border: `1px solid ${C.teal}44`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: C.teal }}>{t}</span>
+      {/* Hero */}
+      <div style={{ ...ss.card, textAlign: 'center', padding: '44px 22px', borderColor: '#059669', background: 'linear-gradient(160deg, #08151e 60%, #05966910)' }}>
+        <img src={logo} alt="SolarHub by ALEBAS" style={{ height: 56, borderRadius: 6, marginBottom: 14 }} />
+        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 6, fontWeight: 700, color: '#059669' }}>SOLARHUB BY ALEBAS</div>
+        <h1 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+          El centro de tu<br /><span style={{ color: '#f59e0b' }}>energía solar</span>
+        </h1>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', margin: '12px 0 18px' }}>
+          {['Dimensiona', 'Cotiza', 'Conecta', 'Instala'].map((t, i) => (
+            <span key={t} style={{ fontSize: 11, fontWeight: 700, color: i % 2 === 0 ? '#059669' : '#f59e0b', letterSpacing: 0.5 }}>
+              {t}{i < 3 ? <span style={{ color: '#7a9eaa', margin: '0 6px' }}>•</span> : ''}
+            </span>
           ))}
         </div>
-        <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={() => setStep(1)}>Calcular mi sistema solar →</button>
+        <div style={{ color: C.muted, fontSize: 13, maxWidth: 400, margin: '0 auto 22px', lineHeight: 1.7 }}>
+          Pre-dimensionamiento profesional con precios mayoristas reales. Obtén tu propuesta técnica al instante.
+        </div>
+        <div style={{ display: 'flex', gap: 7, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 26 }}>
+          {['✓ 20 operadores de red Colombia', '✓ Ley 1715 · CREG 174/2021', '✓ RETIE + Código de Medida'].map(t => (
+            <span key={t} style={{ background: '#05966914', border: '1px solid #05966940', borderRadius: 20, padding: '4px 12px', fontSize: 11, color: '#059669' }}>{t}</span>
+          ))}
+        </div>
+        <button style={{ ...ss.btn, background: '#059669', fontSize: 14, padding: '13px 38px', boxShadow: '0 4px 18px #05966940' }} onClick={() => setStep(1)}>
+          Calcular mi sistema solar →
+        </button>
       </div>
+
+      {/* Banner Solar Hub Colombia */}
+      <div style={{ background: 'linear-gradient(90deg, #05966912, #f59e0b10)', border: '1px solid #05966930', borderRadius: 10, padding: '12px 18px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontSize: 24, flexShrink: 0 }}>🌞</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 1 }}>
+            Potenciado por <span style={{ color: '#f59e0b' }}>Solar Hub Colombia</span>
+          </div>
+          <div style={{ fontSize: 10, color: C.muted }}>
+            Precios mayoristas · Paneles Longi · Inversores CPS · Stock disponible en Colombia
+          </div>
+        </div>
+        <div style={{ fontSize: 10, color: '#059669', fontWeight: 700, flexShrink: 0 }}>ALIANZA OFICIAL</div>
+      </div>
+
+      {/* Cards de tipos */}
       <div style={{ display: 'flex', gap: 10 }}>
         {[['☀', 'On-Grid', 'Conectado a red. Reduce factura hasta 90%.'], ['⚡', 'Híbrido', 'Baterías + red. Producción continua.'], ['🌿', 'Off-Grid', '100% autónomo. Sin red eléctrica.']].map(([ic, t, d]) => (
           <div key={t} style={{ ...ss.card, flex: 1, textAlign: 'center', padding: '16px 11px' }}>
             <div style={{ fontSize: 22, marginBottom: 6 }}>{ic}</div>
-            <div style={{ fontWeight: 700, color: C.teal, fontSize: 12, marginBottom: 4 }}>{t}</div>
+            <div style={{ fontWeight: 700, color: '#059669', fontSize: 12, marginBottom: 4 }}>{t}</div>
             <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>{d}</div>
           </div>
         ))}
@@ -789,7 +818,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         </div>
 
         <div style={ss.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>◈ Presupuesto estimado</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 8 }}>◈ Presupuesto estimado</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f59e0b0e', border: '1px solid #f59e0b28', borderRadius: 7, padding: '8px 12px', marginBottom: 10 }}>
+            <span style={{ fontSize: 16 }}>🌞</span>
+            <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.4 }}>
+              <span style={{ color: '#f59e0b', fontWeight: 700 }}>Precios mayoristas Solar Hub Colombia</span> — paneles Longi, inversores CPS. Tarifas actualizadas al mercado colombiano.
+            </div>
+          </div>
           <div style={{ background: C.dark, borderRadius: 7, padding: '13px 14px', marginBottom: 11 }}>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 7, fontWeight: 600 }}>SECCIÓN A — Equipos (0% IVA, Ley 1715/2014)</div>
             {[['Paneles solares', bgt.pC], ['Inversor', bgt.iC], ...(needsB ? [['Baterías', bgt.bC]] : []), ['Subtotal A', bgt.sA]].map(([l, v], i, arr) => (
@@ -827,8 +862,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         </div>
 
         <div style={{ textAlign: 'center', padding: '4px 0 28px' }}>
-          <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px', marginBottom: 9 }} onClick={submit}>Solicitar propuesta detallada →</button>
-          <div style={{ fontSize: 11, color: C.muted }}>Ingeniero ALEBAS te contacta en menos de 24h · info@alebas.co</div>
+          <button style={{ ...ss.btn, background: '#059669', fontSize: 14, padding: '13px 36px', marginBottom: 9, boxShadow: '0 4px 16px #05966938' }} onClick={submit}>
+            Solicitar propuesta detallada →
+          </button>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Ingeniero SolarHub · ALEBAS te contacta en menos de 24 h</div>
+          <div style={{ fontSize: 10, color: '#059669' }}>info@alebas.co · Villavicencio, Meta</div>
         </div>
       </div>
     );
