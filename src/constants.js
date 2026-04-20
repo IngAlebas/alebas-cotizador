@@ -102,61 +102,244 @@ export const MAX_KWP_AGPE = 500;
 // netting 1:1 mensual); Mayor 100 kW–1 MW (excedentes valorados al precio bolsa XM).
 export const AGPE_LIMIT_KW_MENOR = 100;
 
+// Destinos courier: capital + ciudades intermedias relevantes por depto.
+// `id` único (slug), `zona` aplica a tarifa courier (origen Bogotá D.C.).
 export const DESTINOS_COURIER = [
-  { dept: 'Bogotá D.C.', capital: 'Bogotá', zona: 'L', km: 0, tiempo: '24h', lat: 4.7110, lon: -74.0721 },
-  { dept: 'Cundinamarca', capital: 'Facatativá', zona: 'R', km: 80, tiempo: '24-48h', lat: 4.8136, lon: -74.3537 },
-  { dept: 'Boyacá', capital: 'Tunja', zona: 'R', km: 150, tiempo: '24-48h', lat: 5.5446, lon: -73.3573 },
-  { dept: 'Tolima', capital: 'Ibagué', zona: 'R', km: 210, tiempo: '24-48h', lat: 4.4389, lon: -75.2322 },
-  { dept: 'Meta', capital: 'Villavicencio', zona: 'R', km: 90, tiempo: '24-48h', lat: 4.1420, lon: -73.6266 },
-  { dept: 'Huila', capital: 'Neiva', zona: 'R', km: 310, tiempo: '24-48h', lat: 2.9273, lon: -75.2819 },
-  { dept: 'Caldas', capital: 'Manizales', zona: 'R', km: 310, tiempo: '24-48h', lat: 5.0689, lon: -75.5174 },
-  { dept: 'Risaralda', capital: 'Pereira', zona: 'R', km: 330, tiempo: '24-48h', lat: 4.8133, lon: -75.6961 },
-  { dept: 'Quindío', capital: 'Armenia', zona: 'R', km: 300, tiempo: '24-48h', lat: 4.5339, lon: -75.6811 },
-  { dept: 'Santander', capital: 'Bucaramanga', zona: 'N1', km: 400, tiempo: '48h', lat: 7.1193, lon: -73.1227 },
-  { dept: 'Antioquia', capital: 'Medellín', zona: 'N1', km: 415, tiempo: '48h', lat: 6.2442, lon: -75.5812 },
-  { dept: 'Valle del Cauca', capital: 'Cali', zona: 'N1', km: 460, tiempo: '48h', lat: 3.4516, lon: -76.5320 },
-  { dept: 'Norte de Santander', capital: 'Cúcuta', zona: 'N1', km: 590, tiempo: '48-72h', lat: 7.8939, lon: -72.5078 },
-  { dept: 'Cauca', capital: 'Popayán', zona: 'N1', km: 580, tiempo: '48-72h', lat: 2.4448, lon: -76.6147 },
-  { dept: 'Casanare', capital: 'Yopal', zona: 'N1', km: 380, tiempo: '48h', lat: 5.3378, lon: -72.3959 },
-  { dept: 'Arauca', capital: 'Arauca', zona: 'N1', km: 530, tiempo: '48-72h', lat: 7.0903, lon: -70.7617 },
-  { dept: 'Nariño', capital: 'Pasto', zona: 'N2', km: 820, tiempo: '48-72h', lat: 1.2136, lon: -77.2811 },
-  { dept: 'Putumayo', capital: 'Mocoa', zona: 'N2', km: 700, tiempo: '48-72h', lat: 1.1503, lon: -76.6483 },
-  { dept: 'Atlántico', capital: 'Barranquilla', zona: 'N2', km: 1000, tiempo: '48-72h', lat: 10.9685, lon: -74.7813 },
-  { dept: 'Bolívar', capital: 'Cartagena', zona: 'N2', km: 1050, tiempo: '48-72h', lat: 10.3910, lon: -75.4794 },
-  { dept: 'Magdalena', capital: 'Santa Marta', zona: 'N2', km: 1070, tiempo: '48-72h', lat: 11.2408, lon: -74.1990 },
-  { dept: 'Cesar', capital: 'Valledupar', zona: 'N2', km: 850, tiempo: '48-72h', lat: 10.4631, lon: -73.2532 },
-  { dept: 'Córdoba', capital: 'Montería', zona: 'N2', km: 890, tiempo: '48-72h', lat: 8.7479, lon: -75.8814 },
-  { dept: 'Sucre', capital: 'Sincelejo', zona: 'N2', km: 930, tiempo: '48-72h', lat: 9.3047, lon: -75.3978 },
-  { dept: 'La Guajira', capital: 'Riohacha', zona: 'N2', km: 1150, tiempo: '48-72h', lat: 11.5444, lon: -72.9072 },
-  { dept: 'Caquetá', capital: 'Florencia', zona: 'N2', km: 590, tiempo: '48-72h', lat: 1.6144, lon: -75.6062 },
-  { dept: 'Vichada', capital: 'Puerto Carreño', zona: 'D', km: 840, tiempo: '72-96h', lat: 6.1888, lon: -67.4856 },
-  { dept: 'Guaviare', capital: 'San José G.', zona: 'D', km: 580, tiempo: '72-96h', lat: 2.5667, lon: -72.6450 },
-  { dept: 'Chocó', capital: 'Quibdó', zona: 'D', km: 650, tiempo: '72-96h', lat: 5.6919, lon: -76.6583 },
-  { dept: 'Amazonas', capital: 'Leticia', zona: 'D', km: 1600, tiempo: '96h+', lat: -4.2150, lon: -69.9406 },
-  { dept: 'Vaupés', capital: 'Mitú', zona: 'D', km: 1300, tiempo: '96h+', lat: 1.2536, lon: -70.2336 },
-  { dept: 'Guainía', capital: 'Inírida', zona: 'D', km: 1100, tiempo: '96h+', lat: 3.8653, lon: -67.9239 },
-  { dept: 'San Andrés', capital: 'San Andrés (aéreo)', zona: 'D', km: 1800, tiempo: '96h+', lat: 12.5847, lon: -81.7006 },
+  // Bogotá / Cundinamarca
+  { id: 'bogota',        dept: 'Bogotá D.C.',        city: 'Bogotá',           zona: 'L',  km: 0,    tiempo: '24h',    lat: 4.7110, lon: -74.0721 },
+  { id: 'soacha',        dept: 'Cundinamarca',       city: 'Soacha',           zona: 'L',  km: 18,   tiempo: '24h',    lat: 4.5792, lon: -74.2170 },
+  { id: 'facatativa',    dept: 'Cundinamarca',       city: 'Facatativá',       zona: 'R',  km: 40,   tiempo: '24h',    lat: 4.8136, lon: -74.3537 },
+  { id: 'zipaquira',     dept: 'Cundinamarca',       city: 'Zipaquirá',        zona: 'R',  km: 50,   tiempo: '24h',    lat: 5.0222, lon: -74.0045 },
+  { id: 'fusagasuga',    dept: 'Cundinamarca',       city: 'Fusagasugá',       zona: 'R',  km: 65,   tiempo: '24-48h', lat: 4.3333, lon: -74.3667 },
+  { id: 'girardot',      dept: 'Cundinamarca',       city: 'Girardot',         zona: 'R',  km: 134,  tiempo: '24-48h', lat: 4.3001, lon: -74.8000 },
+  { id: 'chia',          dept: 'Cundinamarca',       city: 'Chía',             zona: 'R',  km: 23,   tiempo: '24h',    lat: 4.8625, lon: -74.0525 },
+
+  // Boyacá
+  { id: 'tunja',         dept: 'Boyacá',             city: 'Tunja',            zona: 'R',  km: 150,  tiempo: '24-48h', lat: 5.5446, lon: -73.3573 },
+  { id: 'duitama',       dept: 'Boyacá',             city: 'Duitama',          zona: 'R',  km: 205,  tiempo: '24-48h', lat: 5.8245, lon: -73.0328 },
+  { id: 'sogamoso',      dept: 'Boyacá',             city: 'Sogamoso',         zona: 'R',  km: 225,  tiempo: '24-48h', lat: 5.7141, lon: -72.9318 },
+  { id: 'chiquinquira',  dept: 'Boyacá',             city: 'Chiquinquirá',     zona: 'R',  km: 130,  tiempo: '24-48h', lat: 5.6136, lon: -73.8178 },
+
+  // Tolima
+  { id: 'ibague',        dept: 'Tolima',             city: 'Ibagué',           zona: 'R',  km: 210,  tiempo: '24-48h', lat: 4.4389, lon: -75.2322 },
+  { id: 'espinal',       dept: 'Tolima',             city: 'Espinal',          zona: 'R',  km: 165,  tiempo: '24-48h', lat: 4.1497, lon: -74.8842 },
+  { id: 'honda',         dept: 'Tolima',             city: 'Honda',            zona: 'R',  km: 155,  tiempo: '24-48h', lat: 5.2081, lon: -74.7417 },
+  { id: 'melgar',        dept: 'Tolima',             city: 'Melgar',           zona: 'R',  km: 100,  tiempo: '24-48h', lat: 4.2050, lon: -74.6420 },
+
+  // Meta
+  { id: 'villavicencio', dept: 'Meta',               city: 'Villavicencio',    zona: 'R',  km: 90,   tiempo: '24-48h', lat: 4.1420, lon: -73.6266 },
+  { id: 'acacias',       dept: 'Meta',               city: 'Acacías',          zona: 'R',  km: 120,  tiempo: '24-48h', lat: 3.9893, lon: -73.7578 },
+  { id: 'granada-meta',  dept: 'Meta',               city: 'Granada',          zona: 'R',  km: 170,  tiempo: '24-48h', lat: 3.5467, lon: -73.7050 },
+  { id: 'puerto-lopez',  dept: 'Meta',               city: 'Puerto López',     zona: 'R',  km: 175,  tiempo: '24-48h', lat: 4.0886, lon: -72.9583 },
+
+  // Huila
+  { id: 'neiva',         dept: 'Huila',              city: 'Neiva',            zona: 'R',  km: 310,  tiempo: '24-48h', lat: 2.9273, lon: -75.2819 },
+  { id: 'pitalito',      dept: 'Huila',              city: 'Pitalito',         zona: 'R',  km: 500,  tiempo: '48-72h', lat: 1.8589, lon: -76.0508 },
+  { id: 'garzon',        dept: 'Huila',              city: 'Garzón',           zona: 'R',  km: 420,  tiempo: '48h',    lat: 2.1959, lon: -75.6278 },
+
+  // Caldas
+  { id: 'manizales',     dept: 'Caldas',             city: 'Manizales',        zona: 'R',  km: 310,  tiempo: '24-48h', lat: 5.0689, lon: -75.5174 },
+  { id: 'la-dorada',     dept: 'Caldas',             city: 'La Dorada',        zona: 'R',  km: 205,  tiempo: '24-48h', lat: 5.4506, lon: -74.6575 },
+  { id: 'chinchina',     dept: 'Caldas',             city: 'Chinchiná',        zona: 'R',  km: 320,  tiempo: '24-48h', lat: 4.9833, lon: -75.6167 },
+
+  // Risaralda
+  { id: 'pereira',       dept: 'Risaralda',          city: 'Pereira',          zona: 'R',  km: 330,  tiempo: '24-48h', lat: 4.8133, lon: -75.6961 },
+  { id: 'dosquebradas',  dept: 'Risaralda',          city: 'Dosquebradas',     zona: 'R',  km: 335,  tiempo: '24-48h', lat: 4.8306, lon: -75.6764 },
+
+  // Quindío
+  { id: 'armenia',       dept: 'Quindío',            city: 'Armenia',          zona: 'R',  km: 300,  tiempo: '24-48h', lat: 4.5339, lon: -75.6811 },
+  { id: 'calarca',       dept: 'Quindío',            city: 'Calarcá',          zona: 'R',  km: 295,  tiempo: '24-48h', lat: 4.5236, lon: -75.6439 },
+
+  // Santander
+  { id: 'bucaramanga',   dept: 'Santander',          city: 'Bucaramanga',      zona: 'N1', km: 400,  tiempo: '48h',    lat: 7.1193, lon: -73.1227 },
+  { id: 'floridablanca', dept: 'Santander',          city: 'Floridablanca',    zona: 'N1', km: 405,  tiempo: '48h',    lat: 7.0697, lon: -73.0897 },
+  { id: 'giron',         dept: 'Santander',          city: 'Girón',            zona: 'N1', km: 398,  tiempo: '48h',    lat: 7.0722, lon: -73.1686 },
+  { id: 'barrancabermeja', dept: 'Santander',        city: 'Barrancabermeja',  zona: 'N1', km: 320,  tiempo: '48h',    lat: 7.0653, lon: -73.8547 },
+  { id: 'san-gil',       dept: 'Santander',          city: 'San Gil',          zona: 'N1', km: 310,  tiempo: '48h',    lat: 6.5550, lon: -73.1336 },
+
+  // Antioquia
+  { id: 'medellin',      dept: 'Antioquia',          city: 'Medellín',         zona: 'N1', km: 415,  tiempo: '48h',    lat: 6.2442, lon: -75.5812 },
+  { id: 'bello',         dept: 'Antioquia',          city: 'Bello',            zona: 'N1', km: 420,  tiempo: '48h',    lat: 6.3373, lon: -75.5567 },
+  { id: 'envigado',      dept: 'Antioquia',          city: 'Envigado',         zona: 'N1', km: 420,  tiempo: '48h',    lat: 6.1702, lon: -75.5836 },
+  { id: 'itagui',        dept: 'Antioquia',          city: 'Itagüí',           zona: 'N1', km: 418,  tiempo: '48h',    lat: 6.1817, lon: -75.5994 },
+  { id: 'rionegro',      dept: 'Antioquia',          city: 'Rionegro',         zona: 'N1', km: 390,  tiempo: '48h',    lat: 6.1556, lon: -75.3744 },
+  { id: 'apartado',      dept: 'Antioquia',          city: 'Apartadó',         zona: 'N1', km: 680,  tiempo: '72h',    lat: 7.8833, lon: -76.6333 },
+
+  // Valle del Cauca
+  { id: 'cali',          dept: 'Valle del Cauca',    city: 'Cali',             zona: 'N1', km: 460,  tiempo: '48h',    lat: 3.4516, lon: -76.5320 },
+  { id: 'palmira',       dept: 'Valle del Cauca',    city: 'Palmira',          zona: 'N1', km: 475,  tiempo: '48h',    lat: 3.5395, lon: -76.3033 },
+  { id: 'buga',          dept: 'Valle del Cauca',    city: 'Buga',             zona: 'N1', km: 390,  tiempo: '48h',    lat: 3.9014, lon: -76.2978 },
+  { id: 'tulua',         dept: 'Valle del Cauca',    city: 'Tuluá',            zona: 'N1', km: 380,  tiempo: '48h',    lat: 4.0847, lon: -76.1953 },
+  { id: 'buenaventura',  dept: 'Valle del Cauca',    city: 'Buenaventura',     zona: 'N1', km: 580,  tiempo: '48-72h', lat: 3.8831, lon: -77.0311 },
+
+  // Norte de Santander
+  { id: 'cucuta',        dept: 'Norte de Santander', city: 'Cúcuta',           zona: 'N1', km: 590,  tiempo: '48-72h', lat: 7.8939, lon: -72.5078 },
+  { id: 'ocana',         dept: 'Norte de Santander', city: 'Ocaña',            zona: 'N1', km: 560,  tiempo: '48-72h', lat: 8.2378, lon: -73.3561 },
+  { id: 'pamplona',      dept: 'Norte de Santander', city: 'Pamplona',         zona: 'N1', km: 520,  tiempo: '48-72h', lat: 7.3764, lon: -72.6514 },
+
+  // Cauca
+  { id: 'popayan',       dept: 'Cauca',              city: 'Popayán',          zona: 'N1', km: 580,  tiempo: '48-72h', lat: 2.4448, lon: -76.6147 },
+  { id: 'santander-quilichao', dept: 'Cauca',        city: 'Santander de Quilichao', zona: 'N1', km: 500, tiempo: '48h', lat: 3.0100, lon: -76.4850 },
+
+  // Casanare
+  { id: 'yopal',         dept: 'Casanare',           city: 'Yopal',            zona: 'N1', km: 380,  tiempo: '48h',    lat: 5.3378, lon: -72.3959 },
+  { id: 'aguazul',       dept: 'Casanare',           city: 'Aguazul',          zona: 'N1', km: 360,  tiempo: '48h',    lat: 5.1722, lon: -72.5475 },
+  { id: 'villanueva-casanare', dept: 'Casanare',     city: 'Villanueva',       zona: 'N1', km: 280,  tiempo: '48h',    lat: 4.6119, lon: -72.9264 },
+
+  // Arauca
+  { id: 'arauca',        dept: 'Arauca',             city: 'Arauca',           zona: 'N1', km: 530,  tiempo: '48-72h', lat: 7.0903, lon: -70.7617 },
+  { id: 'saravena',      dept: 'Arauca',             city: 'Saravena',         zona: 'N1', km: 600,  tiempo: '72h',    lat: 6.9586, lon: -71.8722 },
+
+  // Nariño
+  { id: 'pasto',         dept: 'Nariño',             city: 'Pasto',            zona: 'N2', km: 820,  tiempo: '48-72h', lat: 1.2136, lon: -77.2811 },
+  { id: 'ipiales',       dept: 'Nariño',             city: 'Ipiales',          zona: 'N2', km: 900,  tiempo: '72h',    lat: 0.8272, lon: -77.6458 },
+  { id: 'tumaco',        dept: 'Nariño',             city: 'Tumaco',           zona: 'N2', km: 1000, tiempo: '72-96h', lat: 1.7911, lon: -78.7947 },
+
+  // Putumayo
+  { id: 'mocoa',         dept: 'Putumayo',           city: 'Mocoa',            zona: 'N2', km: 700,  tiempo: '48-72h', lat: 1.1503, lon: -76.6483 },
+  { id: 'puerto-asis',   dept: 'Putumayo',           city: 'Puerto Asís',      zona: 'N2', km: 820,  tiempo: '72h',    lat: 0.5058, lon: -76.4983 },
+
+  // Atlántico
+  { id: 'barranquilla',  dept: 'Atlántico',          city: 'Barranquilla',     zona: 'N2', km: 1000, tiempo: '48-72h', lat: 10.9685, lon: -74.7813 },
+  { id: 'soledad',       dept: 'Atlántico',          city: 'Soledad',          zona: 'N2', km: 1003, tiempo: '48-72h', lat: 10.9167, lon: -74.7667 },
+  { id: 'sabanalarga',   dept: 'Atlántico',          city: 'Sabanalarga',      zona: 'N2', km: 945,  tiempo: '48-72h', lat: 10.6311, lon: -74.9211 },
+
+  // Bolívar
+  { id: 'cartagena',     dept: 'Bolívar',            city: 'Cartagena',        zona: 'N2', km: 1050, tiempo: '48-72h', lat: 10.3910, lon: -75.4794 },
+  { id: 'magangue',      dept: 'Bolívar',            city: 'Magangué',         zona: 'N2', km: 830,  tiempo: '72h',    lat: 9.2408, lon: -74.7531 },
+  { id: 'turbaco',       dept: 'Bolívar',            city: 'Turbaco',          zona: 'N2', km: 1040, tiempo: '48-72h', lat: 10.3311, lon: -75.4089 },
+
+  // Magdalena
+  { id: 'santa-marta',   dept: 'Magdalena',          city: 'Santa Marta',      zona: 'N2', km: 1070, tiempo: '48-72h', lat: 11.2408, lon: -74.1990 },
+  { id: 'cienaga',       dept: 'Magdalena',          city: 'Ciénaga',          zona: 'N2', km: 1040, tiempo: '48-72h', lat: 11.0006, lon: -74.2472 },
+  { id: 'fundacion',     dept: 'Magdalena',          city: 'Fundación',        zona: 'N2', km: 960,  tiempo: '48-72h', lat: 10.5194, lon: -74.1856 },
+
+  // Cesar
+  { id: 'valledupar',    dept: 'Cesar',              city: 'Valledupar',       zona: 'N2', km: 850,  tiempo: '48-72h', lat: 10.4631, lon: -73.2532 },
+  { id: 'aguachica',     dept: 'Cesar',              city: 'Aguachica',        zona: 'N2', km: 520,  tiempo: '48-72h', lat: 8.3092, lon: -73.6075 },
+
+  // Córdoba
+  { id: 'monteria',      dept: 'Córdoba',            city: 'Montería',         zona: 'N2', km: 890,  tiempo: '48-72h', lat: 8.7479, lon: -75.8814 },
+  { id: 'sahagun',       dept: 'Córdoba',            city: 'Sahagún',          zona: 'N2', km: 820,  tiempo: '48-72h', lat: 8.9464, lon: -75.4433 },
+  { id: 'lorica',        dept: 'Córdoba',            city: 'Lorica',           zona: 'N2', km: 930,  tiempo: '72h',    lat: 9.2397, lon: -75.8136 },
+
+  // Sucre
+  { id: 'sincelejo',     dept: 'Sucre',              city: 'Sincelejo',        zona: 'N2', km: 930,  tiempo: '48-72h', lat: 9.3047, lon: -75.3978 },
+  { id: 'corozal',       dept: 'Sucre',              city: 'Corozal',          zona: 'N2', km: 945,  tiempo: '48-72h', lat: 9.3192, lon: -75.2933 },
+
+  // La Guajira
+  { id: 'riohacha',      dept: 'La Guajira',         city: 'Riohacha',         zona: 'N2', km: 1150, tiempo: '48-72h', lat: 11.5444, lon: -72.9072 },
+  { id: 'maicao',        dept: 'La Guajira',         city: 'Maicao',           zona: 'N2', km: 1200, tiempo: '72h',    lat: 11.3775, lon: -72.2372 },
+
+  // Caquetá
+  { id: 'florencia',     dept: 'Caquetá',            city: 'Florencia',        zona: 'N2', km: 590,  tiempo: '48-72h', lat: 1.6144, lon: -75.6062 },
+  { id: 'san-vicente-caguan', dept: 'Caquetá',       city: 'San Vicente del Caguán', zona: 'N2', km: 720, tiempo: '72h', lat: 2.1167, lon: -74.7703 },
+
+  // Zonas difícil acceso
+  { id: 'puerto-carreno', dept: 'Vichada',           city: 'Puerto Carreño',   zona: 'D', km: 840,  tiempo: '72-96h', lat: 6.1888, lon: -67.4856 },
+  { id: 'san-jose-guaviare', dept: 'Guaviare',       city: 'San José del Guaviare', zona: 'D', km: 580, tiempo: '72-96h', lat: 2.5667, lon: -72.6450 },
+  { id: 'quibdo',         dept: 'Chocó',             city: 'Quibdó',           zona: 'D', km: 650,  tiempo: '72-96h', lat: 5.6919, lon: -76.6583 },
+  { id: 'leticia',        dept: 'Amazonas',          city: 'Leticia',          zona: 'D', km: 1600, tiempo: '96h+',   lat: -4.2150, lon: -69.9406 },
+  { id: 'mitu',           dept: 'Vaupés',            city: 'Mitú',             zona: 'D', km: 1300, tiempo: '96h+',   lat: 1.2536, lon: -70.2336 },
+  { id: 'inirida',        dept: 'Guainía',           city: 'Inírida',          zona: 'D', km: 1100, tiempo: '96h+',   lat: 3.8653, lon: -67.9239 },
+  { id: 'san-andres',     dept: 'San Andrés',        city: 'San Andrés (aéreo)', zona: 'D', km: 1800, tiempo: '96h+', lat: 12.5847, lon: -81.7006 },
 ];
 
-// Tarifas Interrapidísimo 2025-2026 (oficiales)
-export const INTER_ZONAS = {
-  L:  { label: 'Local',          base: 7900,  kgAd: 3400 },
-  R:  { label: 'Regional',       base: 10100, kgAd: 4000 },
-  N1: { label: 'Nacional Z1',    base: 18500, kgAd: 4400 },
-  N2: { label: 'Nacional Z2',    base: 23600, kgAd: 5500 },
-  D:  { label: 'Difícil acceso', base: 80000, kgAd: 12000 },
+// ==================== CARRIERS (Transportadoras nacionales) ====================
+// Tarifas referenciales 2025-2026 (COP). base = primer kg incluido; kgAd = kg adicional.
+// Fuente: comparativos públicos + tarifarios de cotización online.
+// El cotizador calcula todas y selecciona la más económica por destino/peso.
+export const CARRIERS = {
+  interrapidisimo: {
+    label: 'Interrapidísimo',
+    note: 'Líder nacional en tiempos cortos',
+    zonas: {
+      L:  { base: 7900,  kgAd: 3400 },
+      R:  { base: 10100, kgAd: 4000 },
+      N1: { base: 18500, kgAd: 4400 },
+      N2: { base: 23600, kgAd: 5500 },
+      D:  { base: 80000, kgAd: 12000 },
+    },
+  },
+  servientrega: {
+    label: 'Servientrega',
+    note: 'Cobertura más amplia en municipios pequeños',
+    zonas: {
+      L:  { base: 8500,  kgAd: 3600 },
+      R:  { base: 11200, kgAd: 4300 },
+      N1: { base: 19800, kgAd: 4800 },
+      N2: { base: 25800, kgAd: 6000 },
+      D:  { base: 85000, kgAd: 13000 },
+    },
+  },
+  envia: {
+    label: 'Envía Colvanes',
+    note: 'Competitivo en cargas medianas',
+    zonas: {
+      L:  { base: 8200,  kgAd: 3500 },
+      R:  { base: 10800, kgAd: 4100 },
+      N1: { base: 19200, kgAd: 4600 },
+      N2: { base: 24800, kgAd: 5800 },
+      D:  { base: 78000, kgAd: 11500 },
+    },
+  },
+  coordinadora: {
+    label: 'Coordinadora',
+    note: 'Fuerte en paquetería pesada (>30 kg)',
+    zonas: {
+      L:  { base: 9500,  kgAd: 3200 },
+      R:  { base: 12000, kgAd: 3800 },
+      N1: { base: 20500, kgAd: 4200 },
+      N2: { base: 26000, kgAd: 5200 },
+      D:  { base: 90000, kgAd: 12500 },
+    },
+  },
+  tcc: {
+    label: 'TCC',
+    note: 'Logística industrial, entrega puerta a puerta',
+    zonas: {
+      L:  { base: 8900,  kgAd: 3300 },
+      R:  { base: 11500, kgAd: 3900 },
+      N1: { base: 19500, kgAd: 4300 },
+      N2: { base: 25000, kgAd: 5400 },
+      D:  { base: 82000, kgAd: 12000 },
+    },
+  },
+  saferbo: {
+    label: 'Saferbo',
+    note: 'Económico para carga seca >50 kg',
+    zonas: {
+      L:  { base: 9800,  kgAd: 3100 },
+      R:  { base: 12500, kgAd: 3700 },
+      N1: { base: 20000, kgAd: 4100 },
+      N2: { base: 25500, kgAd: 5100 },
+      D:  { base: 88000, kgAd: 11800 },
+    },
+  },
+  deprisa: {
+    label: 'Deprisa (Avianca)',
+    note: 'Aéreo — único a San Andrés en 24-48h',
+    zonas: {
+      L:  { base: 10500, kgAd: 3800 },
+      R:  { base: 13500, kgAd: 4500 },
+      N1: { base: 22000, kgAd: 5000 },
+      N2: { base: 28000, kgAd: 6300 },
+      D:  { base: 95000, kgAd: 14000 },
+    },
+  },
 };
 
-// Tarifas Servientrega (referencia comparable)
-export const SERVI_ZONAS = {
-  L:  { label: 'Local',          base: 8500,  kgAd: 3600 },
-  R:  { label: 'Regional',       base: 11200, kgAd: 4300 },
-  N1: { label: 'Nacional Z1',    base: 19800, kgAd: 4800 },
-  N2: { label: 'Nacional Z2',    base: 25800, kgAd: 6000 },
-  D:  { label: 'Difícil acceso', base: 85000, kgAd: 13000 },
-};
+// Alias backwards-compat (Quoter viejo usaba estas constantes directamente)
+export const INTER_ZONAS = Object.fromEntries(
+  Object.entries(CARRIERS.interrapidisimo.zonas).map(([k, v]) => [k, { ...v, label: { L: 'Local', R: 'Regional', N1: 'Nacional Z1', N2: 'Nacional Z2', D: 'Difícil acceso' }[k] }])
+);
+export const SERVI_ZONAS = Object.fromEntries(
+  Object.entries(CARRIERS.servientrega.zonas).map(([k, v]) => [k, { ...v, label: INTER_ZONAS[k].label }])
+);
 
 export const SOBREFLETE = 0.02;
+
+export const ZONA_LABEL = { L: 'Local', R: 'Regional', N1: 'Nacional Z1', N2: 'Nacional Z2', D: 'Difícil acceso' };
 
 // ==================== EQUIPMENT DEFAULTS ====================
 // Schema extendido con specs eléctricos (Voc, Vmp, Isc, Imp, coef. temp.)
@@ -430,6 +613,28 @@ export function calcTransport(zonas, zona, kgTotal, valorDec) {
   const flete = Math.round(z.base + Math.max(0, kgTotal - 1) * z.kgAd);
   const sf = Math.round(valorDec * SOBREFLETE);
   return { flete, sf, total: flete + sf };
+}
+
+// Cotiza en todas las transportadoras y devuelve la más económica.
+// `valorDec` (declarado) aplica sobreflete 2% — mismo para todas (normativa).
+// Retorna { best: {carrierId, label, flete, sf, total}, quotes: [...ordenadas] }.
+export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIERS) {
+  const sf = Math.round(valorDec * SOBREFLETE);
+  const quotes = Object.entries(carriers).map(([carrierId, c]) => {
+    const z = c.zonas[zona];
+    if (!z) return null;
+    const flete = Math.round(z.base + Math.max(0, kgTotal - 1) * z.kgAd);
+    return {
+      carrierId,
+      label: c.label,
+      note: c.note || '',
+      flete,
+      sf,
+      total: flete + sf,
+    };
+  }).filter(Boolean);
+  quotes.sort((a, b) => a.total - b.total);
+  return { best: quotes[0] || null, quotes };
 }
 
 export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
