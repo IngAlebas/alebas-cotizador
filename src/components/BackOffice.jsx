@@ -6,7 +6,7 @@ import { searchCECPanels, searchCECInverters } from '../services/cec';
 import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
-import { n8nConfigured } from '../services/n8n';
+import { n8nConfigured, n8nBaseUrl } from '../services/n8n';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -313,11 +313,15 @@ function OperatorsMgr({ operators, upd, ss }) {
       setSyncStatus({ warn: 'local-dev' });
       return;
     }
+    if (!n8nConfigured()) {
+      setSyncStatus({ warn: 'not-configured' });
+      return;
+    }
     setSyncStatus({ loading: true });
     try {
       const data = await fetchAgentsList();
       if (data?.ok === false) {
-        setSyncStatus({ warn: 'error', msg: data.error || data.reason || 'no disponible' });
+        setSyncStatus({ warn: 'error', msg: data.error || data.reason || 'no disponible', baseUrl: n8nBaseUrl() });
         return;
       }
       const total = data.operators?.length ?? 0;
@@ -333,7 +337,8 @@ function OperatorsMgr({ operators, upd, ss }) {
       const matched = operators.filter(o => o.sic && xmCodes.has(o.sic)).length;
       setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached, filterWarning: !data.activityFilterWorked });
     } catch (err) {
-      setSyncStatus({ warn: 'error', msg: err.message });
+      const isNetwork = /Failed to fetch|NetworkError|AbortError|aborted/i.test(err.message || '');
+      setSyncStatus({ warn: 'error', msg: err.message, baseUrl: n8nBaseUrl(), network: isNetwork });
     }
   };
 
@@ -388,9 +393,24 @@ function OperatorsMgr({ operators, upd, ss }) {
           {syncStatus.rawPreview && <div style={{ marginTop: 5, fontFamily: 'monospace', fontSize: 9, color: C.muted, wordBreak: 'break-all' }}>Raw preview: {syncStatus.rawPreview}</div>}
         </div>
       )}
+      {syncStatus?.warn === 'not-configured' && (
+        <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
+          ℹ Sync XM no configurado. Define <code>REACT_APP_N8N_BASE_URL</code> en Vercel → Settings → Environment Variables apuntando al webhook n8n (ej. <code>https://app.alebas.co/webhook</code>). La lista local de {operators.length} operadores permanece activa.
+        </div>
+      )}
       {syncStatus?.warn === 'error' && (
         <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
-          ℹ Sync XM no disponible: {syncStatus.msg}. La lista local permanece activa.
+          <div>ℹ Sync XM no disponible: <strong>{syncStatus.msg}</strong>. La lista local permanece activa.</div>
+          {syncStatus.baseUrl && (
+            <div style={{ marginTop: 5, fontSize: 10, color: C.muted, wordBreak: 'break-all' }}>
+              n8n: <code style={{ fontFamily: 'monospace' }}>{syncStatus.baseUrl}/xm-agents</code>
+              {syncStatus.network && (
+                <div style={{ marginTop: 3 }}>
+                  Revisa: (1) workflow n8n activo, (2) CORS permite <code>{window.location.origin}</code>, (3) URL correcta, (4) DNS/SSL válido.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       {spot?.cop_per_kwh != null && (

@@ -6,6 +6,7 @@ const BASE = (process.env.REACT_APP_N8N_BASE_URL || '').replace(/\/+$/, '');
 const TOKEN = process.env.REACT_APP_N8N_TOKEN || '';
 
 export const n8nConfigured = () => BASE.length > 0;
+export const n8nBaseUrl = () => BASE;
 
 export async function n8nPost(path, body, { timeoutMs = 25000 } = {}) {
   if (!BASE) throw new Error('n8n no configurado (REACT_APP_N8N_BASE_URL vacío)');
