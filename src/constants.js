@@ -109,62 +109,115 @@ export const SOBREFLETE = 0.02;
 // se pueden enriquecer desde la base CEC / NREL SAM vía BackOffice.
 // Los defaults son valores típicos de datasheet — importar desde CEC
 // garantiza precisión oficial para validar layouts y construir unifilares.
+// Stock semanal: { qty, supplier, updatedAt } — refleja el inventario
+// disponible esta semana. El selector automático prioriza equipos con
+// qty>0 sobre los agotados para minimizar plazos de entrega.
+const STOCK_DATE = '2026-04-15';
 export const DEFAULT_PANELS = [
   { id: 'p1', brand: 'JA Solar',       model: 'JAM72S20-545MR',  wp: 545, price: 290000, kg: 24.9,
-    voc: 49.75, vmp: 41.8, isc: 13.85, imp: 13.04, tempCoeffPmax: -0.35, tempCoeffVoc: -0.275, cellCount: 144 },
+    voc: 49.75, vmp: 41.8, isc: 13.85, imp: 13.04, tempCoeffPmax: -0.35, tempCoeffVoc: -0.275, cellCount: 144,
+    stock: { qty: 280, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   { id: 'p2', brand: 'Risen Energy',   model: 'RSM144-7-550M',   wp: 550, price: 285000, kg: 25.5,
-    voc: 49.8, vmp: 41.95, isc: 13.95, imp: 13.11, tempCoeffPmax: -0.35, tempCoeffVoc: -0.28, cellCount: 144 },
+    voc: 49.8, vmp: 41.95, isc: 13.95, imp: 13.11, tempCoeffPmax: -0.35, tempCoeffVoc: -0.28, cellCount: 144,
+    stock: { qty: 120, supplier: 'Energreen', updatedAt: STOCK_DATE } },
   { id: 'p3', brand: 'Canadian Solar', model: 'CS6W-550MS',      wp: 550, price: 280000, kg: 25.0,
-    voc: 49.8, vmp: 41.7, isc: 13.95, imp: 13.19, tempCoeffPmax: -0.34, tempCoeffVoc: -0.26, cellCount: 144 },
+    voc: 49.8, vmp: 41.7, isc: 13.95, imp: 13.19, tempCoeffPmax: -0.34, tempCoeffVoc: -0.26, cellCount: 144,
+    stock: { qty: 60, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   { id: 'p4', brand: 'Trina Solar',    model: 'TSM-550DE09',     wp: 550, price: 295000, kg: 25.5,
-    voc: 49.9, vmp: 41.9, isc: 13.93, imp: 13.13, tempCoeffPmax: -0.34, tempCoeffVoc: -0.25, cellCount: 144 },
+    voc: 49.9, vmp: 41.9, isc: 13.93, imp: 13.13, tempCoeffPmax: -0.34, tempCoeffVoc: -0.25, cellCount: 144,
+    stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
 ];
 
 export const DEFAULT_INVERTERS = [
   // ───── On-grid monofásico (residencial) ─────
   { id: 'i1', brand: 'Growatt', model: 'MIN 3000TL-XH',      kw: 3,  phase: 1, price: 1850000, type: 'on-grid',  kg: 14,
-    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
+    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240,
+    stock: { qty: 8, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i2', brand: 'Growatt', model: 'MIN 5000TL-XH',      kw: 5,  phase: 1, price: 2450000, type: 'on-grid',  kg: 19,
-    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240 },
+    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240,
+    stock: { qty: 6, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i4', brand: 'Solis',   model: 'S6-GR1P5K-M',        kw: 5,  phase: 1, price: 2550000, type: 'on-grid',  kg: 20,
-    vocMax: 600,  mpptVmin: 90,  mpptVmax: 520, mpptCount: 2, idcMax: 16,   efficiency: 97.5, vac: 240 },
+    vocMax: 600,  mpptVmin: 90,  mpptVmax: 520, mpptCount: 2, idcMax: 16,   efficiency: 97.5, vac: 240,
+    stock: { qty: 2, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   // ───── On-grid trifásico (comercial / industrial) ─────
   { id: 'i3',  brand: 'Growatt', model: 'MID 10KTL3-X2',    kw: 10,  phase: 3, price: 4200000,  type: 'on-grid', kg: 32,
-    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 2, idcMax: 25,   efficiency: 98.4, vac: 400 },
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 2, idcMax: 25,   efficiency: 98.4, vac: 400,
+    stock: { qty: 4, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i9',  brand: 'Growatt', model: 'MID 15KTL3-X2',    kw: 15,  phase: 3, price: 6200000,  type: 'on-grid', kg: 42,
-    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400 },
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400,
+    stock: { qty: 3, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i10', brand: 'Growatt', model: 'MID 20KTL3-X2',    kw: 20,  phase: 3, price: 7900000,  type: 'on-grid', kg: 45,
-    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400 },
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400,
+    stock: { qty: 2, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i11', brand: 'Growatt', model: 'MAX 30KTL3-LV',    kw: 30,  phase: 3, price: 10500000, type: 'on-grid', kg: 58,
-    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 3, idcMax: 36,   efficiency: 98.6, vac: 400 },
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 3, idcMax: 36,   efficiency: 98.6, vac: 400,
+    stock: { qty: 1, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i12', brand: 'Growatt', model: 'MAX 50KTL3-LV',    kw: 50,  phase: 3, price: 15800000, type: 'on-grid', kg: 75,
-    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 4, idcMax: 36,   efficiency: 98.6, vac: 400 },
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 4, idcMax: 36,   efficiency: 98.6, vac: 400,
+    stock: { qty: 0, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i13', brand: 'Growatt', model: 'MAX 100KTL3-X LV', kw: 100, phase: 3, price: 29500000, type: 'on-grid', kg: 84,
-    vocMax: 1100, mpptVmin: 200, mpptVmax: 1000, mpptCount: 10, idcMax: 30, efficiency: 98.7, vac: 400 },
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 1000, mpptCount: 10, idcMax: 30, efficiency: 98.7, vac: 400,
+    stock: { qty: 0, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i14', brand: 'Sungrow', model: 'SG125CX-P2',       kw: 125, phase: 3, price: 36000000, type: 'on-grid', kg: 95,
-    vocMax: 1500, mpptVmin: 200, mpptVmax: 1300, mpptCount: 12, idcMax: 30, efficiency: 98.7, vac: 800 },
+    vocMax: 1500, mpptVmin: 200, mpptVmax: 1300, mpptCount: 12, idcMax: 30, efficiency: 98.7, vac: 800,
+    stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   // ───── Híbrido (con baterías, on-grid + backup) ─────
   { id: 'i5',  brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000,  type: 'hybrid', kg: 22,
-    vocMax: 550,  mpptVmin: 120, mpptVmax: 450, mpptCount: 2, idcMax: 13.5, efficiency: 97.5, vac: 240 },
+    vocMax: 550,  mpptVmin: 120, mpptVmax: 450, mpptCount: 2, idcMax: 13.5, efficiency: 97.5, vac: 240,
+    stock: { qty: 4, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i6',  brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000,  type: 'hybrid', kg: 36,
-    vocMax: 1000, mpptVmin: 200, mpptVmax: 800, mpptCount: 2, idcMax: 25,   efficiency: 98.2, vac: 400 },
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 800, mpptCount: 2, idcMax: 25,   efficiency: 98.2, vac: 400,
+    stock: { qty: 2, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i15', brand: 'Solis',   model: 'S6-EH3P15K-H',       kw: 15, phase: 3, price: 10800000, type: 'hybrid', kg: 45,
-    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 3, idcMax: 30,   efficiency: 98.3, vac: 400 },
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 3, idcMax: 30,   efficiency: 98.3, vac: 400,
+    stock: { qty: 1, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   { id: 'i16', brand: 'Solis',   model: 'S6-EH3P30K-H',       kw: 30, phase: 3, price: 18500000, type: 'hybrid', kg: 62,
-    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 3, idcMax: 32,   efficiency: 98.4, vac: 400 },
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 3, idcMax: 32,   efficiency: 98.4, vac: 400,
+    stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   // ───── Off-grid (aislados, ZNI) ─────
   { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3, phase: 1, price: 3200000, type: 'off-grid', kg: 17,
-    vocMax: 500, mpptVmin: 120, mpptVmax: 430, mpptCount: 1, idcMax: 18, efficiency: 96.5, vac: 240 },
+    vocMax: 500, mpptVmin: 120, mpptVmax: 430, mpptCount: 1, idcMax: 18, efficiency: 96.5, vac: 240,
+    stock: { qty: 3, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
   { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4, phase: 1, price: 5500000, type: 'off-grid', kg: 28,
-    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 20, efficiency: 96,   vac: 230 },
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 20, efficiency: 96,   vac: 230,
+    stock: { qty: 2, supplier: 'Energreen', updatedAt: STOCK_DATE } },
   { id: 'i17',brand: 'Victron', model: 'Quattro 10000VA',     kw: 8, phase: 1, price: 14500000, type: 'off-grid', kg: 45,
-    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 30, efficiency: 96,   vac: 230 },
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 30, efficiency: 96,   vac: 230,
+    stock: { qty: 0, supplier: 'Energreen', updatedAt: STOCK_DATE } },
 ];
 
+// Catálogo curado de baterías LFP para el mercado colombiano. Voltaje
+// nominal, kWh útiles, descarga máxima y ciclos vienen de datasheets
+// oficiales 2024-2026. Extensible desde /api/batteries (ver src/services/batteries.js)
+// o manualmente en BackOffice → Baterías.
 export const DEFAULT_BATTERIES = [
-  { id: 'b1', brand: 'Pylontech', model: 'US3000C',             kwh: 3.5, price: 3200000, kg: 37, voltage: 48,  chemistry: 'LFP', maxDischargeA: 74,  cycles: 6000 },
-  { id: 'b2', brand: 'BYD',       model: 'Battery-Box HVS 7.7', kwh: 7.7, price: 7500000, kg: 80, voltage: 409, chemistry: 'LFP', maxDischargeA: 25,  cycles: 8000 },
-  { id: 'b3', brand: 'Hubble',    model: 'AM-10',               kwh: 10,  price: 9800000, kg: 95, voltage: 51.2,chemistry: 'LFP', maxDischargeA: 150, cycles: 6000 },
+  // ───── LV 48V (residencial, la mayoría de híbridos en Colombia) ─────
+  { id: 'b1',  brand: 'Pylontech', model: 'US3000C',              kwh: 3.5, price: 3200000,  kg: 37,  voltage: 48,   chemistry: 'LFP', maxDischargeA: 74,  cycles: 6000,
+    stock: { qty: 12, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b2',  brand: 'Pylontech', model: 'US5000',               kwh: 4.8, price: 4500000,  kg: 45,  voltage: 48,   chemistry: 'LFP', maxDischargeA: 100, cycles: 6000,
+    stock: { qty: 8,  supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b3',  brand: 'Hubble',    model: 'AM-2 S-10',            kwh: 10,  price: 9800000,  kg: 95,  voltage: 51.2, chemistry: 'LFP', maxDischargeA: 150, cycles: 6000,
+    stock: { qty: 3,  supplier: 'Energreen',            updatedAt: STOCK_DATE } },
+  { id: 'b4',  brand: 'Dyness',    model: 'B4850',                kwh: 2.4, price: 2400000,  kg: 27,  voltage: 48,   chemistry: 'LFP', maxDischargeA: 50,  cycles: 6000,
+    stock: { qty: 20, supplier: 'Solartex',             updatedAt: STOCK_DATE } },
+  { id: 'b5',  brand: 'Deye',      model: 'SE-G5.1 Pro-B',        kwh: 5.12,price: 4800000,  kg: 48,  voltage: 51.2, chemistry: 'LFP', maxDischargeA: 100, cycles: 6000,
+    stock: { qty: 15, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b6',  brand: 'GoodWe',    model: 'Lynx Home U 5.4',      kwh: 5.4, price: 5100000,  kg: 52,  voltage: 51.2, chemistry: 'LFP', maxDischargeA: 100, cycles: 6000,
+    stock: { qty: 4,  supplier: 'Solartex',             updatedAt: STOCK_DATE } },
+  // ───── HV stack (≥ 200V, para inversores híbridos trifásicos) ─────
+  { id: 'b7',  brand: 'BYD',       model: 'Battery-Box Premium HVS 7.7', kwh: 7.7,  price: 7500000, kg: 80,  voltage: 409, chemistry: 'LFP', maxDischargeA: 25, cycles: 8000,
+    stock: { qty: 2, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'b8',  brand: 'BYD',       model: 'Battery-Box Premium HVM 11', kwh: 11.04, price: 11200000, kg: 114, voltage: 307, chemistry: 'LFP', maxDischargeA: 50, cycles: 8000,
+    stock: { qty: 1, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'b9',  brand: 'Huawei',    model: 'LUNA2000-5-S0',        kwh: 5,   price: 6200000,  kg: 50,  voltage: 360, chemistry: 'LFP', maxDischargeA: 14,  cycles: 6000,
+    stock: { qty: 3, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b10', brand: 'Huawei',    model: 'LUNA2000-15-S0',       kwh: 15,  price: 17500000, kg: 150, voltage: 360, chemistry: 'LFP', maxDischargeA: 42,  cycles: 6000,
+    stock: { qty: 0, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  // ───── Servo / baterías de servicio pesado (off-grid extendido) ─────
+  { id: 'b11', brand: 'Victron',   model: 'LiFePO4 25.6V 200Ah',  kwh: 5.12,price: 8500000,  kg: 72,  voltage: 25.6, chemistry: 'LFP', maxDischargeA: 200, cycles: 5000,
+    stock: { qty: 2, supplier: 'Energreen', updatedAt: STOCK_DATE } },
+  { id: 'b12', brand: 'Pylontech', model: 'Force-H2 10.65',       kwh: 10.65, price: 11800000, kg: 138, voltage: 384, chemistry: 'LFP', maxDischargeA: 25, cycles: 6000,
+    stock: { qty: 1, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
 ];
 
 export const DEFAULT_PRICING = {
@@ -195,13 +248,15 @@ export const fmtCOP = n => `$${fmt(n)}`;
 //   - pps_max_volt: limitado por Vdc_max (Voc en frío × pps ≤ vocMax × 0.95)
 //   - pps_max_mppt: limitado por el techo MPPT (Vmp STC × pps ≤ mpptVmax × 0.97)
 //   - pps_min: piso MPPT en caliente (Vmp caliente × pps ≥ mpptVmin × 1.05)
-// El resultado prioriza usar strings largas para reducir corrientes en paralelo.
+// Si pps_min > pps_max el par panel/inversor es INCOMPATIBLE — la función
+// retorna feasible=false para que el selector de inversor pueda reintentar.
+// En ese caso usa pps_max (sin violar vocMax), aunque caiga bajo MPPT.
 export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC = 65) {
   const hasSpecs = panel?.voc && inverter?.vocMax && inverter?.mpptVmax;
   if (!hasSpecs) {
     const pps = Math.floor(700 / 40);
     const ns = Math.max(1, Math.ceil(numPanels / pps));
-    return { pps, ns, ppss: Math.ceil(numPanels / ns), specsSource: 'heuristic' };
+    return { pps, ns, ppss: Math.ceil(numPanels / ns), specsSource: 'heuristic', feasible: true };
   }
   const tcVoc = panel.tempCoeffVoc ?? -0.28;
   const tcPmax = panel.tempCoeffPmax ?? -0.35;
@@ -209,13 +264,18 @@ export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC
   const vmpHot = panel.vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
   const ppsMaxVolt = Math.floor((inverter.vocMax * 0.95) / vocCold);
   const ppsMaxMppt = Math.floor((inverter.mpptVmax * 0.97) / panel.vmp);
+  const ppsHardMax = Math.max(1, Math.min(ppsMaxVolt, ppsMaxMppt));
   const ppsMin = inverter.mpptVmin ? Math.ceil((inverter.mpptVmin * 1.05) / vmpHot) : 1;
-  let pps = Math.max(1, Math.min(ppsMaxVolt, ppsMaxMppt));
-  if (pps < ppsMin) pps = ppsMin; // se marcará como error en validateLayout
+  const feasible = ppsMin <= ppsHardMax;
+  // NUNCA subimos pps por encima de ppsHardMax — eso violaba Vdc_max.
+  // Si ppsMin > ppsHardMax, el inversor es incompatible con este panel y
+  // feasible=false; se usa ppsHardMax como best effort y selectCompatibleInverter
+  // debería elegir otro equipo.
+  let pps = feasible ? ppsHardMax : ppsHardMax;
   pps = Math.min(pps, numPanels);
   const ns = Math.max(1, Math.ceil(numPanels / pps));
   const ppss = Math.ceil(numPanels / ns);
-  return { pps, ns, ppss, specsSource: 'inverter-limited' };
+  return { pps, ns, ppss, specsSource: 'inverter-limited', feasible, ppsMin, ppsHardMax };
 }
 
 // opts.pvgisAnnualKwh: si se pasa, sobreescribe la producción heurística (PSH).
@@ -324,23 +384,64 @@ export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, 
   };
 }
 
-// Selecciona el inversor más cercano al kWp del sistema respetando la
-// relación DC/AC típica (0.9–1.25). Si ningún inversor individual cubre
-// el rango, cae al MÁS GRANDE disponible del tipo (no al más pequeño —
-// eso producía layouts imposibles en sistemas comerciales).
-// Nota: sistemas > inversor más grande requieren múltiples unidades;
-// esto se resuelve en v2 (arreglos en paralelo).
-export function autoInverter(kwp, sysType, inverters) {
+// Evalúa si un panel y un inversor son eléctricamente compatibles sin
+// violar Vdc_max ni el rango MPPT (los dos extremos: Voc frío y Vmp caliente).
+// Retorna { feasible, ppsMaxVolt, ppsMaxMppt, ppsMin } para scoring.
+export function inverterCompatibility(panel, inverter, coldTempC = 10, hotTempC = 65) {
+  if (!panel?.voc || !inverter?.vocMax) return { feasible: true, ppsMaxVolt: 0, ppsMaxMppt: 0, ppsMin: 0, unknown: true };
+  const tcVoc = panel.tempCoeffVoc ?? -0.28;
+  const tcPmax = panel.tempCoeffPmax ?? -0.35;
+  const vocCold = panel.voc * (1 + (tcVoc / 100) * (coldTempC - 25));
+  const vmpHot = panel.vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
+  const ppsMaxVolt = Math.floor((inverter.vocMax * 0.95) / vocCold);
+  const ppsMaxMppt = inverter.mpptVmax ? Math.floor((inverter.mpptVmax * 0.97) / panel.vmp) : ppsMaxVolt;
+  const ppsMin = inverter.mpptVmin ? Math.ceil((inverter.mpptVmin * 1.05) / vmpHot) : 1;
+  const feasible = ppsMin <= Math.min(ppsMaxVolt, ppsMaxMppt);
+  return { feasible, ppsMaxVolt, ppsMaxMppt, ppsMin };
+}
+
+// Scoring de selección de inversor. Criterios (suma ponderada):
+//   +10000 compatible con el panel (pps_min ≤ pps_max)
+//   +2000  DC/AC en [0.9, 1.25] (rango óptimo)
+//   +500   stock disponible esta semana (inv.stock?.qty > 0)
+//   -|DC/AC - 1.1|·100   penalización por alejarse del ratio ideal
+//   -0.1·|kW - kwp|      desempate por proximidad de potencia
+// Así garantizamos que el cotizador SIEMPRE seleccione un equipo cuya
+// configuración de strings sea eléctricamente posible, priorizando lo
+// disponible en inventario.
+export function selectCompatibleInverter(panel, kwp, sysType, inverters) {
   const typed = inverters.filter(i => i.type === sysType);
   if (!typed.length) return inverters[0];
-  const targetMin = kwp * 0.9;   // inversor levemente sub-dimensionado permitido
-  const targetMax = kwp * 1.25;  // sobredim. razonable para reservar crecimiento
+  const scored = typed.map(inv => {
+    const compat = inverterCompatibility(panel, inv);
+    const dcAc = inv.kw ? kwp / inv.kw : 0;
+    const ratioGood = dcAc >= 0.9 && dcAc <= 1.25;
+    const stock = inv.stock?.qty > 0;
+    let score = 0;
+    if (compat.feasible) score += 10000;
+    if (ratioGood) score += 2000;
+    if (stock) score += 500;
+    score -= Math.abs(dcAc - 1.1) * 100;
+    score -= Math.abs(inv.kw - kwp) * 0.1;
+    return { inv, score, compat, dcAc };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].inv;
+}
+
+// Wrapper legado — usa selectCompatibleInverter cuando hay un panel,
+// cae al scoring por kW cuando no. Mantiene compatibilidad con llamadas
+// que sólo conocen kWp y tipo.
+export function autoInverter(kwp, sysType, inverters, panel) {
+  if (panel) return selectCompatibleInverter(panel, kwp, sysType, inverters);
+  const typed = inverters.filter(i => i.type === sysType);
+  if (!typed.length) return inverters[0];
+  const targetMin = kwp * 0.9;
+  const targetMax = kwp * 1.25;
   const inRange = typed.filter(i => i.kw >= targetMin && i.kw <= targetMax).sort((a, b) => a.kw - b.kw);
   if (inRange.length) return inRange[0];
   const above = typed.filter(i => i.kw >= targetMin).sort((a, b) => a.kw - b.kw);
   if (above.length) return above[0];
-  // Ningún inversor alcanza — devolver el más grande del tipo para que al
-  // menos el cálculo de strings tenga Vdc_max/MPPT amplios.
   return [...typed].sort((a, b) => b.kw - a.kw)[0];
 }
 

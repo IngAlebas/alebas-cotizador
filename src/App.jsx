@@ -6,6 +6,7 @@ import {
 import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
+import SupplierPortal from './components/SupplierPortal';
 import logo from './logo.png';
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
   const [operators, setOperators] = useState(OPERATORS);
   const [quotes, setQuotes] = useState([]);
   const [installers, setInstallers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   useEffect(() => {
     const g = (k, s) => {
@@ -30,6 +32,7 @@ export default function App() {
     g('al:operators', setOperators);
     g('al:quotes', setQuotes);
     g('al:installers', setInstallers);
+    g('al:suppliers', setSuppliers);
   }, []);
 
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
@@ -40,10 +43,13 @@ export default function App() {
   const uOp = d => { setOperators(d); sv('al:operators', d); };
   const addQ = q => { const n = [q, ...quotes]; setQuotes(n); sv('al:quotes', n); };
   const addInst = i => { const n = [i, ...installers]; setInstallers(n); sv('al:installers', n); };
+  const addSupp = s => { const n = [s, ...suppliers]; setSuppliers(n); sv('al:suppliers', n); };
+  const uSupp = d => { setSuppliers(d); sv('al:suppliers', d); };
 
   const NAV = [
     ['quoter', '☀', 'Cotizador Solar'],
     ['instalador', '🔧', 'Ser Instalador'],
+    ['proveedor', '📄', 'Proveedores'],
     ['backoffice', '⚙', 'Admin'],
   ];
 
@@ -79,6 +85,7 @@ export default function App() {
         />
       )}
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
+      {view === 'proveedor' && <SupplierPortal addSupplierSubmission={addSupp} />}
       {view === 'backoffice' && (
         <BackOffice
           tab={boTab} setTab={setBoTab}
@@ -88,6 +95,7 @@ export default function App() {
           pricing={pricing} uPr={uPr}
           operators={operators} uOp={uOp}
           quotes={quotes} installers={installers}
+          suppliers={suppliers} uSupp={uSupp}
         />
       )}
     </div>

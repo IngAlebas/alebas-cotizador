@@ -3,6 +3,7 @@ import logo from '../logo.png';
 import { C, fmt, fmtCOP, OPERATORS } from '../constants';
 import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 import { searchCECPanels, searchCECInverters } from '../services/cec';
+import { searchBatteries } from '../services/batteries';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -504,7 +505,183 @@ function InvertersTab({ inverters, uI, ss }) {
   );
 }
 
-export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers }) {
+// Importador de baterías desde el catálogo curado (/api/batteries).
+// Permite buscar por marca/modelo y filtrar por arquitectura (HV-stack/LV-48V).
+function BatteryImportModal({ onClose, onImport, ss }) {
+  const [q, setQ] = useState('');
+  const [arch, setArch] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const doSearch = async () => {
+    setLoading(true); setError(null);
+    try {
+      const data = await searchBatteries(q, arch, 50);
+      setResults(data.items || []);
+    } catch (e) {
+      setError(e.message);
+      setResults([]);
+    }
+    setLoading(false);
+  };
+
+  // Auto-búsqueda al abrir y cuando cambia el filtro de arquitectura.
+  React.useEffect(() => { doSearch(); /* eslint-disable-next-line */ }, [arch]);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, width: 720, maxHeight: '85vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Importar batería del catálogo</div>
+          <button style={ss.del} onClick={onClose}>Cerrar</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <input style={{ ...ss.inp, flex: 1 }} placeholder="Buscar por marca/modelo (Pylontech, BYD, Huawei, Deye, Dyness...)" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()} />
+          <select style={{ ...ss.inp, maxWidth: 150, cursor: 'pointer' }} value={arch} onChange={e => setArch(e.target.value)}>
+            <option value="">Todas las arquitecturas</option>
+            <option value="HV-stack">HV stack</option>
+            <option value="LV-48V">LV 48 V</option>
+            <option value="LV-24V">LV 24 V</option>
+          </select>
+          <button style={ss.btn} onClick={doSearch}>Buscar</button>
+        </div>
+        {loading && <div style={{ color: C.muted, fontSize: 11, padding: 8 }}>Cargando...</div>}
+        {error && <div style={{ color: '#f87171', fontSize: 11, padding: 8 }}>{error}</div>}
+        {!loading && !error && results.length === 0 && <div style={{ color: C.muted, fontSize: 11, padding: 8 }}>Sin resultados.</div>}
+        {results.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Marca', 'Modelo', 'Quím.', 'kWh', 'V', 'Arq.', 'Ciclos', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <tbody>{results.map(b => (
+              <tr key={b.id}>
+                <td style={ss.td}>{b.brand}</td>
+                <td style={ss.td}>{b.model}</td>
+                <td style={ss.td}>{b.chemistry}</td>
+                <td style={ss.td}>{b.kwh}</td>
+                <td style={ss.td}>{b.v}</td>
+                <td style={ss.td}>{b.arch}</td>
+                <td style={ss.td}>{b.cycles}</td>
+                <td style={ss.td}><button style={ss.btn} onClick={() => onImport(b)}>Importar</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BatteriesTab({ batteries, uB, ss }) {
+  const [showImp, setShowImp] = useState(false);
+  const [justImported, setJustImported] = useState(null);
+  const onImport = (b) => {
+    const newBatt = {
+      id: 'eq_' + Date.now(),
+      brand: b.brand,
+      model: b.model,
+      kwh: b.kwh,
+      v: b.v,
+      chemistry: b.chemistry,
+      arch: b.arch,
+      cycles: b.cycles,
+      dod: b.dod,
+      warrantyYears: b.warrantyYears,
+      kg: b.kgPerModule,
+      price: 5500000, // admin debe ajustar precio local
+      source: 'Catalog',
+    };
+    uB([...batteries, newBatt]);
+    setJustImported(`${newBatt.brand} ${newBatt.model}`);
+    setShowImp(false);
+    setTimeout(() => setJustImported(null), 3500);
+  };
+  return (
+    <div>
+      {justImported && (
+        <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.green }}>
+          ✓ Importada: <strong>{justImported}</strong>. Ajusta precio local antes de usar en el cotizador.
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button style={{ ...ss.btn, background: C.yellow, color: '#050d12' }} onClick={() => setShowImp(true)}>🔍 Importar del catálogo</button>
+      </div>
+      <EqMgr title="Baterías" items={batteries} upd={uB} ss={ss} fields={[
+        { k: 'brand', l: 'Marca', t: 'text' },
+        { k: 'model', l: 'Modelo', t: 'text' },
+        { k: 'kwh', l: 'kWh', t: 'number' },
+        { k: 'v', l: 'V nom.', t: 'number' },
+        { k: 'arch', l: 'Arq.', t: 'text' },
+        { k: 'chemistry', l: 'Quím.', t: 'text' },
+        { k: 'price', l: 'Precio COP', t: 'number' },
+      ]} />
+      {showImp && <BatteryImportModal ss={ss} onClose={() => setShowImp(false)} onImport={onImport} />}
+    </div>
+  );
+}
+
+// Gestor de envíos de proveedores. Permite revisar los PDFs enviados,
+// marcar estado y descargar el archivo. El data URL se almacena en
+// localStorage — ideal para un flujo manual de revisión.
+function SuppliersMgr({ suppliers, uSupp, ss }) {
+  const setStatus = (id, status) => {
+    uSupp(suppliers.map(s => s.id === id ? { ...s, status } : s));
+  };
+  const remove = (id) => {
+    if (!window.confirm('¿Eliminar este envío?')) return;
+    uSupp(suppliers.filter(s => s.id !== id));
+  };
+  return (
+    <div>
+      <div style={ss.h2}>Envíos de proveedores</div>
+      <div style={ss.card}>
+        {suppliers.length === 0 ? (
+          <div style={{ color: C.muted, textAlign: 'center', padding: 24, fontSize: 12 }}>
+            Aún no hay listas de precios enviadas. Comparte la URL de Proveedores con tus contactos.
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Fecha', 'Empresa', 'Contacto', 'Categoría', 'PDF', 'Estado', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <tbody>{suppliers.map(s => (
+              <tr key={s.id}>
+                <td style={ss.td}>{s.date}</td>
+                <td style={ss.td}><div style={{ fontWeight: 600 }}>{s.company}</div><div style={{ fontSize: 10, color: C.muted }}>{s.email}</div></td>
+                <td style={ss.td}>{s.contact}{s.phone ? <div style={{ fontSize: 10, color: C.muted }}>{s.phone}</div> : null}</td>
+                <td style={ss.td}>{s.category}</td>
+                <td style={ss.td}>
+                  {s.fileData ? (
+                    <a href={s.fileData} download={s.fileName} style={{ color: C.teal, textDecoration: 'none', fontSize: 11 }}>⬇ {s.fileName}</a>
+                  ) : '—'}
+                </td>
+                <td style={ss.td}>
+                  <select style={{ ...ss.inp, padding: '3px 6px', fontSize: 10 }} value={s.status} onChange={e => setStatus(s.id, e.target.value)}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="revisado">Revisado</option>
+                    <option value="integrado">Integrado</option>
+                    <option value="rechazado">Rechazado</option>
+                  </select>
+                </td>
+                <td style={ss.td}><button style={ss.del} onClick={() => remove(s.id)}>Borrar</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+      {suppliers.some(s => s.notes) && (
+        <div style={ss.card}>
+          <div style={{ fontWeight: 600, color: '#fff', marginBottom: 8, fontSize: 12 }}>Notas de proveedores</div>
+          {suppliers.filter(s => s.notes).map(s => (
+            <div key={s.id} style={{ padding: '6px 0', borderBottom: `1px solid ${C.border}22`, fontSize: 11 }}>
+              <div style={{ color: C.teal, fontWeight: 600 }}>{s.company} — {s.date}</div>
+              <div style={{ color: C.muted, marginTop: 2 }}>{s.notes}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp }) {
   const ss = {
     wrap: { display: 'flex', minHeight: 'calc(100vh - 54px)' },
     side: { width: 185, background: '#08151e', borderRight: `1px solid ${C.border}`, padding: '12px 8px', flexShrink: 0 },
@@ -520,7 +697,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '11px 13px' },
   };
 
-  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores']];
+  const NAV = [['dashboard', '◈', 'Dashboard'], ['operators', '🌐', 'Operadores Red'], ['panels', '⬛', 'Paneles'], ['inverters', '⚡', 'Inversores'], ['batteries', '◉', 'Baterías'], ['pricing', '◆', 'Precios'], ['quotes', '☰', 'Cotizaciones'], ['installers', '🔧', 'Instaladores'], ['suppliers', '📄', 'Proveedores']];
 
   const tot = quotes.length, nv = quotes.filter(q => q.status === 'nuevo').length;
   const kp = quotes.reduce((s, q) => s + parseFloat(q.results?.actKwp || 0), 0).toFixed(1);
@@ -568,11 +745,12 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         )}
         {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
         {tab === 'inverters' && <InvertersTab inverters={inverters} uI={uI} ss={ss} />}
-        {tab === 'batteries' && <EqMgr title="Baterías" items={batteries} upd={uB} fields={[{ k: 'brand', l: 'Marca', t: 'text' }, { k: 'model', l: 'Modelo', t: 'text' }, { k: 'kwh', l: 'kWh', t: 'number' }, { k: 'price', l: 'Precio COP', t: 'number' }]} ss={ss} />}
+        {tab === 'batteries' && <BatteriesTab batteries={batteries} uB={uB} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
         {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} />}
         {tab === 'installers' && <InstallersMgr installers={installers} ss={ss} />}
+        {tab === 'suppliers' && <SuppliersMgr suppliers={suppliers} uSupp={uSupp} ss={ss} />}
       </main>
     </div>
   );

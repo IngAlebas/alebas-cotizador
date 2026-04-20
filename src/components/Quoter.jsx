@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
-  calcSystem, calcTransport, calcBudget, autoInverter, calcAGPEBenefit, MAX_KWP_AGPE,
-  validateLayout
+  calcSystem, calcTransport, calcBudget, selectCompatibleInverter,
+  calcAGPEBenefit, MAX_KWP_AGPE, validateLayout
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchSpotPrice } from '../services/xm';
@@ -67,7 +67,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const kwh = parseFloat(f.monthlyKwh);
     if (!kwh) return;
     const sizingKwp = targetKwp || consumptionKwp;
-    const inv = autoInverter(sizingKwp, f.systemType, inverters);
+    const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters);
     // Primer cálculo con PSH para conocer kWp actual y poder llamar a PVGIS
     const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
 
@@ -91,7 +91,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     // Recalcular con PVGIS; usa el inversor ya elegido para que el dimensionamiento
     // de strings sea consistente con el que se mostrará y valide.
-    const inv2 = autoInverter(sysBase.actKwp, f.systemType, inverters);
+    const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters);
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh, targetKwp });
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
