@@ -43,6 +43,10 @@ export const OPERATORS = [
 // límite operativo del cotizador para evitar dimensionamientos fuera de alcance.
 export const MAX_KWP_AGPE = 500;
 
+// CREG 174/2021: Menor ≤100 kW (excedentes valorados a tarifa CU del comercializador,
+// netting 1:1 mensual); Mayor 100 kW–1 MW (excedentes valorados al precio bolsa XM).
+export const AGPE_LIMIT_KW_MENOR = 100;
+
 export const DESTINOS_COURIER = [
   { dept: 'Bogotá D.C.', capital: 'Bogotá', zona: 'L', km: 0, tiempo: '24h', lat: 4.7110, lon: -74.0721 },
   { dept: 'Cundinamarca', capital: 'Facatativá', zona: 'R', km: 80, tiempo: '24-48h', lat: 4.8136, lon: -74.3537 },
@@ -207,6 +211,36 @@ export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   const sB = bBase + iva;
   const tot = sA + sB;
   return { pC, iC, bC, sA, st, ca, pt, ins, eng: pricing.engineering, emsa: pricing.emsa_tramites, transport: transport || 0, bBase, iva, sB, tot };
+}
+
+// Calcula el beneficio económico anual aplicando la regulación AGPE.
+//   - autoConsumo (energía generada que coincide con consumo): ahorro a tarifa CU.
+//   - excedentes (energía inyectada a la red): valorada según categoría AGPE.
+//     · Menor (kWp ≤ 100): netting 1:1 a tarifa CU (Resolución CREG 174/2021 art.3).
+//     · Mayor (100 < kWp ≤ 1000): liquidación a precio bolsa XM (PrecBolsNal).
+// Heurística de autoconsumo: en sistemas on-grid sin baterías el autoconsumo
+// instantáneo ronda 30-40% de la generación; con consumo elevado o jornada
+// diurna sube. Asumimos un ratio conservador de 0.45 si la generación supera
+// el consumo, o 100% del consumo si la generación es menor.
+export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, spotPriceCOPkWh, kwp) {
+  const annualConsumption = monthlyConsumptionKwh * 12;
+  const autoConsumed = Math.min(annualProdKwh, annualConsumption);
+  const excedentes = Math.max(0, annualProdKwh - annualConsumption);
+  const isMenor = kwp <= AGPE_LIMIT_KW_MENOR;
+  const ahorroAutoconsumo = Math.round(autoConsumed * tariffCU);
+  const priceExcedentes = isMenor ? tariffCU : (spotPriceCOPkWh || 0);
+  const ingresoExcedentes = Math.round(excedentes * priceExcedentes);
+  const totalAnual = ahorroAutoconsumo + ingresoExcedentes;
+  return {
+    autoConsumed: Math.round(autoConsumed),
+    excedentes: Math.round(excedentes),
+    ahorroAutoconsumo,
+    ingresoExcedentes,
+    priceExcedentes,
+    totalAnual,
+    agpeCategory: isMenor ? 'Menor' : 'Mayor',
+    rule: isMenor ? 'Netting 1:1 a tarifa CU' : 'Excedentes a precio bolsa XM',
+  };
 }
 
 export function autoInverter(kwp, sysType, inverters) {
