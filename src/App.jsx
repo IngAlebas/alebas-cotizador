@@ -119,34 +119,49 @@ export default function App() {
         />
       )}
 
-      <footer style={{ background: '#08151e', borderTop: '1px solid #05966922', marginTop: 32, padding: '28px 16px 20px' }}>
+      <footer style={{ background: '#08151e', borderTop: `1px solid ${C.teal}22`, marginTop: 24, padding: '14px 16px 12px' }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 20, marginBottom: 20 }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 2 }}>
-                Solar<span style={{ color: '#f59e0b' }}>Hub</span>
-              </div>
-              <div style={{ fontSize: 10, color: '#059669', fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>BY ALEBAS INGENIERÍA SAS</div>
-              <div style={{ fontSize: 11, color: '#7a9eaa', lineHeight: 1.7 }}>
-                NIT 901.992.450-5<br />
-                Villavicencio, Meta — Colombia<br />
-                info@alebas.co
+          {/* Fila principal: marca + mayoristas */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
+            {/* Marca */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img src={logo} alt="SolarHub" style={{ height: 24, borderRadius: 3, opacity: 0.85 }} />
+              <div style={{ lineHeight: 1.15 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Solar<span style={{ color: C.yellow }}>Hub</span></div>
+                <div style={{ fontSize: 8, color: C.teal, letterSpacing: 0.8 }}>ALEBAS INGENIERÍA SAS · NIT 901.992.450-5 · Villavicencio, Meta</div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: '#7a9eaa', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8 }}>Alianza mayorista</div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#05966912', border: '1px solid #05966933', borderRadius: 8, padding: '8px 14px' }}>
-                <span style={{ fontSize: 18 }}>🌞</span>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#059669' }}>Solar Hub Colombia</div>
-                  <div style={{ fontSize: 10, color: '#7a9eaa' }}>Longi · CPS · Precios mayoristas</div>
+
+            {/* Mayoristas aprobados — agregar aquí nuevas tarjetas cuando sean aprobadas */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginRight: 2 }}>Mayoristas</span>
+
+              {/* ALEBAS INGENIERÍA SAS */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: `${C.teal}12`, border: `1px solid ${C.teal}30`, borderRadius: 6, padding: '4px 10px' }}>
+                <span style={{ fontSize: 13 }}>⚡</span>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.teal, lineHeight: 1.1 }}>ALEBAS Ingeniería SAS</div>
+                  <div style={{ fontSize: 8, color: C.muted }}>Villavicencio · Proyectos FV</div>
                 </div>
               </div>
+
+              {/* Must Energy */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: `${C.yellow}10`, border: `1px solid ${C.yellow}30`, borderRadius: 6, padding: '4px 10px' }}>
+                <span style={{ fontSize: 13 }}>🔋</span>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.yellow, lineHeight: 1.1 }}>Must Energy</div>
+                  <div style={{ fontSize: 8, color: C.muted }}>Colombia · Equipos solares</div>
+                </div>
+              </div>
+
+              {/* Próximos mayoristas se agregan aquí */}
             </div>
           </div>
-          <div style={{ borderTop: '1px solid #05966920', paddingTop: 14, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ fontSize: 10, color: '#7a9eaa' }}>© {new Date().getFullYear()} ALEBAS INGENIERÍA SAS · Todos los derechos reservados</div>
-            <div style={{ fontSize: 10, color: '#7a9eaa' }}>Marco regulatorio: Ley 1715/2014 · CREG 174/2021 · CREG 135/2021 · RETIE</div>
+
+          {/* Línea legal */}
+          <div style={{ borderTop: `1px solid ${C.teal}18`, paddingTop: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
+            <div style={{ fontSize: 9, color: C.muted }}>© {new Date().getFullYear()} ALEBAS INGENIERÍA SAS · Todos los derechos reservados</div>
+            <div style={{ fontSize: 9, color: C.muted }}>Ley 1715/2014 · CREG 174/2021 · CREG 135/2021 · RETIE</div>
           </div>
         </div>
       </footer>
