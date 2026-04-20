@@ -1,0 +1,164 @@
+{
+  "name": "PVWatts - Producción AC con NREL",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pvwatts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c5000000-0005-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-pvwatts"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida input y aplica defaults para Colombia.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst lat = parseFloat(body.lat);\nconst lon = parseFloat(body.lon);\nconst kwp     = parseFloat(body.kwp     ?? body.system_capacity ?? 10);\nconst tilt    = parseFloat(body.tilt    ?? 10);\nconst azimuth = parseFloat(body.azimuth ?? 180);\nconst losses  = parseFloat(body.losses  ?? 14);\n\nif (isNaN(lat) || isNaN(lon)) {\n  return [{ json: { ok: false, reason: 'invalid_coords', detail: 'lat y lon requeridos (numéricos)' } }];\n}\nif (isNaN(kwp) || kwp <= 0) {\n  return [{ json: { ok: false, reason: 'invalid_kwp', detail: 'kwp requerido y mayor que 0' } }];\n}\nreturn [{ json: { ok: true, lat, lon, kwp, tilt, azimuth, losses } }];"
+      },
+      "id": "c5000000-0005-4000-9000-000000000002",
+      "name": "Validar input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c5000000-0005-4000-9000-000000000003",
+      "name": "Input válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://developer.nrel.gov/api/pvwatts/v8.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "api_key",           "value": "={{ $env.NREL_API_KEY || 'DEMO_KEY' }}" },
+            { "name": "lat",               "value": "={{ $json.lat }}" },
+            { "name": "lon",               "value": "={{ $json.lon }}" },
+            { "name": "system_capacity",   "value": "={{ $json.kwp }}" },
+            { "name": "module_type",       "value": "0" },
+            { "name": "losses",            "value": "={{ $json.losses }}" },
+            { "name": "array_type",        "value": "1" },
+            { "name": "tilt",              "value": "={{ $json.tilt }}" },
+            { "name": "azimuth",           "value": "={{ $json.azimuth }}" },
+            { "name": "timeframe",         "value": "monthly" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "c5000000-0005-4000-9000-000000000004",
+      "name": "PVWatts API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza respuesta PVWatts v8.\nconst j = $input.first().json;\nconst errors = j?.errors || [];\nif (errors.length && !j?.outputs) {\n  return [{ json: { ok: false, reason: 'upstream_error', detail: errors.join('; ') } }];\n}\nif (!j?.outputs) {\n  return [{ json: { ok: false, reason: 'upstream_error', detail: 'PVWatts: respuesta sin outputs' } }];\n}\nconst src = $('Validar input').first().json;\nconst out = j.outputs;\nconst monthlyKwh = (out.ac_monthly || []).map(v => Math.round(v));\nconst annualKwh  = Math.round(out.ac_annual  || monthlyKwh.reduce((s, v) => s + v, 0));\nreturn [{ json: {\n  ok: true,\n  lat: src.lat,\n  lon: src.lon,\n  kwp: src.kwp,\n  tilt: src.tilt,\n  azimuth: src.azimuth,\n  losses: src.losses,\n  annualKwh,\n  monthlyKwh,\n  capacityFactor: +(out.capacity_factor || 0).toFixed(2),\n  solradAnnual:   +(out.solrad_annual   || 0).toFixed(2),\n  source: 'NREL PVWatts v8',\n  syncedAt: new Date().toISOString(),\n} }];"
+      },
+      "id": "c5000000-0005-4000-9000-000000000005",
+      "name": "Normalizar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const err = $input.first();\nconst detail = err?.json?.message || err?.json?.error || 'PVWatts no disponible';\nreturn [{ json: { ok: false, reason: 'upstream_error', detail } }];"
+      },
+      "id": "c5000000-0005-4000-9000-000000000006",
+      "name": "Error PVWatts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [$input.first()];"
+      },
+      "id": "c5000000-0005-4000-9000-000000000007",
+      "name": "Error input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Cache-Control", "value": "s-maxage=86400, stale-while-revalidate=3600" }
+            ]
+          }
+        }
+      },
+      "id": "c5000000-0005-4000-9000-000000000008",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validar input", "type": "main", "index": 0 }]]
+    },
+    "Validar input": {
+      "main": [[{ "node": "Input válido?", "type": "main", "index": 0 }]]
+    },
+    "Input válido?": {
+      "main": [
+        [{ "node": "PVWatts API", "type": "main", "index": 0 }],
+        [{ "node": "Error input",  "type": "main", "index": 0 }]
+      ]
+    },
+    "PVWatts API": {
+      "main": [
+        [{ "node": "Normalizar respuesta", "type": "main", "index": 0 }],
+        [{ "node": "Error PVWatts",        "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizar respuesta": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    },
+    "Error PVWatts": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    },
+    "Error input": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "versionId": "1"
+}
