@@ -6,6 +6,7 @@ import {
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchSpotPrice } from '../services/xm';
+import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
@@ -95,12 +96,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   };
 
   const submit = () => {
+    const norms = agpe
+      ? getApplicableNormativa({
+          hasExcedentes: agpe.excedentes > 0,
+          agpeCategory: agpe.agpeCategory,
+          kwp: res.actKwp,
+        }).map(n => n.id)
+      : [];
     addQuote({
       id: Date.now(), date: new Date().toLocaleDateString('es-CO'),
       name: f.name, company: f.company, email: f.email, phone: f.phone,
       address: f.address, city: f.dept, operator: operator.name,
       systemType: f.systemType, monthlyKwh: f.monthlyKwh,
-      panel, results: res, budget: bgt, status: 'nuevo',
+      panel, results: res, budget: bgt, agpe, regulatory: norms, status: 'nuevo',
     });
     setDone(true);
   };
@@ -137,7 +145,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           Pre-dimensionamiento profesional de tu sistema fotovoltaico. Resultado inmediato con precios reales del mercado colombiano.
         </div>
         <div style={{ display: 'flex', gap: 7, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 24 }}>
-          {['✓ 17 operadores de red', '✓ RETIE + CREG 174/2021', '✓ Transporte Interrapidísimo'].map(t => (
+          {['✓ 20 operadores de red', '✓ Ley 1715 · CREG 174/2021 · CREG 135/2021', '✓ RETIE + Código de Medida (CREG 038/2014)'].map(t => (
             <span key={t} style={{ background: `${C.teal}15`, border: `1px solid ${C.teal}44`, borderRadius: 20, padding: '4px 12px', fontSize: 11, color: C.teal }}>{t}</span>
           ))}
         </div>
@@ -550,6 +558,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           </div>
         )}
+
+        {agpe && (() => {
+          const hasExcedentes = agpe.excedentes > 0;
+          const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp });
+          return (
+            <div style={ss.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>§ Marco regulatorio aplicable</div>
+                <span style={{ fontSize: 9, color: C.muted }}>Colombia · MinMinas · CREG</span>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
+                Normas colombianas vigentes que rigen tu instalación AGPE {agpe.agpeCategory}
+                {hasExcedentes ? ' con entrega de excedentes' : ''}. Este pre-dimensionamiento
+                se ajusta a sus requisitos técnicos y comerciales.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {norms.map(n => (
+                  <div key={n.id} style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: C.teal }}>{n.title}</span>
+                      {n.article && <span style={{ fontSize: 9, color: C.muted, fontStyle: 'italic' }}>{n.article}</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#fff', fontWeight: 600, marginBottom: 4 }}>{n.fullName}</div>
+                    <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.55 }}>{n.summary}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 9, color: C.muted, marginTop: 10, lineHeight: 1.5, fontStyle: 'italic' }}>
+                Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>⚡ Configuración técnica</div>
