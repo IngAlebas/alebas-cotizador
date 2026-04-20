@@ -90,20 +90,39 @@ async function getAgents() {
     });
   }
 
-  // Intentar el path estándar primero; si vacío, recorrer recursivamente todo el JSON
+  // Intentar el path estándar; manejar el schema actual de XM donde cada Items[n]
+  // contiene un campo ListEntities[m].Values.{Code,Name,Activity} (estructura 2025+).
   const rawItems = j?.Items || j?.items || j?.data || j?.Data || j?.result || j?.Result || [];
   let items = [];
   if (rawItems.length) {
-    items = rawItems.map(it => {
-      const v = it?.Values || it?.values || it;
-      return {
-        sic:        v?.Id || v?.Codigo || v?.codigo || v?.Code || v?.SIC || it?.Id || '',
-        name:       v?.Nombre || v?.nombre || v?.Name || it?.Name || '',
-        activities: v?.Actividad || v?.Actividades || v?.actividades || v?.Activity || '',
-      };
-    });
-  } else {
-    // Fallback recursivo: extraer cualquier nodo que parezca un agente
+    const flat = [];
+    for (const it of rawItems) {
+      // Schema 2025+: Items[n].ListEntities[m].Values
+      const listEnt = it?.ListEntities || it?.listEntities || it?.Entities || it?.entities;
+      if (Array.isArray(listEnt) && listEnt.length) {
+        for (const le of listEnt) {
+          const v = le?.Values || le?.values || le;
+          flat.push({
+            sic:        v?.Code || v?.Id || v?.Codigo || v?.SIC || '',
+            name:       v?.Name || v?.Nombre || v?.nombre || '',
+            activities: v?.Activity || v?.Actividad || v?.Actividades || v?.actividades || '',
+          });
+        }
+      } else {
+        // Schema anterior: Items[n].Values
+        const v = it?.Values || it?.values || it;
+        flat.push({
+          sic:        v?.Id || v?.Codigo || v?.codigo || v?.Code || v?.SIC || it?.Id || '',
+          name:       v?.Nombre || v?.nombre || v?.Name || it?.Name || '',
+          activities: v?.Actividad || v?.Actividades || v?.actividades || v?.Activity || '',
+        });
+      }
+    }
+    items = flat;
+  }
+
+  // Si el mapeo estructurado no produjo resultados útiles, usar el walker recursivo
+  if (!items.some(a => a.sic || a.name)) {
     items = walkAgents(j);
   }
 
@@ -142,12 +161,28 @@ async function getSpot(daysBack) {
   // XM publica con delay T+1 — apuntar a ayer como EndDate evita huecos.
   const end = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
-  const j = await postXM('/hourly', {
-    MetricId: 'PrecBolsNal',
-    Entity: 'Sistema',
-    StartDate: isoDate(start),
-    EndDate: isoDate(end),
-  });
+  // El MetricId para precio de bolsa ha cambiado en distintas versiones del API.
+  // Intentamos los candidatos en orden hasta obtener datos válidos.
+  const SPOT_METRICS = ['Preciobols', 'PrecBolsNal', 'PrecBols', 'PreciosBolsa'];
+  let j = null;
+  let usedMetric = '';
+  for (const metricId of SPOT_METRICS) {
+    try {
+      j = await postXM('/hourly', {
+        MetricId: metricId,
+        Entity: 'Sistema',
+        StartDate: isoDate(start),
+        EndDate: isoDate(end),
+      });
+      usedMetric = metricId;
+      break;
+    } catch (err) {
+      // 400 = métrica no encontrada; seguir con la siguiente
+      if (err.message.includes('400')) continue;
+      throw err; // otro error (red, 5xx) → propagar
+    }
+  }
+  if (!j) throw new Error('XM: ningún MetricId de bolsa respondió correctamente');
   const values = [];
   const walk = (node) => {
     if (node == null) return;
@@ -174,7 +209,7 @@ async function getSpot(daysBack) {
     startDate: isoDate(start),
     endDate: isoDate(end),
     syncedAt: new Date().toISOString(),
-    source: 'XM PrecBolsNal',
+    source: `XM ${usedMetric}`,
   };
 }
 
