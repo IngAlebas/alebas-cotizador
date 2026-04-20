@@ -394,14 +394,22 @@ export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
 }
 
 // Calcula el beneficio económico anual aplicando la regulación AGPE.
-//   - autoConsumo (energía generada que coincide con consumo): ahorro a tarifa CU.
+//   - autoConsumo (energía generada que coincide con consumo): ahorro a tarifa CU plena.
 //   - excedentes (energía inyectada a la red): valorada según categoría AGPE.
-//     · Menor (kWp ≤ 100): netting 1:1 a tarifa CU (Resolución CREG 174/2021).
+//     · Menor (kWp ≤ 100): CREG 174/2021 art. 7 — netting mensual a CU plena hasta
+//       el consumo del período; el remanente neto exportado se liquida a CU − G
+//       (componentes de transporte/comercialización/restricciones, no generación).
 //     · Mayor (100 < kWp ≤ 1000): liquidación a precio bolsa XM (PrecBolsNal).
+// EXCEDENTE_G_FRACTION aproxima el peso de G en la tarifa CU colombiana
+// (histórico 2023–2025: G ≈ 50–60% de CU). Valor conservador 0.55 → CU − G ≈ 45%.
+// Reemplazar por componentes CREG 091 reales (G + T + D + Cv + PR + R) cuando
+// se migre el catálogo de operadores a tarifa discriminada.
 // IMPORTANTE: los sistemas off-grid NO están conectados a la red y por
 // definición no entregan excedentes — la energía sobrante se pierde
 // (o se limita vía dump load). Para off-grid gridExport=false y sólo
 // se contabiliza ahorro por autoconsumo.
+export const EXCEDENTE_G_FRACTION = 0.55;
+
 export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, spotPriceCOPkWh, kwp, opts = {}) {
   const gridExport = opts.gridExport !== false;
   const annualConsumption = monthlyConsumptionKwh * 12;
@@ -411,7 +419,8 @@ export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, 
   const energiaDesperdiciada = gridExport ? 0 : rawExcedentes;
   const isMenor = kwp <= AGPE_LIMIT_KW_MENOR;
   const ahorroAutoconsumo = Math.round(autoConsumed * tariffCU);
-  const priceExcedentes = gridExport ? (isMenor ? tariffCU : (spotPriceCOPkWh || 0)) : 0;
+  const tariffMinusG = tariffCU * (1 - EXCEDENTE_G_FRACTION);
+  const priceExcedentes = gridExport ? (isMenor ? tariffMinusG : (spotPriceCOPkWh || 0)) : 0;
   const ingresoExcedentes = Math.round(excedentes * priceExcedentes);
   const totalAnual = ahorroAutoconsumo + ingresoExcedentes;
   return {
@@ -425,7 +434,7 @@ export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, 
     gridExport,
     agpeCategory: gridExport ? (isMenor ? 'Menor' : 'Mayor') : 'No aplica (off-grid)',
     rule: gridExport
-      ? (isMenor ? 'Netting 1:1 a tarifa CU' : 'Excedentes a precio bolsa XM')
+      ? (isMenor ? `Excedentes a CU − G (≈${Math.round((1-EXCEDENTE_G_FRACTION)*100)}% de CU, CREG 174/2021)` : 'Excedentes a precio bolsa XM')
       : 'Sistema aislado — no entrega excedentes a la red',
   };
 }
