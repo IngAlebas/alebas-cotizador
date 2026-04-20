@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import logo from '../logo.png';
 import {
-  C, fmt, fmtCOP, OPERATORS, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
+  C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
   calcSystem, calcTransport, calcBudget, autoInverter, MAX_KWP_AGPE
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
@@ -16,7 +16,7 @@ const Q0 = {
 
 const STEPS = ['Tipo', 'Consumo', 'Transporte', 'Contacto', 'Resultado'];
 
-export default function Quoter({ panels, inverters, batteries, pricing, addQuote }) {
+export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote }) {
   const [step, setStep] = useState(0);
   const [f, setF] = useState(Q0);
   const [res, setRes] = useState(null);
@@ -26,7 +26,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
 
   const panel = panels.find(p => p.id === f.panelId) || panels[0];
   const batt = batteries.find(b => b.id === f.battId) || batteries[0];
-  const operator = OPERATORS[f.operatorId] || OPERATORS[0];
+  const operator = operators[f.operatorId] || operators[0];
   const psh = operator.psh;
   const needsB = f.systemType !== 'on-grid';
 
@@ -176,7 +176,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
         <div style={{ marginBottom: 13 }}>
           <label style={ss.lbl}>Operador de red / empresa de energía</label>
           <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.operatorId} onChange={e => u('operatorId', parseInt(e.target.value))}>
-            {OPERATORS.map((op, i) => <option key={i} value={i}>{op.name}{op.region ? ` — ${op.region}` : ''}</option>)}
+            {operators.map((op, i) => <option key={i} value={i}>{op.name}{op.region ? ` — ${op.region}` : ''}</option>)}
           </select>
           <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
             Tarifa: <span style={{ color: C.teal }}>{operator.tariff} COP/kWh</span> · PSH: <span style={{ color: C.teal }}>{operator.psh} h/día</span>

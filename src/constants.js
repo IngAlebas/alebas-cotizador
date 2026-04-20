@@ -9,25 +9,32 @@ export const C = {
   green: '#4ade80', red: '#f87171', orange: '#fb923c',
 };
 
-// ==================== OPERATORS ====================
+// ==================== OPERATORS DE RED (OR) ====================
+// Mapeo OR ↔ departamento basado en registros CREG/Superservicios y XM (Sinergox).
+// Códigos SIC para correlacionar con el API de XM (POST /lists, MetricId: ListadoAgentes).
+// Las tarifas son referencia (CU promedio residencial estrato 4 sin subsidio); se actualizan
+// vía PDFs mensuales del operador o el sync con XM en src/services/xm.js (precio bolsa).
 export const OPERATORS = [
-  { name: 'EMSA', region: 'Meta, Casanare, Vichada', tariff: 650, psh: 4.6 },
-  { name: 'EPM', region: 'Antioquia', tariff: 680, psh: 4.5 },
-  { name: 'Enel / Codensa', region: 'Bogotá D.C., Cundinamarca', tariff: 720, psh: 4.2 },
-  { name: 'Celsia', region: 'Valle del Cauca, Tolima', tariff: 660, psh: 4.8 },
-  { name: 'Electrocosta', region: 'Atlántico, Bolívar, Córdoba, Sucre, La Guajira', tariff: 640, psh: 5.2 },
-  { name: 'Afinia', region: 'Córdoba, Sucre, Bolívar (interior)', tariff: 635, psh: 5.0 },
-  { name: 'Electrohuila', region: 'Huila, Caquetá', tariff: 670, psh: 5.1 },
-  { name: 'CHEC', region: 'Caldas, Risaralda (parcial)', tariff: 710, psh: 4.1 },
-  { name: 'Centrales', region: 'Risaralda, Quindío', tariff: 695, psh: 4.3 },
-  { name: 'ESSA', region: 'Santander', tariff: 690, psh: 5.0 },
-  { name: 'CENS', region: 'Norte de Santander', tariff: 700, psh: 4.9 },
-  { name: 'EEB', region: 'Boyacá, Cundinamarca (parcial)', tariff: 705, psh: 4.2 },
-  { name: 'Cedenar', region: 'Nariño, Putumayo', tariff: 680, psh: 4.4 },
-  { name: 'ENERCA', region: 'Arauca', tariff: 655, psh: 4.7 },
-  { name: 'Llanos Energía', region: 'Casanare', tariff: 645, psh: 4.8 },
-  { name: 'Dispac', region: 'Chocó', tariff: 720, psh: 4.0 },
-  { name: 'No sé / Otro', region: '', tariff: 670, psh: 4.5 },
+  { sic: 'EMSC', name: 'EMSA',           fullName: 'Electrificadora del Meta',                    region: 'Meta', tariff: 650, psh: 4.6 },
+  { sic: 'EPMC', name: 'EPM',            fullName: 'Empresas Públicas de Medellín',               region: 'Antioquia', tariff: 680, psh: 4.5 },
+  { sic: 'ENDC', name: 'Enel Colombia',  fullName: 'Enel Colombia (ex Codensa)',                  region: 'Bogotá D.C., Cundinamarca', tariff: 720, psh: 4.2 },
+  { sic: 'EBSC', name: 'EBSA',           fullName: 'Empresa de Energía de Boyacá',                region: 'Boyacá', tariff: 705, psh: 4.2 },
+  { sic: 'CETC', name: 'Celsia Tolima',  fullName: 'Celsia Colombia (Tolima)',                    region: 'Tolima', tariff: 670, psh: 4.8 },
+  { sic: 'CEVC', name: 'Celsia Valle',   fullName: 'Celsia Colombia (Valle del Cauca)',           region: 'Valle del Cauca', tariff: 660, psh: 4.6 },
+  { sic: 'CDLC', name: 'Cedelca',        fullName: 'Compañía Energética del Cauca',               region: 'Cauca', tariff: 685, psh: 4.4 },
+  { sic: 'AIRC', name: 'Air-e',          fullName: 'Air-e (sucesor Electricaribe)',               region: 'Atlántico, Magdalena, La Guajira', tariff: 640, psh: 5.3 },
+  { sic: 'AFNC', name: 'Afinia',         fullName: 'Afinia (filial EPM, ex Electricaribe)',       region: 'Bolívar, Sucre, Córdoba, Cesar', tariff: 635, psh: 5.0 },
+  { sic: 'EHUC', name: 'Electrohuila',   fullName: 'Electrificadora del Huila',                   region: 'Huila, Caquetá', tariff: 670, psh: 5.1 },
+  { sic: 'CHEC', name: 'CHEC',           fullName: 'Centrales Hidroeléctricas de Caldas',         region: 'Caldas', tariff: 710, psh: 4.1 },
+  { sic: 'EDEC', name: 'EDEQ',           fullName: 'Empresa de Energía del Quindío',              region: 'Quindío', tariff: 700, psh: 4.4 },
+  { sic: 'EEPC', name: 'EEP',            fullName: 'Energía de Pereira',                          region: 'Risaralda', tariff: 695, psh: 4.5 },
+  { sic: 'ESSC', name: 'ESSA',           fullName: 'Electrificadora de Santander',                region: 'Santander', tariff: 690, psh: 5.0 },
+  { sic: 'CENC', name: 'CENS',           fullName: 'Centrales Eléctricas de Norte de Santander',  region: 'Norte de Santander', tariff: 700, psh: 4.9 },
+  { sic: 'CEDC', name: 'Cedenar',        fullName: 'Centrales Eléctricas de Nariño',              region: 'Nariño, Putumayo', tariff: 680, psh: 4.4 },
+  { sic: 'ENRC', name: 'ENERCA',         fullName: 'Empresa de Energía de Casanare',              region: 'Casanare', tariff: 645, psh: 4.8 },
+  { sic: 'ENLC', name: 'ENELAR',         fullName: 'Empresa de Energía de Arauca',                region: 'Arauca', tariff: 655, psh: 4.7 },
+  { sic: 'DSPC', name: 'Dispac',         fullName: 'Distribuidora del Pacífico',                  region: 'Chocó', tariff: 720, psh: 4.0 },
+  { sic: '',     name: 'No sé / Otro',   fullName: '',                                            region: '', tariff: 670, psh: 4.5 },
 ];
 
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
