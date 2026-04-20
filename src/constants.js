@@ -32,40 +32,44 @@ export const OPERATORS = [
 
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
 // Zonas desde Bogotá D.C. como origen
+// Cap regulatorio: AGPE Mayor (CREG 174/2021) hasta 1 MW; usamos 500 kW como
+// límite operativo del cotizador para evitar dimensionamientos fuera de alcance.
+export const MAX_KWP_AGPE = 500;
+
 export const DESTINOS_COURIER = [
-  { dept: 'Bogotá D.C.', capital: 'Bogotá', zona: 'L', km: 0, tiempo: '24h' },
-  { dept: 'Cundinamarca', capital: 'Facatativá', zona: 'R', km: 80, tiempo: '24-48h' },
-  { dept: 'Boyacá', capital: 'Tunja', zona: 'R', km: 150, tiempo: '24-48h' },
-  { dept: 'Tolima', capital: 'Ibagué', zona: 'R', km: 210, tiempo: '24-48h' },
-  { dept: 'Meta', capital: 'Villavicencio', zona: 'R', km: 90, tiempo: '24-48h' },
-  { dept: 'Huila', capital: 'Neiva', zona: 'R', km: 310, tiempo: '24-48h' },
-  { dept: 'Caldas', capital: 'Manizales', zona: 'R', km: 310, tiempo: '24-48h' },
-  { dept: 'Risaralda', capital: 'Pereira', zona: 'R', km: 330, tiempo: '24-48h' },
-  { dept: 'Quindío', capital: 'Armenia', zona: 'R', km: 300, tiempo: '24-48h' },
-  { dept: 'Santander', capital: 'Bucaramanga', zona: 'N1', km: 400, tiempo: '48h' },
-  { dept: 'Antioquia', capital: 'Medellín', zona: 'N1', km: 415, tiempo: '48h' },
-  { dept: 'Valle del Cauca', capital: 'Cali', zona: 'N1', km: 460, tiempo: '48h' },
-  { dept: 'Norte de Santander', capital: 'Cúcuta', zona: 'N1', km: 590, tiempo: '48-72h' },
-  { dept: 'Cauca', capital: 'Popayán', zona: 'N1', km: 580, tiempo: '48-72h' },
-  { dept: 'Casanare', capital: 'Yopal', zona: 'N1', km: 380, tiempo: '48h' },
-  { dept: 'Arauca', capital: 'Arauca', zona: 'N1', km: 530, tiempo: '48-72h' },
-  { dept: 'Nariño', capital: 'Pasto', zona: 'N2', km: 820, tiempo: '48-72h' },
-  { dept: 'Putumayo', capital: 'Mocoa', zona: 'N2', km: 700, tiempo: '48-72h' },
-  { dept: 'Atlántico', capital: 'Barranquilla', zona: 'N2', km: 1000, tiempo: '48-72h' },
-  { dept: 'Bolívar', capital: 'Cartagena', zona: 'N2', km: 1050, tiempo: '48-72h' },
-  { dept: 'Magdalena', capital: 'Santa Marta', zona: 'N2', km: 1070, tiempo: '48-72h' },
-  { dept: 'Cesar', capital: 'Valledupar', zona: 'N2', km: 850, tiempo: '48-72h' },
-  { dept: 'Córdoba', capital: 'Montería', zona: 'N2', km: 890, tiempo: '48-72h' },
-  { dept: 'Sucre', capital: 'Sincelejo', zona: 'N2', km: 930, tiempo: '48-72h' },
-  { dept: 'La Guajira', capital: 'Riohacha', zona: 'N2', km: 1150, tiempo: '48-72h' },
-  { dept: 'Caquetá', capital: 'Florencia', zona: 'N2', km: 590, tiempo: '48-72h' },
-  { dept: 'Vichada', capital: 'Puerto Carreño', zona: 'D', km: 840, tiempo: '72-96h' },
-  { dept: 'Guaviare', capital: 'San José G.', zona: 'D', km: 580, tiempo: '72-96h' },
-  { dept: 'Chocó', capital: 'Quibdó', zona: 'D', km: 650, tiempo: '72-96h' },
-  { dept: 'Amazonas', capital: 'Leticia', zona: 'D', km: 1600, tiempo: '96h+' },
-  { dept: 'Vaupés', capital: 'Mitú', zona: 'D', km: 1300, tiempo: '96h+' },
-  { dept: 'Guainía', capital: 'Inírida', zona: 'D', km: 1100, tiempo: '96h+' },
-  { dept: 'San Andrés', capital: 'San Andrés (aéreo)', zona: 'D', km: 1800, tiempo: '96h+' },
+  { dept: 'Bogotá D.C.', capital: 'Bogotá', zona: 'L', km: 0, tiempo: '24h', lat: 4.7110, lon: -74.0721 },
+  { dept: 'Cundinamarca', capital: 'Facatativá', zona: 'R', km: 80, tiempo: '24-48h', lat: 4.8136, lon: -74.3537 },
+  { dept: 'Boyacá', capital: 'Tunja', zona: 'R', km: 150, tiempo: '24-48h', lat: 5.5446, lon: -73.3573 },
+  { dept: 'Tolima', capital: 'Ibagué', zona: 'R', km: 210, tiempo: '24-48h', lat: 4.4389, lon: -75.2322 },
+  { dept: 'Meta', capital: 'Villavicencio', zona: 'R', km: 90, tiempo: '24-48h', lat: 4.1420, lon: -73.6266 },
+  { dept: 'Huila', capital: 'Neiva', zona: 'R', km: 310, tiempo: '24-48h', lat: 2.9273, lon: -75.2819 },
+  { dept: 'Caldas', capital: 'Manizales', zona: 'R', km: 310, tiempo: '24-48h', lat: 5.0689, lon: -75.5174 },
+  { dept: 'Risaralda', capital: 'Pereira', zona: 'R', km: 330, tiempo: '24-48h', lat: 4.8133, lon: -75.6961 },
+  { dept: 'Quindío', capital: 'Armenia', zona: 'R', km: 300, tiempo: '24-48h', lat: 4.5339, lon: -75.6811 },
+  { dept: 'Santander', capital: 'Bucaramanga', zona: 'N1', km: 400, tiempo: '48h', lat: 7.1193, lon: -73.1227 },
+  { dept: 'Antioquia', capital: 'Medellín', zona: 'N1', km: 415, tiempo: '48h', lat: 6.2442, lon: -75.5812 },
+  { dept: 'Valle del Cauca', capital: 'Cali', zona: 'N1', km: 460, tiempo: '48h', lat: 3.4516, lon: -76.5320 },
+  { dept: 'Norte de Santander', capital: 'Cúcuta', zona: 'N1', km: 590, tiempo: '48-72h', lat: 7.8939, lon: -72.5078 },
+  { dept: 'Cauca', capital: 'Popayán', zona: 'N1', km: 580, tiempo: '48-72h', lat: 2.4448, lon: -76.6147 },
+  { dept: 'Casanare', capital: 'Yopal', zona: 'N1', km: 380, tiempo: '48h', lat: 5.3378, lon: -72.3959 },
+  { dept: 'Arauca', capital: 'Arauca', zona: 'N1', km: 530, tiempo: '48-72h', lat: 7.0903, lon: -70.7617 },
+  { dept: 'Nariño', capital: 'Pasto', zona: 'N2', km: 820, tiempo: '48-72h', lat: 1.2136, lon: -77.2811 },
+  { dept: 'Putumayo', capital: 'Mocoa', zona: 'N2', km: 700, tiempo: '48-72h', lat: 1.1503, lon: -76.6483 },
+  { dept: 'Atlántico', capital: 'Barranquilla', zona: 'N2', km: 1000, tiempo: '48-72h', lat: 10.9685, lon: -74.7813 },
+  { dept: 'Bolívar', capital: 'Cartagena', zona: 'N2', km: 1050, tiempo: '48-72h', lat: 10.3910, lon: -75.4794 },
+  { dept: 'Magdalena', capital: 'Santa Marta', zona: 'N2', km: 1070, tiempo: '48-72h', lat: 11.2408, lon: -74.1990 },
+  { dept: 'Cesar', capital: 'Valledupar', zona: 'N2', km: 850, tiempo: '48-72h', lat: 10.4631, lon: -73.2532 },
+  { dept: 'Córdoba', capital: 'Montería', zona: 'N2', km: 890, tiempo: '48-72h', lat: 8.7479, lon: -75.8814 },
+  { dept: 'Sucre', capital: 'Sincelejo', zona: 'N2', km: 930, tiempo: '48-72h', lat: 9.3047, lon: -75.3978 },
+  { dept: 'La Guajira', capital: 'Riohacha', zona: 'N2', km: 1150, tiempo: '48-72h', lat: 11.5444, lon: -72.9072 },
+  { dept: 'Caquetá', capital: 'Florencia', zona: 'N2', km: 590, tiempo: '48-72h', lat: 1.6144, lon: -75.6062 },
+  { dept: 'Vichada', capital: 'Puerto Carreño', zona: 'D', km: 840, tiempo: '72-96h', lat: 6.1888, lon: -67.4856 },
+  { dept: 'Guaviare', capital: 'San José G.', zona: 'D', km: 580, tiempo: '72-96h', lat: 2.5667, lon: -72.6450 },
+  { dept: 'Chocó', capital: 'Quibdó', zona: 'D', km: 650, tiempo: '72-96h', lat: 5.6919, lon: -76.6583 },
+  { dept: 'Amazonas', capital: 'Leticia', zona: 'D', km: 1600, tiempo: '96h+', lat: -4.2150, lon: -69.9406 },
+  { dept: 'Vaupés', capital: 'Mitú', zona: 'D', km: 1300, tiempo: '96h+', lat: 1.2536, lon: -70.2336 },
+  { dept: 'Guainía', capital: 'Inírida', zona: 'D', km: 1100, tiempo: '96h+', lat: 3.8653, lon: -67.9239 },
+  { dept: 'San Andrés', capital: 'San Andrés (aéreo)', zona: 'D', km: 1800, tiempo: '96h+', lat: 12.5847, lon: -81.7006 },
 ];
 
 // Tarifas Interrapidísimo 2025-2026 (oficiales)
@@ -135,15 +139,28 @@ export const DEPTS = [
 export const fmt = n => new Intl.NumberFormat('es-CO').format(Math.round(n));
 export const fmtCOP = n => `$${fmt(n)}`;
 
-export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh) {
+// opts.pvgisAnnualKwh: si se pasa, sobreescribe la producción heurística (PSH).
+// Cap por MAX_KWP_AGPE para evitar dimensionar fuera del alcance regulatorio.
+export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh, opts = {}) {
   const PR = 0.78;
   const daily = monthlyKwh / 30;
-  const kwpN = daily / (psh * PR);
+  const kwpN = Math.min(daily / (psh * PR), MAX_KWP_AGPE);
+  const cappedByRegulation = (daily / (psh * PR)) > MAX_KWP_AGPE;
   const numPanels = Math.ceil(kwpN * 1000 / panel.wp);
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
-  const dp = actKwp * psh * PR;
-  const mp = Math.round(dp * 30);
-  const ap = Math.round(dp * 365);
+
+  let dp, mp, ap;
+  const usingPVGIS = opts.pvgisAnnualKwh && opts.pvgisAnnualKwh > 0;
+  if (usingPVGIS) {
+    ap = Math.round(opts.pvgisAnnualKwh);
+    mp = Math.round(ap / 12);
+    dp = parseFloat((ap / 365).toFixed(1));
+  } else {
+    dp = parseFloat((actKwp * psh * PR).toFixed(1));
+    mp = Math.round(dp * 30);
+    ap = Math.round(dp * 365);
+  }
+
   const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
@@ -158,7 +175,8 @@ export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh) {
     + invKw              // inversor aprox
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
-  return { numPanels, actKwp, dp: dp.toFixed(1), mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal };
+  const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
+  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation };
 }
 
 export function calcTransport(zonas, zona, kgTotal, valorDec) {

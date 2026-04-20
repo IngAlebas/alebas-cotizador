@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, OPERATORS, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
-  calcSystem, calcTransport, calcBudget, autoInverter
+  calcSystem, calcTransport, calcBudget, autoInverter, MAX_KWP_AGPE
 } from '../constants';
+import { fetchPVProduction } from '../services/pvgis';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
@@ -31,11 +32,32 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
 
   const dest = DESTINOS_COURIER.find(d => d.dept === f.dept) || DESTINOS_COURIER[0];
 
-  const calculate = () => {
+  const [loadingPVGIS, setLoadingPVGIS] = useState(false);
+  const [pvgisError, setPvgisError] = useState(null);
+
+  const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
     if (!kwh) return;
     const inv = autoInverter((kwh / 30) / (psh * 0.78), f.systemType, inverters);
-    const sys = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh);
+    // Primer cálculo con PSH para conocer kWp actual y poder llamar a PVGIS
+    const sysBase = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh);
+
+    // Intentar enriquecer con PVGIS si tenemos lat/lon del depto
+    let pvgisAnnualKwh = null;
+    if (dest?.lat && dest?.lon && sysBase.actKwp > 0) {
+      setLoadingPVGIS(true);
+      setPvgisError(null);
+      try {
+        const pv = await fetchPVProduction({ lat: dest.lat, lon: dest.lon, kwp: sysBase.actKwp });
+        pvgisAnnualKwh = pv.annualKwh;
+      } catch (err) {
+        setPvgisError(err.message);
+      } finally {
+        setLoadingPVGIS(false);
+      }
+    }
+
+    const sys = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh });
     const inv2 = autoInverter(sys.actKwp, f.systemType, inverters);
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
@@ -262,15 +284,33 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
         <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.</div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <button style={ss.ghost} onClick={() => setStep(3)}>← Atrás</button>
-          <button style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email) ? 0.4 : 1 }} onClick={() => { if (f.name && f.phone && f.email) { calculate(); setStep(5); } }}>
-            Ver mi sistema →
+          <button style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || loadingPVGIS) ? 0.4 : 1 }} disabled={loadingPVGIS} onClick={async () => {
+            if (f.name && f.phone && f.email) {
+              setStep(5);
+              await calculate();
+            }
+          }}>
+            {loadingPVGIS ? 'Calculando…' : 'Ver mi sistema →'}
           </button>
         </div>
       </div>
     </div>
   );
 
-  // STEP 5: Results
+  // STEP 5: Results — pantalla de carga mientras llega PVGIS
+  if (step === 5 && (!res || !bgt)) return (
+    <div style={ss.wrap}>
+      <div style={{ ...ss.card, textAlign: 'center', padding: '60px 22px' }}>
+        <div style={{ width: 44, height: 44, borderRadius: '50%', border: `3px solid ${C.teal}33`, borderTopColor: C.teal, margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>Calculando tu sistema</div>
+        <div style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>
+          {loadingPVGIS ? 'Consultando irradiancia PVGIS para tu ubicación…' : 'Procesando dimensionamiento…'}
+        </div>
+      </div>
+    </div>
+  );
+
   if (step === 5 && res && bgt) {
     if (done) return (
       <div style={ss.wrap}>
@@ -286,7 +326,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
             <div style={{ fontSize: 12, color: C.teal, marginTop: 2, fontWeight: 600 }}>Inversión aprox: {fmtCOP(bgt.tot)}</div>
           </div>
           <br />
-          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); }}>Nueva cotización</button>
+          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); setPvgisError(null); }}>Nueva cotización</button>
         </div>
       </div>
     );
@@ -297,7 +337,26 @@ export default function Quoter({ panels, inverters, batteries, pricing, addQuote
           <div style={{ fontSize: 9, color: C.teal, letterSpacing: 3, fontWeight: 700, marginBottom: 5, textTransform: 'uppercase' }}>Pre-dimensionamiento</div>
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
           <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {f.dept}</div>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: res.dataSource === 'PVGIS' ? `${C.green}22` : `${C.gray}22`, color: res.dataSource === 'PVGIS' ? C.green : C.muted, border: `1px solid ${res.dataSource === 'PVGIS' ? C.green : C.gray}55` }}>
+              {res.dataSource === 'PVGIS' ? '✓ Datos PVGIS · ' + dest.capital : 'Estimación PSH'}
+            </span>
+            {pvgisError && (
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}55` }}>
+                PVGIS sin datos — usando PSH
+              </span>
+            )}
+          </div>
         </div>
+
+        {res.cappedByRegulation && (
+          <div style={{ background: `${C.orange}12`, border: `1px solid ${C.orange}55`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 4, textTransform: 'uppercase' }}>⚠ Sistema acotado a {MAX_KWP_AGPE} kW</div>
+            <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+              Tu consumo requeriría más de {MAX_KWP_AGPE} kWp. El cotizador limita a {MAX_KWP_AGPE} kWp (alcance AGPE Mayor, CREG 174/2021). Para sistemas mayores se requiere ingeniería distribuida (GD) — un ingeniero ALEBAS te cotizará por separado.
+            </div>
+          </div>
+        )}
 
         {(() => {
           const area = parseFloat(f.availableArea);
