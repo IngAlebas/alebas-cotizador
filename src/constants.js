@@ -115,18 +115,42 @@ export const SOBREFLETE = 0.02;
 const STOCK_DATE = '2026-04-15';
 export const DEFAULT_PANELS = [
   { id: 'p1', brand: 'JA Solar',       model: 'JAM72S20-545MR',  wp: 545, price: 290000, kg: 24.9,
+    lengthMm: 2278, widthMm: 1134,
     voc: 49.75, vmp: 41.8, isc: 13.85, imp: 13.04, tempCoeffPmax: -0.35, tempCoeffVoc: -0.275, cellCount: 144,
     stock: { qty: 280, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   { id: 'p2', brand: 'Risen Energy',   model: 'RSM144-7-550M',   wp: 550, price: 285000, kg: 25.5,
+    lengthMm: 2279, widthMm: 1134,
     voc: 49.8, vmp: 41.95, isc: 13.95, imp: 13.11, tempCoeffPmax: -0.35, tempCoeffVoc: -0.28, cellCount: 144,
     stock: { qty: 120, supplier: 'Energreen', updatedAt: STOCK_DATE } },
   { id: 'p3', brand: 'Canadian Solar', model: 'CS6W-550MS',      wp: 550, price: 280000, kg: 25.0,
+    lengthMm: 2266, widthMm: 1134,
     voc: 49.8, vmp: 41.7, isc: 13.95, imp: 13.19, tempCoeffPmax: -0.34, tempCoeffVoc: -0.26, cellCount: 144,
     stock: { qty: 60, supplier: 'Solartex', updatedAt: STOCK_DATE } },
   { id: 'p4', brand: 'Trina Solar',    model: 'TSM-550DE09',     wp: 550, price: 295000, kg: 25.5,
+    lengthMm: 2279, widthMm: 1134,
     voc: 49.9, vmp: 41.9, isc: 13.93, imp: 13.13, tempCoeffPmax: -0.34, tempCoeffVoc: -0.25, cellCount: 144,
     stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
 ];
+
+// Factor de empacado (packing factor): fracción del techo realmente utilizable
+// para paneles una vez descontados pasillos, setbacks, GCR inter-fila y áreas
+// de servicio. Residencial ~0.68 (mantenimiento, claraboyas); industrial plano
+// con tilt ~0.58 (GCR más exigente). Default 0.65.
+export const DEFAULT_PACKING_FACTOR = 0.65;
+
+// Área física de la huella del panel (proyección en planta) en m².
+// Fallback a 2.2 m² si el panel del catálogo no trae dimensiones.
+export const panelFootprintM2 = (panel) => {
+  if (panel?.lengthMm && panel?.widthMm) {
+    return (panel.lengthMm * panel.widthMm) / 1_000_000;
+  }
+  return 2.2;
+};
+
+// m² de techo requeridos por panel, incluido pasillo/GCR/setbacks.
+export const panelRoofAreaM2 = (panel, packingFactor = DEFAULT_PACKING_FACTOR) => {
+  return panelFootprintM2(panel) / Math.max(0.3, Math.min(0.95, packingFactor));
+};
 
 export const DEFAULT_INVERTERS = [
   // ───── On-grid monofásico (residencial) ─────
@@ -318,18 +342,23 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const usingPVGIS = opts.pvgisAnnualKwh && opts.pvgisAnnualKwh > 0;
   if (usingPVGIS) {
     ap = Math.round(opts.pvgisAnnualKwh);
-    mp = Math.round(ap / 12);
-    dp = parseFloat((ap / 365).toFixed(1));
   } else {
     dp = parseFloat((actKwp * psh * PR).toFixed(1));
-    mp = Math.round(dp * 30);
     ap = Math.round(dp * 365);
   }
+  // Factor de sombreado local de Google Solar API dataLayers (0–1).
+  // 1.0 = sin sombra (factor por defecto cuando la API no reporta).
+  const shade = opts.shadeIndex != null ? Math.max(0.1, Math.min(1, Number(opts.shadeIndex))) : 1;
+  ap = Math.round(ap * shade);
+  mp = Math.round(ap / 12);
+  dp = parseFloat((ap / 365).toFixed(1));
 
   const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
-  const roof = parseFloat((numPanels * 2.2).toFixed(0));
+  // Área real de techo ocupada, usando footprint real + packing factor
+  const packing = opts.packingFactor || DEFAULT_PACKING_FACTOR;
+  const roof = parseFloat((numPanels * panelRoofAreaM2(panel, packing)).toFixed(1));
   const tB = bUnit && bQty ? parseFloat((bQty * bUnit.kwh).toFixed(1)) : 0;
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
   const kgTotal = (numPanels * (panel.kg || 25.5))

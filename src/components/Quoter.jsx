@@ -3,7 +3,8 @@ import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
   calcSystem, calcTransport, calcBudget, selectCompatibleInverter,
-  calcAGPEBenefit, MAX_KWP_AGPE, validateLayout
+  calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
+  panelRoofAreaM2, DEFAULT_PACKING_FACTOR
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchPVWatts } from '../services/pvwatts';
@@ -28,6 +29,8 @@ const Q0 = {
   battManual: false,     // true = usuario editó cantidad manualmente
   // Ubicación / área (Google Solar API vía n8n)
   lat: null, lon: null, roofLookupAt: null, roofLookupSource: null, roofLookupNotes: '',
+  // Sombreado local derivado de Google Solar dataLayers (0-1; 1=sin sombra)
+  shadeIndex: null, shadeSource: null,
 };
 
 const STEPS = ['Tipo', 'Consumo', 'Transporte', 'Contacto', 'Resultado'];
@@ -106,6 +109,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       u('roofLookupSource', r.source);
       u('roofLookupNotes', r.notes || '');
       u('roofLookupAt', new Date().toISOString());
+      if (r.shadeIndex != null && !Number.isNaN(r.shadeIndex)) u('shadeIndex', r.shadeIndex);
+      if (r.shadeSource) u('shadeSource', r.shadeSource);
     } catch (e) {
       setRoofError(e.message || 'Error consultando techo');
     } finally {
@@ -123,7 +128,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const consumptionKwp = f.monthlyKwh ? (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78) : 0;
   const areaVal = parseFloat(f.availableArea);
   const hasArea = !!areaVal && areaVal > 0;
-  const areaMaxPanels = hasArea ? Math.floor(areaVal / 2.2) : 0;
+  // Área por panel real (huella módulo ÷ packing factor residencial/industrial)
+  const m2PerPanel = panelRoofAreaM2(panel, DEFAULT_PACKING_FACTOR);
+  const areaMaxPanels = hasArea ? Math.floor(areaVal / m2PerPanel) : 0;
   const areaMaxKwp = hasArea ? parseFloat((areaMaxPanels * panel.wp / 1000).toFixed(2)) : 0;
   const areaAllowsExcedentes = gridExport && hasArea && areaMaxKwp > consumptionKwp;
   // Cuando el área es la restricción activa (techo < 100% consumo), capamos al máximo
@@ -202,8 +209,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const productionSource = pvwattsAnnualKwh ? 'PVWatts' : pvgisAnnualKwh ? 'PVGIS' : 'PSH';
 
     const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, temps);
+    const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
-      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, ...temps });
+      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
 
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
@@ -241,52 +249,52 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   };
 
   const ss = {
-    wrap: { maxWidth: 680, margin: '0 auto', padding: '20px 14px' },
-    card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 22px', marginBottom: 12 },
-    h2: { fontSize: 16, fontWeight: 700, color: '#fff', margin: '0 0 14px' },
-    lbl: { display: 'block', fontSize: 10, color: C.muted, marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
-    inp: { width: '100%', background: C.dark, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 11px', color: C.text, fontSize: 13, boxSizing: 'border-box' },
-    btn: { padding: '10px 24px', background: C.teal, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 13 },
-    ghost: { padding: '9px 18px', background: 'transparent', color: C.muted, border: `1px solid ${C.border}`, borderRadius: 7, cursor: 'pointer', fontSize: 12 },
-    stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px' },
+    wrap: { maxWidth: 860, margin: '0 auto', padding: '28px 18px' },
+    card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '26px 30px', marginBottom: 16 },
+    h2: { fontSize: 19, fontWeight: 700, color: '#fff', margin: '0 0 16px' },
+    lbl: { display: 'block', fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
+    inp: { width: '100%', background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '11px 14px', color: C.text, fontSize: 14, boxSizing: 'border-box' },
+    btn: { padding: '12px 28px', background: C.teal, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 14 },
+    ghost: { padding: '11px 22px', background: 'transparent', color: C.muted, border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', fontSize: 13 },
+    stat: { background: C.dark, border: `1px solid ${C.border}`, borderRadius: 9, padding: '14px 16px' },
   };
 
   const Prog = () => (
-    <div style={{ marginBottom: 18 }}>
+    <div style={{ marginBottom: 22 }}>
       {/* Mini hero — coherente con el home en pasos 1-4 */}
-      <div style={{
+      <div className="al-mini-hero" style={{
         background: `linear-gradient(180deg, ${C.teal}10 0%, transparent 100%)`,
-        border: `1px solid ${C.teal}33`, borderRadius: 12,
-        padding: '14px 16px', marginBottom: 14,
-        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+        border: `1px solid ${C.teal}33`, borderRadius: 14,
+        padding: '20px 24px', marginBottom: 18,
+        display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       }}>
-        <img src={logo} alt="SolarHub by ALEBAS" style={{ height: 40, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
-        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-          <div style={{ fontSize: 10, letterSpacing: 2.4, fontWeight: 700, color: C.teal, marginBottom: 2 }}>SOLARHUB BY ALEBAS</div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+        <img src={logo} alt="SolarHub by ALEBAS" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+        <div className="al-mini-hero-txt" style={{ flex: '1 1 260px', minWidth: 0 }}>
+          <div style={{ fontSize: 11, letterSpacing: 2.6, fontWeight: 700, color: C.teal, marginBottom: 3 }}>SOLARHUB BY ALEBAS</div>
+          <div className="al-mini-hero-title" style={{ fontSize: 19, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
             El centro de tu <span style={{ color: C.yellow }}>energía solar</span>
           </div>
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
             {['Dimensiona', 'Cotiza', 'Conecta', 'Instala'].map((t, i) => (
-              <span key={t} style={{ fontSize: 10, fontWeight: 700, color: i % 2 === 0 ? C.teal : C.yellow, letterSpacing: 0.4 }}>
-                {t}{i < 3 ? <span style={{ color: C.muted, margin: '0 3px' }}>•</span> : ''}
+              <span key={t} style={{ fontSize: 12, fontWeight: 700, color: i % 2 === 0 ? C.teal : C.yellow, letterSpacing: 0.4 }}>
+                {t}{i < 3 ? <span style={{ color: C.muted, margin: '0 4px' }}>•</span> : ''}
               </span>
             ))}
           </div>
         </div>
-        <div className="al-step-pills" style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div className="al-step-pills" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {['Ley 1715', 'CREG 174/2021', 'RETIE'].map(t => (
-            <span key={t} style={{ background: `${C.teal}18`, border: `1px solid ${C.teal}55`, borderRadius: 14, padding: '3px 9px', fontSize: 9, color: C.teal, fontWeight: 600, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>{t}</span>
+            <span key={t} style={{ background: `${C.teal}18`, border: `1px solid ${C.teal}55`, borderRadius: 16, padding: '5px 12px', fontSize: 11, color: C.teal, fontWeight: 600, letterSpacing: 0.3, whiteSpace: 'nowrap' }}>{t}</span>
           ))}
         </div>
       </div>
 
       {/* Progreso */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-        {STEPS.map((_, i) => <div key={i} style={{ flex: 1, height: 4, borderRadius: 3, background: i < step ? C.teal : i === step ? C.teal + '88' : C.border, transition: 'background 0.2s' }} />)}
+      <div style={{ display: 'flex', gap: 5, marginBottom: 7 }}>
+        {STEPS.map((_, i) => <div key={i} style={{ flex: 1, height: 5, borderRadius: 3, background: i < step ? C.teal : i === step ? C.teal + '88' : C.border, transition: 'background 0.2s' }} />)}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        {STEPS.map((s, i) => <span key={i} style={{ fontSize: 10, color: i <= step ? C.teal : C.muted, fontWeight: i === step ? 700 : 500, letterSpacing: 0.3 }}>{s}</span>)}
+        {STEPS.map((s, i) => <span key={i} style={{ fontSize: 11, color: i <= step ? C.teal : C.muted, fontWeight: i === step ? 700 : 500, letterSpacing: 0.3 }}>{s}</span>)}
       </div>
     </div>
   );
@@ -427,12 +435,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
           {f.roofLookupSource && (
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 5 }}>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
               Fuente: <span style={{ color: C.teal, fontWeight: 600 }}>
                 {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Claude IA (estimación)' : f.roofLookupSource}
               </span>
               {f.lat != null && f.lon != null && <> · {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
               {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
+              {f.shadeIndex != null && (
+                <div style={{ marginTop: 3 }}>
+                  ☀ Sombra local: <span style={{ color: f.shadeIndex >= 0.9 ? C.teal : f.shadeIndex >= 0.8 ? C.yellow : C.orange, fontWeight: 700 }}>
+                    {Math.round((1 - f.shadeIndex) * 100)}% pérdida
+                  </span> · índice {f.shadeIndex.toFixed(2)} ({f.shadeSource === 'google-datalayers' ? 'Google dataLayers' : f.shadeSource === 'claude-estimate' ? 'estimación IA' : f.shadeSource})
+                </div>
+              )}
+              <div style={{ marginTop: 3 }}>
+                Área usada por panel: <strong style={{ color: C.teal }}>{m2PerPanel.toFixed(2)} m²</strong> (huella real + packing {Math.round(DEFAULT_PACKING_FACTOR * 100)}%)
+              </div>
             </div>
           )}
           {!solarConfigured() && (
@@ -442,11 +460,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         {f.monthlyKwh && (() => {
           const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78);
           const reqPanels = Math.ceil(reqKwp * 1000 / panel.wp);
-          const reqArea = reqPanels * 2.2;
+          const reqArea = reqPanels * m2PerPanel;
           const area = parseFloat(f.availableArea);
           const hasAreaLocal = !!area && area > 0;
           const enough = hasAreaLocal ? area >= reqArea : null;
-          const maxPanels = hasAreaLocal ? Math.floor(area / 2.2) : 0;
+          const maxPanels = hasAreaLocal ? Math.floor(area / m2PerPanel) : 0;
           const maxKwp = hasAreaLocal ? (maxPanels * panel.wp / 1000) : 0;
           const maxCov = hasAreaLocal && reqPanels > 0 ? Math.min(Math.round((maxPanels / reqPanels) * 100), 100) : 0;
           const col = enough === null ? C.teal : enough ? C.green : C.orange;
@@ -766,7 +784,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           const areaLimited = res.sizedFor === 'area';
           // Área ideal para 100% de consumo (sin cap de techo)
           const idealPanels = Math.ceil(consumptionKwp * 1000 / panel.wp);
-          const idealArea = Math.ceil(idealPanels * 2.2);
+          const idealArea = Math.ceil(idealPanels * m2PerPanel);
           const enough = !areaLimited && area >= idealArea;
           const col = (enough && !areaLimited) ? C.green : C.orange;
           return (
@@ -1242,7 +1260,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ marginTop: 12, background: `${C.orange}12`, border: `1px solid ${C.orange}44`, borderRadius: 7, padding: '11px 14px' }}>
                   <div style={{ fontSize: 12, color: C.orange, fontWeight: 700, marginBottom: 4 }}>⚠ Observación — Cobertura parcial por área disponible</div>
                   <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
-                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * 2.2)} m² de techo útil. Un ingeniero ALEBAS puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
+                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * m2PerPanel)} m² de techo útil. Un ingeniero ALEBAS puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
                   </div>
                 </div>
               )}

@@ -68,11 +68,21 @@ button { font-family: inherit; }
   /* Grids de stats en 2 columnas */
   .al-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
 
-  /* Mini-hero en pasos 1-4: pills de normativa debajo, no al costado */
-  .al-step-pills { width: 100%; justify-content: flex-start !important; }
+  /* Mini-hero en pasos 1-4: pills debajo, logo más chico, tipografía compacta */
+  .al-mini-hero { padding: 12px 14px !important; gap: 10px !important; }
+  .al-mini-hero-logo { height: 38px !important; }
+  .al-mini-hero-title { font-size: 14px !important; }
+  .al-step-pills { width: 100%; justify-content: flex-start !important; gap: 4px !important; }
+  .al-step-pills > span { font-size: 10px !important; padding: 3px 8px !important; }
 
   /* Tipo de sistema: tarjetas en 1 columna en móvil */
   .al-type-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+  .al-mini-hero { padding: 16px 18px !important; gap: 14px !important; }
+  .al-mini-hero-logo { height: 46px !important; }
+  .al-mini-hero-title { font-size: 16px !important; }
 }
 
 @media (max-width: 400px) {

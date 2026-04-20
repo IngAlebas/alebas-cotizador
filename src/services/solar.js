@@ -11,6 +11,8 @@
 //     tiltDeg?,           // suggested tilt
 //     azimuthDeg?,        // suggested azimuth (0=N, 90=E, 180=S, 270=W)
 //     sunshineHoursYear?, // Google Solar API yearly sunshine
+//     shadeIndex?,        // 0..1 — relative to unshaded peers (Google dataLayers)
+//     shadeSource?,       // 'google-datalayers' | 'heuristic'
 //     source,             // 'google' | 'claude' | 'mixed'
 //     confidence,         // 0..1
 //     notes?              // string
@@ -42,6 +44,8 @@ export async function lookupRoof({ address, lat, lon } = {}) {
     tiltDeg: data.tiltDeg != null ? Number(data.tiltDeg) : null,
     azimuthDeg: data.azimuthDeg != null ? Number(data.azimuthDeg) : null,
     sunshineHoursYear: data.sunshineHoursYear != null ? Number(data.sunshineHoursYear) : null,
+    shadeIndex: data.shadeIndex != null ? Number(data.shadeIndex) : null,
+    shadeSource: data.shadeSource || null,
     source: data.source || 'unknown',
     confidence: data.confidence != null ? Number(data.confidence) : null,
     notes: data.notes || '',
