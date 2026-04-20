@@ -40,9 +40,18 @@ export async function fetchTRM() {
   const cached = readCache();
   if (cached?.cop_per_usd) return { ...cached, cached: true };
 
-  const data = n8nConfigured()
-    ? await n8nPost('trm', {})
-    : await fetchDirect();
+  // n8n primario → si falla, cae al endpoint público Datos Abiertos CO.
+  let data;
+  if (n8nConfigured()) {
+    try {
+      data = await n8nPost('trm', {});
+      if (!data?.cop_per_usd) throw new Error('TRM n8n: respuesta sin cop_per_usd');
+    } catch (e) {
+      data = await fetchDirect();
+    }
+  } else {
+    data = await fetchDirect();
+  }
 
   if (data?.cop_per_usd) writeCache(data);
   return { ...data, cached: false };

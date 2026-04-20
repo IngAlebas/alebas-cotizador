@@ -49,9 +49,18 @@ export async function fetchPVProduction({ lat, lon, kwp, losses = 14, tilt = 10,
   const cached = readCache(key);
   if (cached) return { ...cached, cached: true };
 
-  const data = n8nConfigured()
-    ? await n8nPost('pvgis', { lat, lon, kwp, tilt, azimuth, losses })
-    : await fetchDirect({ lat, lon, kwp, losses, tilt, azimuth });
+  // n8n primario → si falla, cae al endpoint público PVGIS (CORS habilitado).
+  let data;
+  if (n8nConfigured()) {
+    try {
+      data = await n8nPost('pvgis', { lat, lon, kwp, tilt, azimuth, losses });
+      if (!data?.annualKwh) throw new Error('PVGIS n8n: respuesta sin annualKwh');
+    } catch (e) {
+      data = await fetchDirect({ lat, lon, kwp, losses, tilt, azimuth });
+    }
+  } else {
+    data = await fetchDirect({ lat, lon, kwp, losses, tilt, azimuth });
+  }
 
   if (data?.annualKwh) writeCache(key, data);
   return { ...data, cached: false };

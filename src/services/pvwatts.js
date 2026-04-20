@@ -52,9 +52,25 @@ export async function fetchPVWatts(lat, lon, kwp, tilt = 10, azimuth = 180) {
   const cached = readCache(key);
   if (cached?.annualKwh) return { ...cached, cached: true };
 
-  const data = n8nConfigured()
-    ? await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth })
-    : await fetchDirect(lat, lon, kwp, tilt, azimuth);
+  // n8n primario → si falla y hay REACT_APP_NREL_API_KEY, cae al endpoint directo NREL.
+  // Sin NREL key no hay fallback: devuelve null y la UI cae a PVGIS (que no requiere key).
+  let data = null;
+  if (n8nConfigured()) {
+    try {
+      data = await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth });
+      if (!data?.annualKwh) throw new Error('PVWatts n8n: respuesta sin annualKwh');
+    } catch (e) {
+      if (NREL_KEY) {
+        data = await fetchDirect(lat, lon, kwp, tilt, azimuth);
+      } else {
+        return null;
+      }
+    }
+  } else if (NREL_KEY) {
+    data = await fetchDirect(lat, lon, kwp, tilt, azimuth);
+  } else {
+    return null;
+  }
 
   if (data?.annualKwh) writeCache(key, data);
   return data;
