@@ -151,12 +151,16 @@ export const fmt = n => new Intl.NumberFormat('es-CO').format(Math.round(n));
 export const fmtCOP = n => `$${fmt(n)}`;
 
 // opts.pvgisAnnualKwh: si se pasa, sobreescribe la producción heurística (PSH).
+// opts.targetKwp: si se pasa, dimensiona al kWp objetivo en lugar del consumo
+//   (útil cuando el cliente quiere sobredimensionar para generar excedentes).
 // Cap por MAX_KWP_AGPE para evitar dimensionar fuera del alcance regulatorio.
 export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh, opts = {}) {
   const PR = 0.78;
   const daily = monthlyKwh / 30;
-  const kwpN = Math.min(daily / (psh * PR), MAX_KWP_AGPE);
-  const cappedByRegulation = (daily / (psh * PR)) > MAX_KWP_AGPE;
+  const consumptionKwp = daily / (psh * PR);
+  const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;
+  const kwpN = Math.min(rawTarget, MAX_KWP_AGPE);
+  const cappedByRegulation = rawTarget > MAX_KWP_AGPE;
   const numPanels = Math.ceil(kwpN * 1000 / panel.wp);
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
 

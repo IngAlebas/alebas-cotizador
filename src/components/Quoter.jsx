@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
@@ -11,7 +11,7 @@ const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
   panelId: '', battId: '', battQty: 2,
   transportZone: 'N1', dept: 'Meta', address: '',
-  availableArea: '',
+  availableArea: '', wantsExcedentes: false,
   name: '', company: '', phone: '', email: '',
 };
 
@@ -38,12 +38,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [xmError, setXmError] = useState(null);
   const [agpe, setAgpe] = useState(null);
 
+  // Dimensionamiento base: por consumo (cobertura ~100%). Si el cliente
+  // quiere excedentes Y tiene área disponible superior a la requerida,
+  // sobredimensionamos al kWp que cabe en el techo (limitado por área).
+  const consumptionKwp = f.monthlyKwh ? (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78) : 0;
+  const areaVal = parseFloat(f.availableArea);
+  const hasArea = !!areaVal && areaVal > 0;
+  const areaMaxPanels = hasArea ? Math.floor(areaVal / 2.2) : 0;
+  const areaMaxKwp = hasArea ? parseFloat((areaMaxPanels * panel.wp / 1000).toFixed(2)) : 0;
+  const areaAllowsExcedentes = hasArea && areaMaxKwp > consumptionKwp;
+  const targetKwp = (f.wantsExcedentes && areaAllowsExcedentes) ? areaMaxKwp : null;
+
+  // Si el área cambia y ya no permite excedentes, desactivar el toggle.
+  useEffect(() => {
+    if (f.wantsExcedentes && hasArea && !areaAllowsExcedentes) {
+      u('wantsExcedentes', false);
+    }
+  }, [f.wantsExcedentes, hasArea, areaAllowsExcedentes]);
+
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
     if (!kwh) return;
-    const inv = autoInverter((kwh / 30) / (psh * 0.78), f.systemType, inverters);
+    const sizingKwp = targetKwp || consumptionKwp;
+    const inv = autoInverter(sizingKwp, f.systemType, inverters);
     // Primer cálculo con PSH para conocer kWp actual y poder llamar a PVGIS
-    const sysBase = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh);
+    const sysBase = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
 
     // En paralelo: PVGIS (irradiancia regional) y XM (precio bolsa nacional).
     // Si XM falla por CORS caemos a 0; calcAGPEBenefit lo maneja.
@@ -63,14 +82,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       setLoadingPVGIS(false);
     }
 
-    const sys = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh });
+    const sys = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh, targetKwp });
     const inv2 = autoInverter(sys.actKwp, f.systemType, inverters);
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp);
     const annualSav = benefit.totalAnual;
     const roi = annualSav > 0 ? parseFloat((budget.tot / annualSav).toFixed(1)) : 0;
-    setRes({ ...sys, inv: inv2 });
+    setRes({ ...sys, inv: inv2, sizedFor: f.wantsExcedentes && areaAllowsExcedentes ? 'excedentes' : 'consumo' });
     setBgt({ ...budget, sav: annualSav, roi, transport: transport.total });
     setAgpe({ ...benefit, spotSource: spot, tariffCU: operator.tariff });
   };
@@ -206,12 +225,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           const reqPanels = Math.ceil(reqKwp * 1000 / panel.wp);
           const reqArea = reqPanels * 2.2;
           const area = parseFloat(f.availableArea);
-          const hasArea = !!area && area > 0;
-          const enough = hasArea ? area >= reqArea : null;
-          const maxPanels = hasArea ? Math.floor(area / 2.2) : 0;
-          const maxKwp = hasArea ? (maxPanels * panel.wp / 1000) : 0;
-          const maxCov = hasArea && reqPanels > 0 ? Math.min(Math.round((maxPanels / reqPanels) * 100), 100) : 0;
+          const hasAreaLocal = !!area && area > 0;
+          const enough = hasAreaLocal ? area >= reqArea : null;
+          const maxPanels = hasAreaLocal ? Math.floor(area / 2.2) : 0;
+          const maxKwp = hasAreaLocal ? (maxPanels * panel.wp / 1000) : 0;
+          const maxCov = hasAreaLocal && reqPanels > 0 ? Math.min(Math.round((maxPanels / reqPanels) * 100), 100) : 0;
           const col = enough === null ? C.teal : enough ? C.green : C.orange;
+          const excedentesPosibles = hasAreaLocal && maxKwp > reqKwp;
+          const extraKwp = excedentesPosibles ? parseFloat((maxKwp - reqKwp).toFixed(2)) : 0;
           return (
             <div style={{ background: `${col}12`, border: `1px solid ${col}33`, borderRadius: 7, padding: '10px 13px', marginTop: 10, fontSize: 12 }}>
               <div>
@@ -219,11 +240,29 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <strong style={{ color: C.teal }}>{reqKwp.toFixed(2)} kWp</strong>
                 <span style={{ color: C.muted }}> · {reqPanels} paneles · ~{reqArea.toFixed(0)} m² · {operator.name}</span>
               </div>
-              {hasArea && (
+              {hasAreaLocal && (
                 <div style={{ marginTop: 6, fontSize: 11, color: enough ? C.green : C.orange }}>
                   {enough
                     ? `✓ Tus ${area} m² alcanzan para cubrir el 100% del consumo`
                     : `⚠ Tus ${area} m² permiten máx. ${maxPanels} paneles (${maxKwp.toFixed(2)} kWp) — cubre ~${maxCov}% del consumo`}
+                </div>
+              )}
+              {excedentesPosibles && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={f.wantsExcedentes}
+                      onChange={e => u('wantsExcedentes', e.target.checked)}
+                      style={{ marginTop: 2, accentColor: C.teal, cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: 11, color: '#fff', lineHeight: 1.5 }}>
+                      Quiero un sistema <strong style={{ color: C.teal }}>con excedentes</strong> (aprovechar el área sobrante y vender energía a la red)
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
+                        Tu techo permite hasta <strong style={{ color: C.teal }}>{maxKwp.toFixed(2)} kWp</strong> — {extraKwp} kWp extra sobre tu consumo. Los excedentes se liquidan vía AGPE (CREG 174/2021).
+                      </div>
+                    </span>
+                  </label>
                 </div>
               )}
             </div>
@@ -348,6 +387,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: res.dataSource === 'PVGIS' ? `${C.green}22` : `${C.gray}22`, color: res.dataSource === 'PVGIS' ? C.green : C.muted, border: `1px solid ${res.dataSource === 'PVGIS' ? C.green : C.gray}55` }}>
               {res.dataSource === 'PVGIS' ? '✓ Datos PVGIS · ' + dest.capital : 'Estimación PSH'}
+            </span>
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: res.sizedFor === 'excedentes' ? `${C.yellow}22` : `${C.teal}22`, color: res.sizedFor === 'excedentes' ? C.yellow : C.teal, border: `1px solid ${(res.sizedFor === 'excedentes' ? C.yellow : C.teal)}55` }}>
+              {res.sizedFor === 'excedentes' ? '⚡ Dimensionado con excedentes' : '⌂ Dimensionado por consumo'}
             </span>
             {pvgisError && (
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.orange}22`, color: C.orange, border: `1px solid ${C.orange}55` }}>
