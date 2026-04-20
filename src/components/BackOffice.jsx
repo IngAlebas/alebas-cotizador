@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import logo from '../logo.svg';
-import { C, fmt, fmtCOP, OPERATORS } from '../constants';
+import { C, fmt, fmtCOP, OPERATORS, splitCU, excedentePriceFor } from '../constants';
 import { fetchAgentsList, fetchSpotPrice } from '../services/xm';
 import { searchCECPanels, searchCECInverters } from '../services/cec';
 import { searchBatteries } from '../services/batteries';
@@ -430,7 +430,7 @@ function OperatorsMgr({ operators, upd, ss }) {
       </div>
 
       <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}22`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
-        Códigos SIC oficiales de XM (Sinergox). Tarifas son referencia residencial estrato 4 sin subsidio — actualizables manualmente o por scrapers de PDFs mensuales (próxima iteración). PSH usa estimación regional; PVGIS lo sobreescribe en el cálculo final.
+        Códigos SIC oficiales de XM (Sinergox). Tarifa CU (COP/kWh) = G + T + D + Cv + PR + R (CREG 091/2007). Los componentes se infieren de la tarifa plana con fracciones típicas N1 residencial hasta integrar PDFs mensuales por OR. Excedentes AGPE Menor se remuneran a CU − G (CREG 174/2021). PSH es estimación regional; PVGIS la sobreescribe en el cálculo.
       </div>
 
       {adding && (
@@ -468,7 +468,20 @@ function OperatorsMgr({ operators, upd, ss }) {
                   </div>
                 </td></tr>)
               : (<tr key={op.name}>
-                {fields.map(fl => <td key={fl.k} style={ss.td}>{op[fl.k] || '—'}</td>)}
+                {fields.map(fl => {
+                  if (fl.k === 'tariff') {
+                    const cu = splitCU(op);
+                    const exc = excedentePriceFor(op);
+                    const tip = `CREG 091 (${cu.derived ? 'inferido' : 'explícito'}): G=${cu.G} · T=${cu.T} · D=${cu.D} · Cv=${cu.Cv} · PR=${cu.PR} · R=${cu.R}`;
+                    return (
+                      <td key={fl.k} style={ss.td} title={tip}>
+                        <div>{op.tariff || cu.total || '—'}</div>
+                        <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>exc: {exc} <span style={{ opacity: 0.6 }}>(CU−G)</span></div>
+                      </td>
+                    );
+                  }
+                  return <td key={fl.k} style={ss.td}>{op[fl.k] || '—'}</td>;
+                })}
                 <td style={ss.td}>
                   <div style={{ display: 'flex', gap: 5 }}>
                     <button style={ss.btn} onClick={() => startEdit(op)}>Editar</button>

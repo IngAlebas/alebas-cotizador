@@ -4,6 +4,7 @@ import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
   calcSystem, calcTransport, calcBudget, selectCompatibleInverter,
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
+  tariffCU, excedentePriceFor, splitCU,
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
@@ -266,7 +267,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
-    const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp, { gridExport });
+    const cuFull = tariffCU(operator);
+    const cuMinusG = excedentePriceFor(operator);
+    const cuSplit = splitCU(operator);
+    const benefit = calcAGPEBenefit(sys.ap, kwh, cuFull, spot?.cop_per_kwh || 0, sys.actKwp,
+      { gridExport, excedentePrice: cuMinusG });
     const annualSav = benefit.totalAnual;
     const roi = annualSav > 0 ? parseFloat((budget.tot / annualSav).toFixed(1)) : 0;
 
@@ -277,7 +282,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                    : 'consumo';
     setRes({ ...sys, inv: inv2, sizedFor, productionSource });
     setBgt({ ...budget, sav: annualSav, roi, transport: transport.total, budgetUsd, trmDate: trmData?.date });
-    setAgpe({ ...benefit, spotSource: spot, tariffCU: operator.tariff });
+    setAgpe({ ...benefit, spotSource: spot, tariffCU: cuFull, cuSplit });
   };
 
   const submit = async () => {

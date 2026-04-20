@@ -14,6 +14,61 @@ export const C = {
 // Códigos SIC para correlacionar con el API de XM (POST /lists, MetricId: ListadoAgentes).
 // Las tarifas son referencia (CU promedio residencial estrato 4 sin subsidio); se actualizan
 // vía PDFs mensuales del operador o el sync con XM en src/services/xm.js (precio bolsa).
+//
+// CU per CREG 091/2007 art. 6:  CU = G + T + D + Cv + PR + R
+//   G  (Generación)      — bolsa + contratos, nacional, varía mensual (XM).
+//   T  (Transmisión STN) — cargo nacional CREG (≈ publicación mensual).
+//   D  (Distribución)    — por OR y nivel de tensión N1-N4; residencial = N1.
+//   Cv (Comercialización)— margen variable del comercializador.
+//   PR (Pérdidas reconocidas) — por OR y nivel.
+//   R  (Restricciones)   — nacional, publicación mensual XM.
+// Las fracciones por defecto reflejan la composición típica 2024-2025 para
+// usuario residencial estrato 4 N1. Cuando el OR proporciona `components`
+// explícitos, se usan esos (esperado al integrar PDFs mensuales por OR).
+export const CU_FRACTIONS_N1_DEFAULT = {
+  G:  0.52,  // Generación (nacional — mismo valor para todo el país)
+  T:  0.08,  // Transmisión
+  D:  0.22,  // Distribución N1 residencial
+  Cv: 0.05,  // Comercialización variable
+  PR: 0.08,  // Pérdidas reconocidas
+  R:  0.05,  // Restricciones
+};
+
+// Deriva los componentes CREG 091 de un operador. Si el OR tiene
+// `components: {G,T,D,Cv,PR,R}` explícitos, se usan; si no, se infieren
+// por fracción sobre la tarifa plana. Retorna también `total` (CU).
+export function splitCU(op, voltageLevel = 'N1') {
+  if (op?.components && typeof op.components === 'object') {
+    const c = op.components;
+    const total = (c.G || 0) + (c.T || 0) + (c.D || 0) + (c.Cv || 0) + (c.PR || 0) + (c.R || 0);
+    return { ...c, total, derived: false, voltageLevel };
+  }
+  const t = op?.tariff || 0;
+  const f = CU_FRACTIONS_N1_DEFAULT; // TODO: tablas N2/N3/N4 cuando tengamos data
+  return {
+    G:  Math.round(t * f.G),
+    T:  Math.round(t * f.T),
+    D:  Math.round(t * f.D),
+    Cv: Math.round(t * f.Cv),
+    PR: Math.round(t * f.PR),
+    R:  Math.round(t * f.R),
+    total: t,
+    derived: true,
+    voltageLevel,
+  };
+}
+
+// CU plena del operador (COP/kWh). Autoconsumo se valora a este precio.
+export function tariffCU(op, voltageLevel = 'N1') {
+  return splitCU(op, voltageLevel).total;
+}
+
+// Precio de remuneración de excedentes AGPE Menor = CU − G (CREG 174/2021 art. 7).
+// Incluye T + D + Cv + PR + R; excluye generación.
+export function excedentePriceFor(op, voltageLevel = 'N1') {
+  const c = splitCU(op, voltageLevel);
+  return c.T + c.D + c.Cv + c.PR + c.R;
+}
 export const OPERATORS = [
   { sic: 'EMSC', name: 'EMSA',           fullName: 'Electrificadora del Meta',                    region: 'Meta', tariff: 650, psh: 4.6 },
   { sic: 'EPMC', name: 'EPM',            fullName: 'Empresas Públicas de Medellín',               region: 'Antioquia', tariff: 680, psh: 4.5 },
@@ -396,21 +451,20 @@ export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
 // Calcula el beneficio económico anual aplicando la regulación AGPE.
 //   - autoConsumo (energía generada que coincide con consumo): ahorro a tarifa CU plena.
 //   - excedentes (energía inyectada a la red): valorada según categoría AGPE.
-//     · Menor (kWp ≤ 100): CREG 174/2021 art. 7 — netting mensual a CU plena hasta
-//       el consumo del período; el remanente neto exportado se liquida a CU − G
-//       (componentes de transporte/comercialización/restricciones, no generación).
+//     · Menor (kWp ≤ 100): CREG 174/2021 art. 7 — excedentes a CU − G (sin el
+//       componente de generación, porque no se paga el kWh de bolsa/contrato).
 //     · Mayor (100 < kWp ≤ 1000): liquidación a precio bolsa XM (PrecBolsNal).
-// EXCEDENTE_G_FRACTION aproxima el peso de G en la tarifa CU colombiana
-// (histórico 2023–2025: G ≈ 50–60% de CU). Valor conservador 0.55 → CU − G ≈ 45%.
-// Reemplazar por componentes CREG 091 reales (G + T + D + Cv + PR + R) cuando
-// se migre el catálogo de operadores a tarifa discriminada.
+// Parámetros:
+//   tariffCUValue         — CU plena COP/kWh (para autoconsumo; ver splitCU/tariffCU).
+//   spotPriceCOPkWh       — precio bolsa horario (sólo Mayor).
+//   opts.excedentePrice   — precio de excedentes Menor (COP/kWh). Si se provee,
+//                           reemplaza el cálculo CU − G. Típicamente viene de
+//                           excedentePriceFor(operator, voltageLevel).
 // IMPORTANTE: los sistemas off-grid NO están conectados a la red y por
 // definición no entregan excedentes — la energía sobrante se pierde
 // (o se limita vía dump load). Para off-grid gridExport=false y sólo
 // se contabiliza ahorro por autoconsumo.
-export const EXCEDENTE_G_FRACTION = 0.55;
-
-export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, spotPriceCOPkWh, kwp, opts = {}) {
+export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCUValue, spotPriceCOPkWh, kwp, opts = {}) {
   const gridExport = opts.gridExport !== false;
   const annualConsumption = monthlyConsumptionKwh * 12;
   const autoConsumed = Math.min(annualProdKwh, annualConsumption);
@@ -418,11 +472,15 @@ export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, 
   const excedentes = gridExport ? rawExcedentes : 0;
   const energiaDesperdiciada = gridExport ? 0 : rawExcedentes;
   const isMenor = kwp <= AGPE_LIMIT_KW_MENOR;
-  const ahorroAutoconsumo = Math.round(autoConsumed * tariffCU);
-  const tariffMinusG = tariffCU * (1 - EXCEDENTE_G_FRACTION);
-  const priceExcedentes = gridExport ? (isMenor ? tariffMinusG : (spotPriceCOPkWh || 0)) : 0;
+  const ahorroAutoconsumo = Math.round(autoConsumed * tariffCUValue);
+  // Precio excedentes Menor: preferir el valor explícito (CU − G de componentes
+  // reales del OR); si no, caer al default de fracción G_N1.
+  const fallbackCUminusG = tariffCUValue * (1 - CU_FRACTIONS_N1_DEFAULT.G);
+  const menorPrice = opts.excedentePrice != null ? opts.excedentePrice : fallbackCUminusG;
+  const priceExcedentes = gridExport ? (isMenor ? menorPrice : (spotPriceCOPkWh || 0)) : 0;
   const ingresoExcedentes = Math.round(excedentes * priceExcedentes);
   const totalAnual = ahorroAutoconsumo + ingresoExcedentes;
+  const pctOfCU = tariffCUValue > 0 ? Math.round((priceExcedentes / tariffCUValue) * 100) : 0;
   return {
     autoConsumed: Math.round(autoConsumed),
     excedentes: Math.round(excedentes),
@@ -434,7 +492,7 @@ export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCU, 
     gridExport,
     agpeCategory: gridExport ? (isMenor ? 'Menor' : 'Mayor') : 'No aplica (off-grid)',
     rule: gridExport
-      ? (isMenor ? `Excedentes a CU − G (≈${Math.round((1-EXCEDENTE_G_FRACTION)*100)}% de CU, CREG 174/2021)` : 'Excedentes a precio bolsa XM')
+      ? (isMenor ? `Excedentes a CU − G (≈${pctOfCU}% de CU, CREG 174/2021)` : 'Excedentes a precio bolsa XM')
       : 'Sistema aislado — no entrega excedentes a la red',
   };
 }
