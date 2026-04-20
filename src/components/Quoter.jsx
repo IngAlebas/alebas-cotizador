@@ -784,6 +784,81 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         </div>
         )}
 
+        {showResumen && (() => {
+          const cons = parseFloat(f.monthlyKwh) || 0;
+          const gen = Number(res.mp) || 0;
+          if (cons <= 0 && gen <= 0) return null;
+          const delta = gen - cons;
+          const surplus = delta > 0;
+          const maxV = Math.max(cons, gen, 1);
+          const consPct = Math.max(2, Math.round((cons / maxV) * 100));
+          const genPct = Math.max(2, Math.round((gen / maxV) * 100));
+          const deltaCol = surplus ? C.yellow : C.orange;
+          const onGrid = f.systemType === 'on-grid' || f.systemType === 'hybrid';
+          return (
+            <div style={{ ...ss.card, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>⚡ Generación vs consumo · mensual</div>
+                <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  {surplus ? 'Excedente estimado' : 'Déficit estimado'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                    <span style={{ color: C.muted }}>Consumo promedio</span>
+                    <span style={{ color: '#fff', fontWeight: 700 }}>{fmt(cons)} kWh</span>
+                  </div>
+                  <div style={{ height: 10, background: C.dark, borderRadius: 5, overflow: 'hidden' }}>
+                    <div style={{ width: `${consPct}%`, height: '100%', background: C.muted, opacity: 0.7 }} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                    <span style={{ color: C.muted }}>Generación estimada</span>
+                    <span style={{ color: C.teal, fontWeight: 700 }}>{fmt(gen)} kWh</span>
+                  </div>
+                  <div style={{ height: 10, background: C.dark, borderRadius: 5, overflow: 'hidden' }}>
+                    <div style={{ width: `${genPct}%`, height: '100%', background: C.teal }} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                <div style={{ background: C.dark, borderRadius: 7, padding: '9px 10px', border: `1px solid ${deltaCol}44` }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{surplus ? 'Excedente' : 'Déficit'} / mes</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: deltaCol, marginTop: 2 }}>{surplus ? '+' : ''}{fmt(Math.abs(delta))} kWh</div>
+                </div>
+                <div style={{ background: C.dark, borderRadius: 7, padding: '9px 10px', border: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{surplus ? 'Excedente' : 'Déficit'} / año</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: deltaCol, marginTop: 2 }}>{surplus ? '+' : ''}{fmt(Math.abs(delta) * 12)} kWh</div>
+                </div>
+                <div style={{ background: C.dark, borderRadius: 7, padding: '9px 10px', border: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Cobertura</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginTop: 2 }}>{cons > 0 ? Math.round((gen / cons) * 100) : 0}%</div>
+                </div>
+              </div>
+
+              {surplus && onGrid && (
+                <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+                  Con AGPE (CREG 174/2021) los excedentes pueden venderse al operador de red ({operator.name}). El valor se descuenta en la factura o se paga si supera el consumo del periodo.
+                </div>
+              )}
+              {surplus && f.systemType === 'off-grid' && (
+                <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+                  Excedente no inyectable a red (sistema aislado). Úsalo para cargas diferibles: bombeo, termotanque, climatización o ampliación del banco de baterías.
+                </div>
+              )}
+              {!surplus && (
+                <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+                  La generación no cubre el consumo mensual. El déficit se tomará de {f.systemType === 'off-grid' ? 'las baterías o requerirá apoyo de planta' : 'la red eléctrica'}.
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {showResumen && aiConfigured() && (
           <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
@@ -859,8 +934,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
         {showTecnico && (
         <div style={ss.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>▣ Preview del layout y strings</div>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 12 }}>▣ Preview del layout y strings</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
             Techo aprox. {res.roof} m² · {res.numPanels} paneles en {res.ns} string{res.ns > 1 ? 's' : ''} · {panel.wp} Wp c/u
           </div>
           <div style={{ background: C.dark, border: `1px dashed ${C.teal}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
@@ -870,47 +945,47 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               const stringColors = [C.teal, C.yellow, '#4ade80', '#fb923c', '#a78bfa', '#f472b6'];
               const col = stringColors[sIdx % stringColors.length];
               return (
-                <div key={sIdx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: sIdx < res.ns - 1 ? 7 : 0 }}>
-                  <div style={{ fontSize: 9, color: col, fontWeight: 700, minWidth: 38, letterSpacing: 0.5 }}>ST{sIdx + 1}</div>
-                  <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1 }}>
+                <div key={sIdx} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: sIdx < res.ns - 1 ? 9 : 0 }}>
+                  <div style={{ fontSize: 12, color: col, fontWeight: 700, minWidth: 44, letterSpacing: 0.5 }}>ST{sIdx + 1}</div>
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', flex: 1 }}>
                     {Array.from({ length: panelsInString }).map((_, pIdx) => (
-                      <div key={pIdx} style={{ width: 16, height: 11, background: `${col}33`, border: `1px solid ${col}`, borderRadius: 2 }} />
+                      <div key={pIdx} style={{ width: 18, height: 13, background: `${col}33`, border: `1px solid ${col}`, borderRadius: 2 }} />
                     ))}
                   </div>
-                  <div style={{ fontSize: 9, color: C.muted, minWidth: 56, textAlign: 'right' }}>{panelsInString} paneles</div>
+                  <div style={{ fontSize: 12, color: C.muted, minWidth: 72, textAlign: 'right' }}>{panelsInString} paneles</div>
                 </div>
               );
             })}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', flexWrap: 'wrap', padding: '4px 0 10px' }}>
-            <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
-            <div style={{ fontSize: 14, color: C.teal }}>→</div>
-            <div style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}`, borderRadius: 6, padding: '6px 11px', textAlign: 'center' }}>
-              <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Inversor</div>
-              <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginTop: 1 }}>{res.inv?.brand} {res.inv?.kw} kW</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap', padding: '6px 0 14px' }}>
+            <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
+            <div style={{ fontSize: 18, color: C.teal }}>→</div>
+            <div style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Inversor</div>
+              <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{res.inv?.brand} {res.inv?.kw} kW</div>
             </div>
-            <div style={{ fontSize: 14, color: C.teal }}>→</div>
+            <div style={{ fontSize: 18, color: C.teal }}>→</div>
             {needsB && (
               <>
-                <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 6, padding: '6px 11px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Baterías</div>
-                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginTop: 1 }}>{f.battQty} × {batt.kwh} kWh</div>
+                <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Baterías</div>
+                  <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{f.battQty} × {batt.kwh} kWh</div>
                 </div>
-                <div style={{ fontSize: 14, color: C.teal }}>→</div>
+                <div style={{ fontSize: 18, color: C.teal }}>→</div>
               </>
             )}
-            <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>AC · Carga</div>
+            <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>AC · Carga</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
             {[
               ['Strings', `${res.ns} × ${res.ppss}`],
               ['Paneles', res.numPanels],
               ['DC/AC', res.dca],
               ['Área', `${res.roof} m²`],
             ].map(([l, v]) => (
-              <div key={l} style={{ background: C.dark, borderRadius: 5, padding: '7px 8px', textAlign: 'center', border: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
-                <div style={{ fontSize: 12, color: C.teal, fontWeight: 700, marginTop: 2 }}>{v}</div>
+              <div key={l} style={{ background: C.dark, borderRadius: 7, padding: '11px 10px', textAlign: 'center', border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
+                <div style={{ fontSize: 16, color: C.teal, fontWeight: 700, marginTop: 4 }}>{v}</div>
               </div>
             ))}
           </div>
@@ -936,31 +1011,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           const statusLabel = v.ok && v.warnings.length === 0 ? '✓ Layout compatible' : v.ok ? '⚠ Advertencias' : '✗ Layout inválido';
           return (
             <div style={{ ...ss.card, background: statusBg, border: `1px solid ${statusBorder}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>⚙ Validación eléctrica del layout</div>
-                <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}55`, fontWeight: 700 }}>{statusLabel}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>⚙ Validación eléctrica del layout</div>
+                <span style={{ fontSize: 11, padding: '4px 11px', borderRadius: 20, background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}55`, fontWeight: 700 }}>{statusLabel}</span>
               </div>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
                 Voc en frío @10°C · Vmp en caliente @65°C · corriente por MPPT. Basado en {panel.source === 'CEC' ? 'datos CEC/NREL' : 'datasheet del fabricante'}.
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: v.errors.length || v.warnings.length ? 10 : 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: v.errors.length || v.warnings.length ? 12 : 0 }}>
                 {[
                   ['Voc frío / Vdc_max', `${v.metrics.stringVocCold} / ${v.metrics.vocMax} V`],
                   ['Vmp STC', `${v.metrics.stringVmpStc} V`],
                   ['Vmp caliente / min', `${v.metrics.stringVmpHot} / ${v.metrics.mpptMin} V`],
                   ['I/MPPT', `${v.metrics.currentPerMppt} / ${v.metrics.idcMax} A`],
                 ].map(([l, val]) => (
-                  <div key={l} style={{ background: C.dark, borderRadius: 5, padding: '7px 8px', textAlign: 'center', border: `1px solid ${C.border}` }}>
-                    <div style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
-                    <div style={{ fontSize: 11, color: '#fff', fontWeight: 700, marginTop: 2 }}>{val}</div>
+                  <div key={l} style={{ background: C.dark, borderRadius: 7, padding: '11px 10px', textAlign: 'center', border: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
+                    <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 4 }}>{val}</div>
                   </div>
                 ))}
               </div>
               {v.errors.map((e, i) => (
-                <div key={`e${i}`} style={{ fontSize: 10, color: C.red, padding: '5px 0', display: 'flex', gap: 6 }}><span>✗</span><span style={{ flex: 1 }}>{e}</span></div>
+                <div key={`e${i}`} style={{ fontSize: 12, color: C.red, padding: '6px 0', display: 'flex', gap: 7 }}><span>✗</span><span style={{ flex: 1 }}>{e}</span></div>
               ))}
               {v.warnings.map((w, i) => (
-                <div key={`w${i}`} style={{ fontSize: 10, color: C.yellow, padding: '5px 0', display: 'flex', gap: 6 }}><span>⚠</span><span style={{ flex: 1 }}>{w}</span></div>
+                <div key={`w${i}`} style={{ fontSize: 12, color: C.yellow, padding: '6px 0', display: 'flex', gap: 7 }}><span>⚠</span><span style={{ flex: 1 }}>{w}</span></div>
               ))}
             </div>
           );
@@ -1032,49 +1107,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         )}
 
-        {showPresupuesto && agpe && (() => {
-          const hasExcedentes = agpe.excedentes > 0;
-          const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
-          return (
-            <div style={ss.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>§ Marco regulatorio aplicable</div>
-                <span style={{ fontSize: 9, color: C.muted }}>Colombia · MinMinas · CREG</span>
-              </div>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>
-                {agpe.gridExport
-                  ? <>Normas colombianas vigentes que rigen tu instalación AGPE {agpe.agpeCategory}{hasExcedentes ? ' con entrega de excedentes' : ''}. Este pre-dimensionamiento se ajusta a sus requisitos técnicos y comerciales.</>
-                  : <>Tu sistema es <strong style={{ color: C.teal }}>off-grid (aislado)</strong>: no está conectado al SIN, por lo que la regulación AGPE (CREG 174/2021) no aplica. El marco relevante es el de Zonas No Interconectadas (ZNI) y las normas técnicas RETIE.</>}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                {norms.map(n => (
-                  <div key={n.id} style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: C.teal }}>{n.title}</span>
-                      {n.article && <span style={{ fontSize: 9, color: C.muted, fontStyle: 'italic' }}>{n.article}</span>}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#fff', fontWeight: 600, marginBottom: 4 }}>{n.fullName}</div>
-                    <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.55 }}>{n.summary}</div>
-                  </div>
-                ))}
-              </div>
-              {res.sizedFor === 'area' && (
-                <div style={{ marginTop: 10, background: `${C.orange}12`, border: `1px solid ${C.orange}44`, borderRadius: 6, padding: '9px 12px' }}>
-                  <div style={{ fontSize: 10, color: C.orange, fontWeight: 700, marginBottom: 3 }}>⚠ Observación — Cobertura parcial por área disponible</div>
-                  <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.55 }}>
-                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * 2.2)} m² de techo útil. Un ingeniero ALEBAS puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
-                  </div>
-                </div>
-              )}
-              <div style={{ fontSize: 9, color: C.muted, marginTop: 10, lineHeight: 1.5, fontStyle: 'italic' }}>
-                {agpe.gridExport
-                  ? 'Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.'
-                  : 'Nota: si deseas monetizar excedentes, evalúa un sistema on-grid o híbrido bajo AGPE. Este cotizador no reemplaza asesoría jurídica.'}
-              </div>
-            </div>
-          );
-        })()}
-
         {showTecnico && (
         <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>⚡ Configuración técnica</div>
@@ -1140,6 +1172,50 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ fontSize: 9, color: C.muted, marginTop: 9, lineHeight: 1.5 }}>* Estimado sujeto a visita técnica. Incluye memorias RETIE, diagramas unifilares y trámites {operator.name}.</div>
         </div>
         )}
+
+        {showPresupuesto && agpe && (() => {
+          const hasExcedentes = agpe.excedentes > 0;
+          const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
+          return (
+            <div style={{ ...ss.card, marginTop: 18, borderColor: `${C.teal}55`, background: `${C.teal}06` }}>
+              <div style={{ textAlign: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${C.teal}33` }}>
+                <div style={{ fontSize: 10, color: C.teal, letterSpacing: 3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Sección final</div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>§ Marco regulatorio aplicable</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>Colombia · MinMinas · CREG</div>
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
+                {agpe.gridExport
+                  ? <>Normas colombianas vigentes que rigen tu instalación AGPE {agpe.agpeCategory}{hasExcedentes ? ' con entrega de excedentes' : ''}. Este pre-dimensionamiento se ajusta a sus requisitos técnicos y comerciales.</>
+                  : <>Tu sistema es <strong style={{ color: C.teal }}>off-grid (aislado)</strong>: no está conectado al SIN, por lo que la regulación AGPE (CREG 174/2021) no aplica. El marco relevante es el de Zonas No Interconectadas (ZNI) y las normas técnicas RETIE.</>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {norms.map(n => (
+                  <div key={n.id} style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '13px 15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>{n.title}</span>
+                      {n.article && <span style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>{n.article}</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#fff', fontWeight: 600, marginBottom: 5 }}>{n.fullName}</div>
+                    <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{n.summary}</div>
+                  </div>
+                ))}
+              </div>
+              {res.sizedFor === 'area' && (
+                <div style={{ marginTop: 12, background: `${C.orange}12`, border: `1px solid ${C.orange}44`, borderRadius: 7, padding: '11px 14px' }}>
+                  <div style={{ fontSize: 12, color: C.orange, fontWeight: 700, marginBottom: 4 }}>⚠ Observación — Cobertura parcial por área disponible</div>
+                  <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
+                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * 2.2)} m² de techo útil. Un ingeniero ALEBAS puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
+                  </div>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 12, lineHeight: 1.6, fontStyle: 'italic' }}>
+                {agpe.gridExport
+                  ? 'Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.'
+                  : 'Nota: si deseas monetizar excedentes, evalúa un sistema on-grid o híbrido bajo AGPE. Este cotizador no reemplaza asesoría jurídica.'}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Navegación entre tabs + CTA final */}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', padding: '8px 0 14px' }}>
