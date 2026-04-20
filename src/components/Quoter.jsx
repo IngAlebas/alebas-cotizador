@@ -230,7 +230,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <span style={{ fontSize: 24, flexShrink: 0 }}>🌞</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 1 }}>
-            Potenciado por <span style={{ color: '#f59e0b' }}>Solar Hub Colombia</span>
+            Potenciado por <span style={{ color: '#f59e0b' }}>Ingeniería y Consultoría en Eficiencia Energética SAS</span>
           </div>
           <div style={{ fontSize: 10, color: C.muted }}>
             Precios mayoristas · Paneles Longi · Inversores CPS · Stock disponible en Colombia
@@ -822,7 +822,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f59e0b0e', border: '1px solid #f59e0b28', borderRadius: 7, padding: '8px 12px', marginBottom: 10 }}>
             <span style={{ fontSize: 16 }}>🌞</span>
             <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.4 }}>
-              <span style={{ color: '#f59e0b', fontWeight: 700 }}>Precios mayoristas Solar Hub Colombia</span> — paneles Longi, inversores CPS. Tarifas actualizadas al mercado colombiano.
+              <span style={{ color: '#f59e0b', fontWeight: 700 }}>Precios mayoristas — Ingeniería y Consultoría en Eficiencia Energética SAS</span> — paneles Longi, inversores CPS. Tarifas actualizadas al mercado colombiano.
             </div>
           </div>
           <div style={{ background: C.dark, borderRadius: 7, padding: '13px 14px', marginBottom: 11 }}>
