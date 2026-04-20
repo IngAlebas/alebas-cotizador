@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import logo from '../logo.jpg';
+import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, OPERATORS, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
   calcSystem, calcTransport, calcBudget, autoInverter
