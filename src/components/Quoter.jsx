@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS,
-  calcSystem, calcTransport, calcBudget, autoInverter, MAX_KWP_AGPE
+  calcSystem, calcTransport, calcBudget, autoInverter, calcAGPEBenefit, MAX_KWP_AGPE
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
+import { fetchSpotPrice } from '../services/xm';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
@@ -34,6 +35,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
   const [loadingPVGIS, setLoadingPVGIS] = useState(false);
   const [pvgisError, setPvgisError] = useState(null);
+  const [xmError, setXmError] = useState(null);
+  const [agpe, setAgpe] = useState(null);
 
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
@@ -42,29 +45,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     // Primer cálculo con PSH para conocer kWp actual y poder llamar a PVGIS
     const sysBase = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh);
 
-    // Intentar enriquecer con PVGIS si tenemos lat/lon del depto
+    // En paralelo: PVGIS (irradiancia regional) y XM (precio bolsa nacional).
+    // Si XM falla por CORS caemos a 0; calcAGPEBenefit lo maneja.
     let pvgisAnnualKwh = null;
-    if (dest?.lat && dest?.lon && sysBase.actKwp > 0) {
+    let spot = null;
+    if (sysBase.actKwp > 0) {
       setLoadingPVGIS(true);
       setPvgisError(null);
-      try {
-        const pv = await fetchPVProduction({ lat: dest.lat, lon: dest.lon, kwp: sysBase.actKwp });
-        pvgisAnnualKwh = pv.annualKwh;
-      } catch (err) {
-        setPvgisError(err.message);
-      } finally {
-        setLoadingPVGIS(false);
-      }
+      setXmError(null);
+      const pvgisP = (dest?.lat && dest?.lon)
+        ? fetchPVProduction({ lat: dest.lat, lon: dest.lon, kwp: sysBase.actKwp }).catch(err => { setPvgisError(err.message); return null; })
+        : Promise.resolve(null);
+      const xmP = fetchSpotPrice(30).catch(err => { setXmError(err.message); return null; });
+      const [pv, sp] = await Promise.all([pvgisP, xmP]);
+      if (pv) pvgisAnnualKwh = pv.annualKwh;
+      spot = sp;
+      setLoadingPVGIS(false);
     }
 
     const sys = calcSystem(kwh, panel, inv.kw, needsB ? batt : null, needsB ? f.battQty : 0, psh, { pvgisAnnualKwh });
     const inv2 = autoInverter(sys.actKwp, f.systemType, inverters);
     const transport = calcTransport(INTER_ZONAS, dest.zona, sys.kgTotal, 0);
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
-    const annualSav = Math.round(sys.ap * operator.tariff);
-    const roi = parseFloat((budget.tot / annualSav).toFixed(1));
+    const benefit = calcAGPEBenefit(sys.ap, kwh, operator.tariff, spot?.cop_per_kwh || 0, sys.actKwp);
+    const annualSav = benefit.totalAnual;
+    const roi = annualSav > 0 ? parseFloat((budget.tot / annualSav).toFixed(1)) : 0;
     setRes({ ...sys, inv: inv2 });
     setBgt({ ...budget, sav: annualSav, roi, transport: transport.total });
+    setAgpe({ ...benefit, spotSource: spot, tariffCU: operator.tariff });
   };
 
   const submit = () => {
@@ -326,7 +334,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ fontSize: 12, color: C.teal, marginTop: 2, fontWeight: 600 }}>Inversión aprox: {fmtCOP(bgt.tot)}</div>
           </div>
           <br />
-          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); setPvgisError(null); }}>Nueva cotización</button>
+          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); setPvgisError(null); setXmError(null); setAgpe(null); }}>Nueva cotización</button>
         </div>
       </div>
     );
@@ -454,6 +462,52 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ))}
           </div>
         </div>
+
+        {agpe && (
+          <div style={ss.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, flexWrap: 'wrap', gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>⚖ Beneficio anual estimado (AGPE)</div>
+              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55`, fontWeight: 600 }}>
+                AGPE {agpe.agpeCategory} · CREG 174/2021
+              </span>
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: 11 }}>{agpe.rule}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 10 }}>
+              <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: '11px 13px' }}>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Autoconsumo</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ahorroAutoconsumo)}</div>
+                <div style={{ fontSize: 10, color: C.teal, marginTop: 2 }}>{fmt(agpe.autoConsumed)} kWh × {agpe.tariffCU} COP/kWh</div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Tarifa CU {operator.name}</div>
+              </div>
+              <div style={{ background: C.dark, border: `1px solid ${C.yellow}55`, borderRadius: 8, padding: '11px 13px' }}>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Excedentes a la red</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{fmtCOP(agpe.ingresoExcedentes)}</div>
+                <div style={{ fontSize: 10, color: C.yellow, marginTop: 2 }}>
+                  {fmt(agpe.excedentes)} kWh × {agpe.priceExcedentes ? `${Math.round(agpe.priceExcedentes)} COP/kWh` : '—'}
+                </div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>
+                  {agpe.agpeCategory === 'Menor'
+                    ? `Tarifa CU (netting 1:1)`
+                    : agpe.spotSource
+                      ? `Bolsa XM · ${agpe.spotSource.periodDays}d (${agpe.spotSource.samples} muestras)`
+                      : xmError
+                        ? '⚠ Bolsa XM no disponible'
+                        : 'Sin datos de bolsa'}
+                </div>
+              </div>
+            </div>
+            <div style={{ background: `${C.teal}12`, borderRadius: 7, padding: '10px 13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#fff', fontWeight: 600 }}>Beneficio anual total</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: C.teal }}>{fmtCOP(agpe.totalAnual)}</span>
+            </div>
+            <div style={{ fontSize: 9, color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+              {agpe.spotSource
+                ? `Precio bolsa promedio últimos ${agpe.spotSource.periodDays}d: ${agpe.spotSource.cop_per_kwh} COP/kWh — fuente XM PrecBolsNal${agpe.spotSource.cached ? ' (caché)' : ''}.`
+                : 'Cálculo de excedentes basado en tarifa CU del operador (sin acceso a bolsa XM en este momento).'}
+              {' '}El autoconsumo asume cobertura del consumo mensual; el resto de la generación se contabiliza como excedentes inyectados a la red.
+            </div>
+          </div>
+        )}
 
         <div style={ss.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 11 }}>⚡ Configuración técnica</div>
