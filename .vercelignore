@@ -1,0 +1,6 @@
+api/
+n8n/
+server.js
+.env*
+ROTAR_ESTOS_SECRETOS.md
+PROGRESO.md

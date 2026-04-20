@@ -1,0 +1,63 @@
+{
+  "name": "XM - Precio de bolsa nacional (spot)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "xm-spot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c7000000-0007-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-xm-spot"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Precio promedio bolsa nacional XM últimos N días.\n// XM cambia MetricId y endpoint con frecuencia. Probamos múltiples candidatos.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst daysBack = Math.min(Math.max(parseInt(body.days ?? 30, 10) || 30, 1), 90);\n\nconst XM_BASE = 'https://servapibi.xm.com.co';\nconst isoDate = d => d.toISOString().slice(0, 10);\nconst endDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // T-1 (XM publica con delay)\nconst startDate = new Date(endDate.getTime() - daysBack * 24 * 60 * 60 * 1000);\n\nconst postXM = async (path, reqBody) => {\n  const r = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `${XM_BASE}${path}`,\n    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'alebas-cotizador/1.0' },\n    body: JSON.stringify(reqBody),\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  if (r.statusCode === 400 || r.statusCode === 404 || r.statusCode === 422) {\n    const e = new Error(`XM ${path} HTTP ${r.statusCode}`);\n    e.clientError = true;\n    throw e;\n  }\n  if (r.statusCode >= 500) throw new Error(`XM ${path} HTTP ${r.statusCode}`);\n  return typeof r.body === 'string' ? JSON.parse(r.body) : r.body;\n};\n\n// Candidatos en orden de probabilidad según historial de cambios de XM 2023-2025.\nconst CANDIDATES = [\n  { path: '/hourly', MetricId: 'Preciobols',      Entity: 'Sistema' },\n  { path: '/hourly', MetricId: 'PrecBolsNal',     Entity: 'Sistema' },\n  { path: '/hourly', MetricId: 'PrecioBolsaNal',  Entity: 'Sistema' },\n  { path: '/hourly', MetricId: 'PreciosBolsa',    Entity: 'Sistema' },\n  { path: '/hourly', MetricId: 'Bolsa',           Entity: 'Sistema' },\n  { path: '/hourly', MetricId: 'PrecBolsNal',     Entity: 'SIN'     },\n  { path: '/hourly', MetricId: 'Preciobols'                          },\n  { path: '/hourly', MetricId: 'PrecBolsNal'                         },\n  { path: '/daily',  MetricId: 'Preciobols',      Entity: 'Sistema' },\n  { path: '/daily',  MetricId: 'PrecBolsNal',     Entity: 'Sistema' },\n  { path: '/daily',  MetricId: 'Bolsa',           Entity: 'Sistema' },\n  { path: '/monthly', MetricId: 'Preciobols',     Entity: 'Sistema' },\n  { path: '/monthly', MetricId: 'PrecBolsNal',    Entity: 'Sistema' },\n];\n\nlet rawJson = null;\nlet usedLabel = '';\nconst tried = [];\nfor (const c of CANDIDATES) {\n  const reqBody = { MetricId: c.MetricId, StartDate: isoDate(startDate), EndDate: isoDate(endDate) };\n  if (c.Entity) reqBody.Entity = c.Entity;\n  const label = `${c.path}/${c.MetricId}${c.Entity ? '/'+c.Entity : ''}`;\n  tried.push(label);\n  try {\n    rawJson = await postXM(c.path, reqBody);\n    usedLabel = label;\n    break;\n  } catch (err) {\n    if (err.clientError) continue;\n    return [{ json: { ok: false, reason: 'upstream_error', detail: err.message } }];\n  }\n}\n\nif (!rawJson) {\n  return [{ json: { ok: false, reason: 'xm_schema_drift', detail: `Ningún candidato respondió`, tried } }];\n}\n\n// Extractor recursivo: recoge valores numéricos en claves Hour##/Hora##/Value##/Precio/Price/Total.\nconst values = [];\nconst walk = (node) => {\n  if (node == null) return;\n  if (Array.isArray(node)) { node.forEach(walk); return; }\n  if (typeof node === 'object') {\n    for (const [k, v] of Object.entries(node)) {\n      if (/^(Hour|Hora|Value|Precio|Price|Total)\\d{0,2}$/i.test(k) && Number.isFinite(Number(v)) && Number(v) > 0) {\n        values.push(Number(v));\n      } else if (typeof v === 'object') {\n        walk(v);\n      }\n    }\n  }\n};\nwalk(rawJson);\n\nif (!values.length) {\n  return [{ json: { ok: false, reason: 'xm_schema_drift', detail: `Respuesta sin datos (métrica: ${usedLabel})`, sample: rawJson } }];\n}\n\nconst avgMwh = values.reduce((s, v) => s + v, 0) / values.length;\nreturn [{ json: {\n  ok: true,\n  cop_per_kwh:     Number((avgMwh / 1000).toFixed(2)),\n  avg_cop_per_mwh: Number(avgMwh.toFixed(2)),\n  samples:         values.length,\n  periodDays:      daysBack,\n  startDate:       isoDate(startDate),\n  endDate:         isoDate(endDate),\n  usedMetric:      usedLabel,\n  syncedAt:        new Date().toISOString(),\n  source:          `XM ${usedLabel}`,\n} }];"
+      },
+      "id": "c7000000-0007-4000-9000-000000000002",
+      "name": "Consultar XM Spot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Cache-Control", "value": "s-maxage=21600, stale-while-revalidate=3600" }
+            ]
+          }
+        }
+      },
+      "id": "c7000000-0007-4000-9000-000000000003",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Consultar XM Spot", "type": "main", "index": 0 }]]
+    },
+    "Consultar XM Spot": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "versionId": "1"
+}

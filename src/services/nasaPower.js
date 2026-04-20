@@ -1,7 +1,7 @@
-// Cliente NASA POWER. Consume /api/nasa-power (proxy Vercel).
-// Retorna irradiancia mensual (PSH) y temperaturas ambiente para
-// corrección precisa de Voc/Vmp en sizeStrings.
-// Caché local 7 días — datos climatológicos anuales muy estables.
+// Cliente NASA POWER — POST al webhook n8n.
+// Caché localStorage 7 días (climatología anual, muy estable).
+
+import { n8nPost, n8nConfigured } from './n8n';
 
 const CACHE_PREFIX = 'nasa:';
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -25,12 +25,7 @@ export async function fetchNASAPower(lat, lon) {
   const cached = readCache(key);
   if (cached?.annualPsh) return { ...cached, cached: true };
 
-  const r = await fetch(`/api/nasa-power?lat=${lat}&lon=${lon}`);
-  if (!r.ok) {
-    const e = await r.json().catch(() => ({}));
-    throw new Error(e.error || `NASA POWER HTTP ${r.status}`);
-  }
-  const data = await r.json();
-  if (data.annualPsh) writeCache(key, data);
+  const data = await n8nPost('nasa-power', { lat, lon });
+  if (data?.annualPsh) writeCache(key, data);
   return data;
 }

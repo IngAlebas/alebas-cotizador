@@ -25,6 +25,7 @@ export async function aiRecommend(context, payload) {
     findings: Array.isArray(data.findings) ? data.findings : [],
     warnings: Array.isArray(data.warnings) ? data.warnings : [],
     suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+    provider: data.provider || null,
     tokens: data.tokens || null,
   };
 }

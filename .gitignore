@@ -13,7 +13,12 @@ yarn-error.log*
 
 # misc
 .DS_Store
+.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# secretos y progreso local (nunca al repo)
+ROTAR_ESTOS_SECRETOS.md
+PROGRESO.md

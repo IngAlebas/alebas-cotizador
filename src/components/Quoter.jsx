@@ -31,8 +31,11 @@ const Q0 = {
   battManual: false,     // true = usuario editó cantidad manualmente
   // Ubicación / área (Google Solar API vía n8n)
   lat: null, lon: null, roofLookupAt: null, roofLookupSource: null, roofLookupNotes: '',
-  // Sombreado local derivado de Google Solar dataLayers (0-1; 1=sin sombra)
+  // Sombreado local derivado de Google Solar buildingInsights (0-1; 1=sin sombra)
   shadeIndex: null, shadeSource: null,
+  // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
+  roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
+  googleMaxPanels: null, roofSegments: [], roofImagery: null,
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
   website: '',
 };
@@ -163,6 +166,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       u('roofLookupAt', new Date().toISOString());
       if (r.shadeIndex != null && !Number.isNaN(r.shadeIndex)) u('shadeIndex', r.shadeIndex);
       if (r.shadeSource) u('shadeSource', r.shadeSource);
+      if (r.tiltDeg != null) u('roofTiltDeg', r.tiltDeg);
+      if (r.azimuthDeg != null) u('roofAzimuthDeg', r.azimuthDeg);
+      if (r.sunshineHoursYear != null) u('sunshineHoursYear', r.sunshineHoursYear);
+      if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
+      if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
+      if (r.imagery) u('roofImagery', r.imagery);
     } catch (e) {
       setRoofError(e.message || 'Error consultando techo');
     } finally {
@@ -506,7 +515,50 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ marginTop: 3 }}>
                   ☀ Sombra local: <span style={{ color: f.shadeIndex >= 0.9 ? C.teal : f.shadeIndex >= 0.8 ? C.yellow : C.orange, fontWeight: 700 }}>
                     {Math.round((1 - f.shadeIndex) * 100)}% pérdida
-                  </span> · índice {f.shadeIndex.toFixed(2)} ({f.shadeSource === 'google-datalayers' ? 'Google dataLayers' : f.shadeSource === 'claude-estimate' ? 'estimación IA' : f.shadeSource})
+                  </span> · índice {f.shadeIndex.toFixed(2)} ({f.shadeSource === 'google-solar-panels' || f.shadeSource === 'google-datalayers' ? 'Google Solar API' : f.shadeSource === 'claude-estimate' ? 'estimación IA' : f.shadeSource})
+                </div>
+              )}
+              {(f.roofTiltDeg != null || f.roofAzimuthDeg != null) && (
+                <div style={{ marginTop: 3 }}>
+                  Orientación: <strong style={{ color: C.teal }}>
+                    {f.roofTiltDeg != null ? `${Math.round(f.roofTiltDeg)}° incl.` : ''}
+                    {f.roofTiltDeg != null && f.roofAzimuthDeg != null ? ' · ' : ''}
+                    {f.roofAzimuthDeg != null ? `${Math.round(f.roofAzimuthDeg)}° azimut` : ''}
+                  </strong>
+                </div>
+              )}
+              {f.sunshineHoursYear != null && (
+                <div style={{ marginTop: 3 }}>
+                  Horas sol/año: <strong style={{ color: C.yellow }}>{Math.round(f.sunshineHoursYear).toLocaleString('es-CO')}</strong>
+                  {f.googleMaxPanels != null && <> · capacidad máx. Google: <strong style={{ color: C.teal }}>{f.googleMaxPanels} paneles</strong></>}
+                </div>
+              )}
+              {f.roofSegments?.length > 0 && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ color: C.teal, marginBottom: 2 }}>Segmentos de techo ({f.roofSegments.length}):</div>
+                  {f.roofSegments.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 8, marginBottom: 1 }}>
+                      <span style={{ color: C.muted }}>{i + 1}.</span>
+                      {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
+                      {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
+                      {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
+                      {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {f.roofImagery && (
+                <div style={{ marginTop: 3 }}>
+                  Imágenes Google Solar:{' '}
+                  {f.roofImagery.imageryDate && (
+                    <span style={{ color: C.teal }}>
+                      {[f.roofImagery.imageryDate.year, String(f.roofImagery.imageryDate.month || '').padStart(2, '0')].filter(Boolean).join('-')}
+                    </span>
+                  )}
+                  {f.roofImagery.imageryQuality && <> · <span style={{ color: C.teal }}>{f.roofImagery.imageryQuality}</span></>}
+                  {f.roofImagery.annualFluxUrl && <> · <a href={`${f.roofImagery.annualFluxUrl}`} target="_blank" rel="noreferrer" style={{ color: C.teal }}>flujo solar↗</a></>}
+                  {f.roofImagery.rgbUrl && <> · <a href={`${f.roofImagery.rgbUrl}`} target="_blank" rel="noreferrer" style={{ color: C.teal }}>foto↗</a></>}
+                  {f.roofImagery.hourlyShadeUrls?.length > 0 && <> · {f.roofImagery.hourlyShadeUrls.length} capas sombra</>}
                 </div>
               )}
               <div style={{ marginTop: 3 }}>
@@ -1069,11 +1121,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </ul>
                   </div>
                 )}
+                {(aiData.provider || aiData.tokens?.in) && (
+                  <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
+                    {aiData.provider && <span>Modelo: <span style={{ color: C.teal }}>{aiData.provider}</span></span>}
+                    {aiData.tokens?.in > 0 && <span> · {(aiData.tokens.in + (aiData.tokens.out || 0)).toLocaleString('es-CO')} tokens</span>}
+                  </div>
+                )}
               </div>
             )}
             {!aiData && !aiError && !aiLoading && (
               <div style={{ fontSize: 11, color: C.muted }}>
-                Claude revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
+                Claude Haiku revisará tu sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
               </div>
             )}
           </div>

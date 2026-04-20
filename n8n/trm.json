@@ -1,0 +1,63 @@
+{
+  "name": "TRM - Tasa representativa del mercado COP/USD",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trm",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c4000000-0004-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-trm"
+    },
+    {
+      "parameters": {
+        "jsCode": "// TRM desde datos.gov.co (Superfinanciera) con fallback a open.er-api.com.\n// Ambas fuentes son gratuitas y no requieren API key.\nconst fetchDatosGov = async () => {\n  const r = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://www.datos.gov.co/resource/32sa-8pi3.json',\n    qs: { '$limit': '1', '$order': 'vigenciadesde DESC' },\n    headers: { 'User-Agent': 'alebas-cotizador/1.0', 'Accept': 'application/json' },\n    returnFullResponse: true,\n    json: true,\n  });\n  if (r.statusCode !== 200) throw new Error(`datos.gov.co HTTP ${r.statusCode}`);\n  const rows = Array.isArray(r.body) ? r.body : r.body;\n  if (!rows?.length) throw new Error('datos.gov.co: sin registros');\n  const v = parseFloat(rows[0].valor);\n  if (!v || v < 1000 || v > 20000) throw new Error(`TRM fuera de rango: ${v}`);\n  return { cop_per_usd: v, date: (rows[0].vigenciadesde || '').slice(0, 10), source: 'datos.gov.co (Superfinanciera)' };\n};\n\nconst fetchErApi = async () => {\n  const r = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://open.er-api.com/v6/latest/USD',\n    headers: { 'User-Agent': 'alebas-cotizador/1.0' },\n    returnFullResponse: true,\n    json: true,\n  });\n  if (r.statusCode !== 200) throw new Error(`ExchangeRate-API HTTP ${r.statusCode}`);\n  const cop = r.body?.rates?.COP;\n  if (!cop || cop < 1000) throw new Error(`COP rate inválida: ${cop}`);\n  return { cop_per_usd: +cop.toFixed(2), date: new Date().toISOString().slice(0, 10), source: 'open.er-api.com' };\n};\n\nlet data;\ntry {\n  data = await fetchDatosGov();\n} catch (e1) {\n  try {\n    data = await fetchErApi();\n    data.fallback = true;\n    data.fallbackReason = e1.message;\n  } catch (e2) {\n    return [{ json: { ok: false, reason: 'upstream_error', detail: `Fuente 1: ${e1.message} | Fuente 2: ${e2.message}` } }];\n  }\n}\nreturn [{ json: { ok: true, ...data, syncedAt: new Date().toISOString() } }];"
+      },
+      "id": "c4000000-0004-4000-9000-000000000002",
+      "name": "Obtener TRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Cache-Control", "value": "s-maxage=14400, stale-while-revalidate=3600" }
+            ]
+          }
+        }
+      },
+      "id": "c4000000-0004-4000-9000-000000000003",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Obtener TRM", "type": "main", "index": 0 }]]
+    },
+    "Obtener TRM": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "versionId": "1"
+}

@@ -1,0 +1,63 @@
+{
+  "name": "XM - Lista de agentes (operadores de red)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "xm-agents",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c6000000-0006-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-xm-agents"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lista de agentes del mercado mayorista XM (Sinergox).\n// XM cambia su schema periódicamente; este nodo es tolerante a múltiples variantes.\n// Estrategia: parse estructurado (ListEntities 2025+ y Values legacy) + walker recursivo como fallback.\n\nconst XM_BASE = 'https://servapibi.xm.com.co';\nconst now = new Date();\nconst end = now;\nconst start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);\nconst isoDate = d => d.toISOString().slice(0, 10);\n\nconst postXM = async (path, body) => {\n  const r = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `${XM_BASE}${path}`,\n    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'alebas-cotizador/1.0' },\n    body: JSON.stringify(body),\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  if (r.statusCode >= 400) {\n    throw new Error(`XM ${path} HTTP ${r.statusCode}`);\n  }\n  return typeof r.body === 'string' ? JSON.parse(r.body) : r.body;\n};\n\n// Walker recursivo tolerante a cualquier schema\nconst walkAgents = (node, collected = []) => {\n  if (node == null) return collected;\n  if (Array.isArray(node)) { node.forEach(n => walkAgents(n, collected)); return collected; }\n  if (typeof node !== 'object') return collected;\n  const SIC_KEYS  = ['Id','id','Codigo','codigo','Code','code','SIC','sic','CodigoSIC','codigoSIC'];\n  const NAME_KEYS = ['Nombre','nombre','Name','name','RazonSocial','razonSocial'];\n  const ACT_KEYS  = ['Actividad','actividad','Actividades','actividades','Activity','activity','TipoAgente','tipoAgente'];\n  const sic  = SIC_KEYS.find(k => node[k]);\n  const name = NAME_KEYS.find(k => node[k]);\n  const act  = ACT_KEYS.find(k => node[k]);\n  if (sic || name) {\n    collected.push({ sic: node[sic] || '', name: node[name] || '', activities: node[act] || '' });\n  }\n  for (const v of Object.values(node)) {\n    if (v && typeof v === 'object') walkAgents(v, collected);\n  }\n  return collected;\n};\n\nlet j;\ntry {\n  j = await postXM('/lists', { MetricId: 'ListadoAgentes', Entity: 'Sistema', StartDate: isoDate(start), EndDate: isoDate(end) });\n} catch (err) {\n  // Fallback sin Entity\n  j = await postXM('/lists', { MetricId: 'ListadoAgentes', StartDate: isoDate(start), EndDate: isoDate(end) });\n}\n\nconst rawItems = j?.Items || j?.items || j?.data || j?.Data || j?.result || j?.Result || [];\nlet items = [];\nif (rawItems.length) {\n  const flat = [];\n  for (const it of rawItems) {\n    // Schema 2025+: Items[n].ListEntities[m].Values\n    const listEnt = it?.ListEntities || it?.listEntities || it?.Entities || it?.entities;\n    if (Array.isArray(listEnt) && listEnt.length) {\n      for (const le of listEnt) {\n        const v = le?.Values || le?.values || le;\n        flat.push({ sic: v?.Code || v?.Id || v?.Codigo || '', name: v?.Name || v?.Nombre || '', activities: v?.Activity || v?.Actividad || '' });\n      }\n    } else {\n      const v = it?.Values || it?.values || it;\n      flat.push({ sic: v?.Id || v?.Codigo || v?.Code || it?.Id || '', name: v?.Nombre || v?.Name || it?.Name || '', activities: v?.Actividad || v?.Actividades || v?.Activity || '' });\n    }\n  }\n  items = flat;\n}\n\n// Fallback walker si no hubo resultados estructurados\nif (!items.some(a => a.sic || a.name)) {\n  items = walkAgents(j);\n  if (!items.length) {\n    return [{ json: { ok: false, reason: 'xm_schema_drift', detail: 'Sin agentes en ningún schema conocido', sample: j } }];\n  }\n}\n\n// Deduplicar\nconst seen = new Set();\nitems = items.filter(a => {\n  const key = a.sic || a.name;\n  if (!key || seen.has(key)) return false;\n  seen.add(key); return true;\n});\n\nconst filtered = items.filter(a => /D|OR|distribuid|comercial/i.test(a.activities || ''));\nconst operators = filtered.length ? filtered : items.filter(a => a.name || a.sic);\n\nreturn [{ json: {\n  ok: true,\n  items,\n  operators,\n  total: items.length,\n  activityFilterWorked: filtered.length > 0,\n  syncedAt: new Date().toISOString(),\n  source: 'XM ListadoAgentes',\n} }];"
+      },
+      "id": "c6000000-0006-4000-9000-000000000002",
+      "name": "Consultar XM Agentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Cache-Control", "value": "s-maxage=604800, stale-while-revalidate=86400" }
+            ]
+          }
+        }
+      },
+      "id": "c6000000-0006-4000-9000-000000000003",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Consultar XM Agentes", "type": "main", "index": 0 }]]
+    },
+    "Consultar XM Agentes": {
+      "main": [[{ "node": "Responder", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "versionId": "1"
+}

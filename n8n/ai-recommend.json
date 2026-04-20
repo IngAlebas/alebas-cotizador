@@ -17,10 +17,10 @@
     },
     {
       "parameters": {
-        "jsCode": "// Revisión técnica del sistema solar con Claude.\n// Requiere env: ANTHROPIC_API_KEY\n// Input body: { context: 'review'|'sizing'|'explain', payload: {...} }\n\nconst src = $input.first().json;\nconst body = src.body || src;\nconst context = (body.context || 'review').toString();\nconst payload = body.payload || {};\n\nconst AKEY = $env.ANTHROPIC_API_KEY;\nif (!AKEY) throw new Error('Falta env ANTHROPIC_API_KEY');\n\nconst system = `Eres un ingeniero eléctrico especializado en sistemas solares fotovoltaicos en Colombia. Conoces RETIE, CREG 038/2014, CREG 174/2021 (AGPE), Ley 1715, estándares NEC/IEC. Analiza el dimensionamiento que te envía el cotizador y devuelve observaciones concretas, accionables y técnicas. Usa español neutro.`;\n\nconst userPrompt = `Contexto: ${context}\\n\\nSistema a revisar (JSON):\\n${JSON.stringify(payload, null, 2)}\\n\\nDevuelve SOLO JSON válido con esta forma exacta (sin markdown):\\n{\\n  \\\"summary\\\": string,\\n  \\\"findings\\\": string[],\\n  \\\"warnings\\\": string[],\\n  \\\"suggestions\\\": string[]\\n}\\n\\nReglas:\\n- summary: 1-2 frases, lenguaje ejecutivo.\\n- findings: 2-5 observaciones técnicas clave (dimensionamiento, cobertura, compatibilidad eléctrica, normativa).\\n- warnings: alertas críticas (voc fuera de rango, banco subdimensionado, incompatibilidad de voltaje, excedentes fuera de AGPE, etc). Vacío si no hay.\\n- suggestions: 2-4 acciones recomendadas específicas.\\n- NO inventes valores. Trabaja solo con los datos del payload.`;\n\nconst claude = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.anthropic.com/v1/messages',\n  headers: {\n    'x-api-key': AKEY,\n    'anthropic-version': '2023-06-01',\n    'content-type': 'application/json',\n  },\n  body: {\n    model: 'claude-sonnet-4-6',\n    max_tokens: 1200,\n    system,\n    messages: [{ role: 'user', content: userPrompt }],\n  },\n  json: true,\n});\nconst text = (claude.content || []).map(c => c.text || '').join('\\n').trim();\nconst m = text.match(/\\{[\\s\\S]*\\}/);\nif (!m) throw new Error('Claude no devolvió JSON parseable');\nlet parsed;\ntry { parsed = JSON.parse(m[0]); } catch (e) { throw new Error('JSON inválido de Claude: ' + e.message); }\n\nconst usage = claude.usage || {};\nreturn [{ json: {\n  summary: parsed.summary || '',\n  findings: Array.isArray(parsed.findings) ? parsed.findings : [],\n  warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],\n  suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],\n  tokens: { in: usage.input_tokens || 0, out: usage.output_tokens || 0 },\n} }];"
+        "jsCode": "// Revisión técnica solar con Claude Haiku.\n// Requiere env: ANTHROPIC_API_KEY\n// Input body: { context: 'review'|'sizing'|'explain', payload: {...} }\n\nconst src = $input.first().json;\nconst body = src.body || src;\nconst context = (body.context || 'review').toString();\nconst payload = body.payload || {};\n\nconst AKEY = $env.ANTHROPIC_API_KEY;\nif (!AKEY) throw new Error('Falta env ANTHROPIC_API_KEY');\n\nconst system = 'Eres un ingeniero eléctrico especializado en sistemas solares fotovoltaicos en Colombia. Conoces RETIE, CREG 038/2014, CREG 174/2021 (AGPE), Ley 1715, estándares NEC/IEC. Analiza el dimensionamiento que te envía el cotizador y devuelve observaciones concretas, accionables y técnicas. Usa español neutro.';\n\nconst userPrompt = `Contexto: ${context}\\n\\nSistema a revisar (JSON):\\n${JSON.stringify(payload, null, 2)}\\n\\nDevuelve SOLO JSON válido con esta forma exacta (sin markdown):\\n{\\n  \\\"summary\\\": string,\\n  \\\"findings\\\": string[],\\n  \\\"warnings\\\": string[],\\n  \\\"suggestions\\\": string[]\\n}\\n\\nReglas:\\n- summary: 1-2 frases, lenguaje ejecutivo.\\n- findings: 2-5 observaciones técnicas clave (dimensionamiento, cobertura, compatibilidad eléctrica, normativa).\\n- warnings: alertas críticas (voc fuera de rango, banco subdimensionado, incompatibilidad de voltaje, excedentes fuera de AGPE, etc). Vacío si no hay.\\n- suggestions: 2-4 acciones recomendadas específicas.\\n- NO inventes valores. Trabaja solo con los datos del payload.`;\n\nconst r = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.anthropic.com/v1/messages',\n  headers: {\n    'x-api-key': AKEY,\n    'anthropic-version': '2023-06-01',\n    'content-type': 'application/json',\n  },\n  body: {\n    model: 'claude-haiku-4-5-20251001',\n    max_tokens: 1024,\n    system,\n    messages: [{ role: 'user', content: userPrompt }],\n  },\n  json: true,\n});\n\nconst text = (r.content || []).map(c => c.text || '').join('\\n').trim();\nconst m = text.match(/\\{[\\s\\S]*\\}/);\nif (!m) throw new Error('Claude no devolvió JSON parseable');\nlet parsed;\ntry { parsed = JSON.parse(m[0]); } catch (e) { throw new Error('JSON inválido de Claude: ' + e.message); }\n\nconst usage = r.usage || {};\nreturn [{ json: {\n  summary: parsed.summary || '',\n  findings: Array.isArray(parsed.findings) ? parsed.findings : [],\n  warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],\n  suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],\n  provider: 'claude-haiku-4-5',\n  tokens: { in: usage.input_tokens || 0, out: usage.output_tokens || 0 },\n} }];"
       },
       "id": "aa000000-0002-4000-9000-000000000002",
-      "name": "Claude review",
+      "name": "Claude Haiku review",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [480, 300]
@@ -40,9 +40,9 @@
   ],
   "connections": {
     "Webhook": {
-      "main": [[{ "node": "Claude review", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Claude Haiku review", "type": "main", "index": 0 }]]
     },
-    "Claude review": {
+    "Claude Haiku review": {
       "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
     }
   },
@@ -51,5 +51,5 @@
   "staticData": null,
   "tags": [{ "name": "alebas" }],
   "triggerCount": 0,
-  "versionId": "1"
+  "versionId": "3"
 }

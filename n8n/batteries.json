@@ -1,0 +1,103 @@
+{
+  "name": "Baterías - Catálogo curado (Postgres)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "batteries",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c9000000-0009-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-batteries"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\nconst q     = (body.q    || '').toString().trim();\nconst arch  = (body.arch || '').toString().trim();\nconst limit = Math.min(Math.max(parseInt(body.limit ?? 50, 10) || 50, 1), 100);\nreturn [{ json: { q, arch, limit } }];"
+      },
+      "id": "c9000000-0009-4000-9000-000000000002",
+      "name": "Normalizar input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, manufacturer, model, chemistry, nominal_kwh, usable_kwh, voltage, cycles, arch, raw\nFROM batteries\nWHERE ($1 = '' OR manufacturer ILIKE '%' || $1 || '%' OR model ILIKE '%' || $1 || '%'\n                OR chemistry   ILIKE '%' || $1 || '%' OR arch   ILIKE '%' || $1 || '%')\n  AND ($2 = '' OR arch = $2)\nORDER BY manufacturer, model\nLIMIT $3",
+        "options": {
+          "queryReplacement": "={{ [$json.q, $json.arch, $json.limit] }}"
+        }
+      },
+      "id": "c9000000-0009-4000-9000-000000000003",
+      "name": "Buscar en Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 200],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\nconst items = rows.map(r => {\n  const raw = typeof r.raw === 'string' ? JSON.parse(r.raw) : (r.raw || {});\n  return {\n    id:          raw.id || ('bat_' + r.id),\n    brand:       r.manufacturer,\n    model:       r.model,\n    chemistry:   r.chemistry,\n    kwh:         r.nominal_kwh ? Number(r.nominal_kwh) : null,\n    usableKwh:   r.usable_kwh  ? Number(r.usable_kwh)  : null,\n    v:           r.voltage     ? Number(r.voltage)     : null,\n    cycles:      r.cycles      ? Number(r.cycles)      : null,\n    arch:        r.arch,\n    dod:         raw.dod          ?? null,\n    warrantyYears: raw.warrantyYears ?? null,\n    kgPerModule: raw.kgPerModule   ?? null,\n    source: 'Catálogo ALEBAS (Postgres)',\n  };\n});\nreturn [{ json: { ok: true, items, total: items.length, syncedAt: new Date().toISOString() } }];"
+      },
+      "id": "c9000000-0009-4000-9000-000000000004",
+      "name": "Normalizar resultados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const detail = $input.first()?.json?.message || 'Error consultando Postgres';\nreturn [{ json: { ok: false, reason: 'db_error', detail } }];"
+      },
+      "id": "c9000000-0009-4000-9000-000000000005",
+      "name": "Error DB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Cache-Control", "value": "s-maxage=604800, stale-while-revalidate=86400" }
+            ]
+          }
+        }
+      },
+      "id": "c9000000-0009-4000-9000-000000000006",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":           { "main": [[{ "node": "Normalizar input",     "type": "main", "index": 0 }]] },
+    "Normalizar input":  { "main": [[{ "node": "Buscar en Postgres",   "type": "main", "index": 0 }]] },
+    "Buscar en Postgres": {
+      "main": [
+        [{ "node": "Normalizar resultados", "type": "main", "index": 0 }],
+        [{ "node": "Error DB",              "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizar resultados": { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] },
+    "Error DB":              { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "versionId": "1"
+}

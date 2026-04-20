@@ -1,7 +1,7 @@
-// Cliente NREL PVWatts v8. Consume /api/pvwatts (proxy Vercel).
-// Estimación de producción AC anual y mensual con pérdidas reales
-// modeladas (suciedad, temperatura, cableado, inversor).
-// Caché local 24 h por combinación de coordenadas + kWp.
+// Cliente NREL PVWatts v8 — POST al webhook n8n.
+// Caché localStorage 24 h por coordenadas + kWp.
+
+import { n8nPost, n8nConfigured } from './n8n';
 
 const CACHE_PREFIX = 'pvw:';
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -25,13 +25,7 @@ export async function fetchPVWatts(lat, lon, kwp, tilt = 10, azimuth = 180) {
   const cached = readCache(key);
   if (cached?.annualKwh) return { ...cached, cached: true };
 
-  const params = new URLSearchParams({ lat, lon, kwp, tilt, azimuth });
-  const r = await fetch(`/api/pvwatts?${params}`);
-  if (!r.ok) {
-    const e = await r.json().catch(() => ({}));
-    throw new Error(e.error || `PVWatts HTTP ${r.status}`);
-  }
-  const data = await r.json();
-  if (data.annualKwh) writeCache(key, data);
+  const data = await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth });
+  if (data?.annualKwh) writeCache(key, data);
   return data;
 }
