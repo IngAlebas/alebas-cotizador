@@ -6,7 +6,7 @@ import {
 import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
-import logo from './logo.jpg';
+import logo from './logo.png';
 
 export default function App() {
   const [view, setView] = useState('quoter');
