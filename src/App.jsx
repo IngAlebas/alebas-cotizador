@@ -70,7 +70,7 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: C.dark, color: C.text }}>
       <nav style={{
-        background: '#08151e', borderBottom: `2px solid #059669`,
+        background: '#08151e', borderBottom: `2px solid ${C.teal}`,
         padding: '0 16px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', height: 56,
         position: 'sticky', top: 0, zIndex: 99
@@ -79,9 +79,9 @@ export default function App() {
           <img src={logo} alt="SolarHub by ALEBAS" style={{ height: 34, width: 'auto', borderRadius: 4 }} />
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: -0.3 }}>
-              Solar<span style={{ color: '#f59e0b' }}>Hub</span>
+              Solar<span style={{ color: C.yellow }}>Hub</span>
             </div>
-            <div style={{ fontSize: 9, color: '#059669', fontWeight: 600, letterSpacing: 1.2 }}>BY ALEBAS INGENIERÍA</div>
+            <div style={{ fontSize: 9, color: C.teal, fontWeight: 600, letterSpacing: 1.2 }}>BY ALEBAS INGENIERÍA</div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 3 }}>
@@ -89,8 +89,8 @@ export default function App() {
             <button key={id} onClick={() => setView(id)} style={{
               padding: '5px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
               fontWeight: 600, fontSize: 12,
-              background: view === id ? '#059669' : 'rgba(5,150,105,0.1)',
-              color: view === id ? '#fff' : '#059669',
+              background: view === id ? C.teal : 'rgba(1,112,139,0.1)',
+              color: view === id ? '#fff' : C.teal,
             }}>{ic} {l}</button>
           ))}
         </div>
