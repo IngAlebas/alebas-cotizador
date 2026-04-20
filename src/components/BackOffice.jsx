@@ -277,9 +277,14 @@ function OperatorsMgr({ operators, upd, ss }) {
     setSyncStatus({ loading: true });
     try {
       const data = await fetchAgentsList();
+      const total = data.operators?.length ?? 0;
+      if (!total) {
+        setSyncStatus({ error: 'XM devolvió 0 agentes — posible cambio de schema en el API. Reintentar más tarde.' });
+        return;
+      }
       const xmCodes = new Set(data.operators.map(o => o.sic).filter(Boolean));
       const matched = operators.filter(o => o.sic && xmCodes.has(o.sic)).length;
-      setSyncStatus({ ok: true, total: data.operators.length, matched, syncedAt: data.syncedAt, cached: data.cached });
+      setSyncStatus({ ok: true, total, matched, syncedAt: data.syncedAt, cached: data.cached });
     } catch (err) {
       setSyncStatus({ error: err.message });
     }

@@ -36,9 +36,11 @@ async function fetchProxy(params) {
 export async function fetchAgentsList() {
   const key = `${CACHE_PREFIX}agents`;
   const cached = readCache(key, TTL_AGENTS_MS);
-  if (cached) return { ...cached, cached: true };
+  // Sólo servimos caché si trae datos útiles; respuestas vacías suelen venir
+  // de cambios de schema en el API y conviene re-intentar en la siguiente llamada.
+  if (cached && cached.operators?.length) return { ...cached, cached: true };
   const data = await fetchProxy({ metric: 'agents' });
-  writeCache(key, data);
+  if (data.operators?.length) writeCache(key, data);
   return data;
 }
 
@@ -46,8 +48,8 @@ export async function fetchAgentsList() {
 export async function fetchSpotPrice(daysBack = 30) {
   const key = `${CACHE_PREFIX}spot`;
   const cached = readCache(key, TTL_PRICE_MS);
-  if (cached) return { ...cached, cached: true };
+  if (cached && cached.cop_per_kwh) return { ...cached, cached: true };
   const data = await fetchProxy({ metric: 'spot', days: String(daysBack) });
-  writeCache(key, data);
+  if (data.cop_per_kwh) writeCache(key, data);
   return data;
 }
