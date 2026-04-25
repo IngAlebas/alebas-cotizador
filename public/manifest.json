@@ -1,0 +1,48 @@
+{
+  "name": "SolarHub — Ecosistema Solar Colombia",
+  "short_name": "SolarHub",
+  "description": "Cotiza, conecta e instala tu sistema solar fotovoltaico. El ecosistema solar de Colombia.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#FF8C00",
+  "background_color": "#07090F",
+  "categories": ["utilities", "energy", "business"],
+  "lang": "es-CO",
+  "icons": [
+    { "src": "/icons/icon-72.png",  "sizes": "72x72",   "type": "image/png" },
+    { "src": "/icons/icon-96.png",  "sizes": "96x96",   "type": "image/png" },
+    { "src": "/icons/icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/icons/icon-144.png", "sizes": "144x144", "type": "image/png" },
+    { "src": "/icons/icon-152.png", "sizes": "152x152", "type": "image/png" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "SolarHub Cotizador Solar"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cotizar sistema solar",
+      "short_name": "Cotizar",
+      "description": "Calcula tu sistema fotovoltaico",
+      "url": "/?view=quoter",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Ser instalador",
+      "short_name": "Instalador",
+      "description": "Únete a la red de instaladores",
+      "url": "/?view=instalador",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    }
+  ]
+}
