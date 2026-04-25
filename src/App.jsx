@@ -27,7 +27,8 @@ function AdminLogin({ onSuccess }) {
         <div style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:4}}>Panel de administración</div>
         <div style={{fontSize:11,color:C.muted,marginBottom:26,fontFamily:'monospace'}}>solar-hub.co · acceso restringido</div>
         <div style={{position:'relative',marginBottom:14}}>
-          <input type={show?'text':'password'} value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==='Enter'&&check()} placeholder="Contraseña de administrador"
+          <input type={show?'text':'password'} value={pwd} onChange={e=>setPwd(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&check()} placeholder="Contraseña de administrador"
             style={{width:'100%',background:C.dark,border:`1px solid ${err?'#f87171':C.border}`,borderRadius:8,padding:'10px 44px 10px 14px',color:C.text,fontSize:13,boxSizing:'border-box'}} autoFocus/>
           <button onClick={()=>setShow(!show)} style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:14,padding:0}}>{show?'🙈':'👁'}</button>
         </div>
@@ -38,6 +39,7 @@ function AdminLogin({ onSuccess }) {
     </div>
   );
 }
+
 
 export default function App() {
   const [view, setView] = useState('quoter');
@@ -87,7 +89,7 @@ export default function App() {
         setLoadsSource(d.source || 'n8n');
       }
     }).catch(() => {});
-      try { const r = storage.get('sh:admin'); if (r?.value==='1') setAdminAuth(true); } catch {}
+    try { const ra = storage.get('sh:admin'); if (ra?.value==='1') setAdminAuth(true); } catch {}
   }, []);
 
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
@@ -153,18 +155,20 @@ export default function App() {
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
       {view === 'proveedor' && <SupplierPortal addSupplierSubmission={addSupp} />}
       {view === 'backoffice' && (
-          adminAuth ? <BackOffice
-          tab={boTab} setTab={setBoTab}
-          panels={panels} uP={uP}
-          inverters={inverters} uI={uI}
-          batteries={batteries} uB={uB}
-          pricing={pricing} uPr={uPr}
-          operators={operators} uOp={uOp}
-          quotes={quotes} installers={installers}
-          suppliers={suppliers} uSupp={uSupp}
-          loadsCatalog={loadsCatalog} loadsSource={loadsSource}
-          setLoadsCatalog={setLoadsCatalog} setLoadsSource={setLoadsSource}
-        /> : <AdminLogin onSuccess={()=>setAdminAuth(true)}/>
+        adminAuth
+          ? <BackOffice
+              tab={boTab} setTab={setBoTab}
+              panels={panels} uP={uP}
+              inverters={inverters} uI={uI}
+              batteries={batteries} uB={uB}
+              pricing={pricing} uPr={uPr}
+              operators={operators} uOp={uOp}
+              quotes={quotes} installers={installers}
+              suppliers={suppliers} uSupp={uSupp}
+              loadsCatalog={loadsCatalog} loadsSource={loadsSource}
+              setLoadsCatalog={setLoadsCatalog} setLoadsSource={setLoadsSource}
+            />
+          : <AdminLogin onSuccess={() => setAdminAuth(true)} />
       )}
 
       <footer className="al-footer" style={{
