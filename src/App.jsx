@@ -114,15 +114,16 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.dark, color: C.text, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--footer-h, 64px)' }}>
-      <nav style={{
+      <nav className="al-topnav" style={{
         background: 'linear-gradient(180deg, #0A1018 0%, #08131f 100%)',
         borderBottom: '1px solid rgba(1,112,139,0.3)',
-        padding: '0 20px',
+        padding: '0 16px',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
-        height: 64, position: 'sticky', top: 0, zIndex: 99,
+        height: 56, position: 'sticky', top: 0, zIndex: 99,
         boxShadow: '0 2px 24px rgba(0,0,0,0.5)',
         backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
       }}>
         {/* LEFT: Logo + brand */}
         <div onClick={() => setView('quoter')} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', userSelect: 'none' }}>
@@ -159,21 +160,21 @@ export default function App() {
               <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: '#fff', lineHeight: 1 }}>Solar</span>
               <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: C.yellow, lineHeight: 1 }}>Hub</span>
             </div>
-            <div style={{ fontSize: 8, color: C.teal, letterSpacing: '2px', fontWeight: 500, marginTop: 1, textTransform: 'uppercase' }}>
+            <div className="al-logo-sub" style={{ fontSize: 8, color: C.teal, letterSpacing: '2px', fontWeight: 500, marginTop: 1, textTransform: 'uppercase' }}>
               El centro de tu energía solar
             </div>
           </div>
         </div>
 
-        {/* CENTER: tagline (solo desktop) */}
-        <div className="al-tagline" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none' }}>
+        {/* CENTER: tagline (solo desktop — oculto en mobile) */}
+        <div className="al-tagline-desktop" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none' }}>
           {['Dimensiona','Cotiza','Conecta','Instala'].map((t,i) => (
             <span key={t} style={{ fontSize: 11, color: i===1 ? C.yellow : C.teal, fontWeight: i===1 ? 700 : 400, letterSpacing: '0.5px' }}>{t}</span>
           ))}
         </div>
 
-        {/* RIGHT: nav buttons */}
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        {/* RIGHT: nav buttons — desktop only */}
+        <div className="al-topnav-btns" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {NAV.map(([id, ic, l]) => (
             <button key={id} onClick={() => setView(id)} style={{
               padding: '7px 14px', borderRadius: 7,
@@ -181,13 +182,50 @@ export default function App() {
               cursor: 'pointer', fontWeight: 600, fontSize: 12,
               background: view === id ? `${C.teal}22` : 'transparent',
               color: view === id ? C.teal : '#7a9eaa',
-              transition: 'all .15s',
-              whiteSpace: 'nowrap',
-            }}>{ic} {l}</button>
+              transition: 'all .15s', whiteSpace: 'nowrap',
+            }}>
+              <span className="al-nav-icon">{ic}</span>
+              <span className="al-nav-label"> {l}</span>
+            </button>
           ))}
           {adminAuth && view==='backoffice' && (
-            <button onClick={logout} style={{ padding:'6px 11px', borderRadius:7, border:'1px solid #f8717133', cursor:'pointer', fontWeight:600, fontSize:11, background:'transparent', color:'#f87171', marginLeft:6 }}>Salir ×</button>
+            <button onClick={logout} className="al-logout-btn" style={{ padding:'6px 11px', borderRadius:7, border:'1px solid #f8717133', cursor:'pointer', fontWeight:600, fontSize:11, background:'transparent', color:'#f87171', marginLeft:6 }}>×</button>
           )}
+        </div>
+      </nav>
+
+      {/* ── BOTTOM NAV MOBILE ── */}
+      <nav className="al-bottomnav" style={{
+        display: 'none',
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
+        background: 'rgba(7,9,15,0.97)',
+        borderTop: '1px solid rgba(1,112,139,0.25)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: '0 -4px 20px rgba(0,0,0,0.5)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'stretch', height: 58 }}>
+          {NAV.map(([id, ic, l]) => (
+            <button key={id} onClick={() => setView(id)} style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 3,
+              border: 'none', cursor: 'pointer', background: 'transparent',
+              color: view === id ? C.yellow : '#4a6070',
+              transition: 'color .15s',
+              position: 'relative',
+            }}>
+              {view === id && (
+                <div style={{
+                  position: 'absolute', top: 0, left: '25%', right: '25%',
+                  height: 2, background: C.yellow,
+                  borderRadius: '0 0 2px 2px',
+                }} />
+              )}
+              <span style={{ fontSize: 20, lineHeight: 1 }}>{ic}</span>
+              <span style={{ fontSize: 9, fontWeight: view===id ? 700 : 400, letterSpacing: '0.3px' }}>{l}</span>
+            </button>
+          ))}
         </div>
       </nav>
 
