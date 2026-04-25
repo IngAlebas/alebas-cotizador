@@ -192,26 +192,62 @@ export default function App() {
 
       {/* FOOTER */}
       <footer style={{
-        borderTop: '1px solid #FF8C0015', padding: '12px 20px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        gap: 10, background: '#050709', flexShrink: 0, flexWrap: 'wrap',
+        borderTop: '1px solid #1C2D40', padding: '14px 24px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: '#050709', flexShrink: 0, flexWrap: 'wrap', gap: 12,
       }}>
-        <span style={{ fontSize: 10, color: '#2a4050', fontFamily: 'monospace', letterSpacing: 1 }}>Powered by</span>
+        {/* Left: ALEBAS logo + info */}
         <a href="https://alebas.co" target="_blank" rel="noopener noreferrer"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
-          <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="11" fill="none" stroke="#01708B" strokeWidth="1.5"/>
-            <circle cx="12" cy="12" r="4" fill="#01708B"/>
-            <line x1="12" y1="12" x2="12" y2="2"  stroke="#01708B" strokeWidth="1.5" strokeLinecap="round"/>
-            <line x1="12" y1="12" x2="20" y2="7"  stroke="#01708B" strokeWidth="1.5" strokeLinecap="round"/>
-            <line x1="12" y1="12" x2="20" y2="17" stroke="#01708B" strokeWidth="1.5" strokeLinecap="round"/>
-            <line x1="12" y1="12" x2="12" y2="22" stroke="#01708B" strokeWidth="1.5" strokeLinecap="round"/>
-            <line x1="12" y1="12" x2="4"  y2="17" stroke="#01708B" strokeWidth="1.5" strokeLinecap="round"/>
-            <line x1="12" y1="12" x2="4"  y2="7"  stroke="#01708B" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <span style={{ fontSize: 11, color: '#01708B', fontWeight: 700, letterSpacing: 0.5 }}>ALEBAS ingeniería</span>
+          style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+          {/* ALEBAS circle logo */}
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: '#01708B22', border: '1px solid #01708B55',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="4" fill="#01708B"/>
+              <line x1="12" y1="12" x2="12" y2="3"  stroke="#01708B" strokeWidth="1.8" strokeLinecap="round"/>
+              <line x1="12" y1="12" x2="19" y2="7"  stroke="#01708B" strokeWidth="1.8" strokeLinecap="round"/>
+              <line x1="12" y1="12" x2="19" y2="17" stroke="#01708B" strokeWidth="1.8" strokeLinecap="round"/>
+              <line x1="12" y1="12" x2="12" y2="21" stroke="#01708B" strokeWidth="1.8" strokeLinecap="round"/>
+              <line x1="12" y1="12" x2="5"  y2="17" stroke="#01708B" strokeWidth="1.8" strokeLinecap="round"/>
+              <line x1="12" y1="12" x2="5"  y2="7"  stroke="#01708B" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+              <span style={{ fontSize: 13, fontWeight: 900, color: '#fff', letterSpacing: '-0.3px' }}>SolarHub</span>
+              <span style={{ fontSize: 10, color: '#01708B', fontWeight: 600 }}>by ALEBAS Ingeniería SAS</span>
+            </div>
+            <div style={{ fontSize: 9, color: '#2a4050', fontFamily: 'monospace', marginTop: 2, letterSpacing: 0.5 }}>
+              NIT 901.992.450-5 · Ley 1715 · CREG 174/2021 · RETIE · © 2026
+            </div>
+          </div>
         </a>
-        <span style={{ fontSize: 10, color: '#1C2D40', fontFamily: 'monospace' }}>· NIT 901.992.450-5 · Villavicencio, Meta · Colombia</span>
+
+        {/* Right: partner badges */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 9, color: '#2a4050', fontFamily: 'monospace', letterSpacing: 1, textTransform: 'uppercase' }}>Mayoristas</span>
+          {/* ALEBAS badge */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', borderRadius: 6,
+            background: '#01708B18', border: '1px solid #01708B44',
+          }}>
+            <span style={{ fontSize: 11, color: '#01708B' }}>⚡</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#01708B', letterSpacing: 0.5 }}>ALEBAS</span>
+          </div>
+          {/* Must Energy badge */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', borderRadius: 6,
+            background: '#EFDB0018', border: '1px solid #EFDB0044',
+          }}>
+            <span style={{ fontSize: 11, color: '#EFDB00' }}>🔋</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#EFDB00', letterSpacing: 0.5 }}>Must Energy</span>
+          </div>
+        </div>
       </footer>
 
     </div>
