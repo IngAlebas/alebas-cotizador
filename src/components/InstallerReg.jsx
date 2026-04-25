@@ -42,7 +42,7 @@ export default function InstallerReg({ addInstaller }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 32 }}>🔧</span>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>Red de instaladores ALEBAS</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>Red de instaladores SolarHub</div>
             <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Conectamos proyectos con técnicos certificados en todo Colombia</div>
           </div>
         </div>
