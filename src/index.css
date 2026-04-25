@@ -198,3 +198,59 @@ button:active { transform: scale(0.97); }
 
 .animate-fade { animation: fadeIn .3s ease forwards; }
 .animate-pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* ══════════════════════════════════════
+   RESPONSIVE — MOBILE FIRST
+══════════════════════════════════════ */
+
+/* Tablet: hide nav labels, keep icons */
+@media (max-width: 768px) {
+  .al-tagline-desktop { display: none !important; }
+  .al-nav-label { display: none !important; }
+  .al-topnav-btns button { padding: 7px 10px !important; }
+  .al-logo-sub { display: none !important; }
+}
+
+/* Mobile: show bottom nav, hide top nav buttons */
+@media (max-width: 600px) {
+  /* Show bottom nav */
+  .al-bottomnav { display: block !important; }
+
+  /* Hide top nav buttons — bottom nav replaces them */
+  .al-topnav-btns { display: none !important; }
+
+  /* Content padding for bottom nav */
+  .al-content { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)) !important; }
+
+  /* Footer padding for bottom nav */
+  .al-footer {
+    padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 8px) !important;
+    position: static !important;
+    margin-bottom: calc(58px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Top nav: compact */
+  .al-topnav { height: 52px !important; padding: 0 12px !important; }
+
+  /* Logo compact */
+  .al-logo-sub { display: none !important; }
+
+  /* Hide logout btn text on mobile (already ×) */
+  .al-logout-btn { padding: 6px 8px !important; font-size: 14px !important; }
+
+  /* Hero section adjustments */
+  .al-hero { border-radius: 10px !important; }
+
+  /* Typography scale down */
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.1rem !important; }
+
+  /* Footer adjustments */
+  .al-mayoristas { display: none !important; }
+  .al-foot-legal { font-size: 8px !important; }
+}
+
+/* Extra small phones */
+@media (max-width: 375px) {
+  .al-topnav { padding: 0 10px !important; }
+}
