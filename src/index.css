@@ -4,24 +4,16 @@
   padding: 0;
 }
 
-html {
-  --footer-h: 64px;
-}
-
 body {
-  background: #050d12;
+  background: #07090F;
   min-height: 100vh;
   font-family: system-ui, -apple-system, sans-serif;
   color: #e8f4f7;
-  -webkit-text-size-adjust: 100%;
 }
-
-img { max-width: 100%; height: auto; }
 
 input, select, textarea {
   font-family: inherit;
   outline: none;
-  font-size: 16px;
 }
 
 input[type=number]::-webkit-inner-spin-button,
@@ -29,62 +21,5 @@ input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none;
 }
 
-button { font-family: inherit; }
-
-::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: #01708B44; border-radius: 4px; }
-
-/* ======= Mobile responsiveness ======= */
-@media (max-width: 640px) {
-  html { --footer-h: 92px; }
-
-  /* Nav: logo arriba, botones en fila horizontal con scroll */
-  .al-nav {
-    padding: 6px 10px !important;
-    gap: 6px !important;
-  }
-  .al-logo { height: 32px !important; }
-  .al-nav-btns {
-    width: 100%;
-    overflow-x: auto;
-    justify-content: flex-start !important;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-  .al-nav-btns::-webkit-scrollbar { display: none; }
-  .al-nav-btn {
-    font-size: 11px !important;
-    padding: 5px 9px !important;
-  }
-  .al-nav-label { display: none; }
-  .al-brand { display: none !important; }
-
-  /* Footer: 2 filas apiladas */
-  .al-footer { padding: 6px 10px !important; }
-  .al-foot-row { flex-direction: column; align-items: flex-start !important; gap: 4px !important; }
-  .al-foot-legal { display: none; }
-  .al-mayoristas { gap: 4px !important; }
-
-  /* Grids de stats en 2 columnas */
-  .al-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
-
-  /* Mini-hero en pasos 1-4: pills debajo, logo más chico, tipografía compacta */
-  .al-mini-hero { padding: 12px 14px !important; gap: 10px !important; }
-  .al-mini-hero-logo { height: 38px !important; }
-  .al-mini-hero-title { font-size: 14px !important; }
-  .al-step-pills { width: 100%; justify-content: flex-start !important; gap: 4px !important; }
-  .al-step-pills > span { font-size: 10px !important; padding: 3px 8px !important; }
-
-  /* Tipo de sistema: tarjetas en 1 columna en móvil */
-  .al-type-grid { grid-template-columns: 1fr !important; }
-}
-
-@media (min-width: 641px) and (max-width: 900px) {
-  .al-mini-hero { padding: 16px 18px !important; gap: 14px !important; }
-  .al-mini-hero-logo { height: 46px !important; }
-  .al-mini-hero-title { font-size: 16px !important; }
-}
-
-@media (max-width: 400px) {
-  .al-stats-grid { grid-template-columns: 1fr !important; }
-}
