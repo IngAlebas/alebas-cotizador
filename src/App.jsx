@@ -10,8 +10,38 @@ import SupplierPortal from './components/SupplierPortal';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import logo from './logo.svg';
 
+const ADMIN_HASH = 'sh_' + btoa('hoJSDU2!kaiv337c');
+
+function AdminLogin({ onSuccess }) {
+  const [pwd, setPwd] = React.useState('');
+  const [err, setErr] = React.useState(false);
+  const [show, setShow] = React.useState(false);
+  const check = () => {
+    if ('sh_' + btoa(pwd) === ADMIN_HASH) { storage.set('sh:admin','1'); onSuccess(); }
+    else { setErr(true); setPwd(''); setTimeout(()=>setErr(false),2000); }
+  };
+  return (
+    <div style={{minHeight:'calc(100vh - 56px)',display:'flex',alignItems:'center',justifyContent:'center',background:C.dark,padding:24}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:'40px 36px',width:'100%',maxWidth:380,textAlign:'center'}}>
+        <div style={{width:56,height:56,borderRadius:'50%',background:`${C.teal}18`,border:`2px solid ${C.teal}44`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 18px',fontSize:22}}>🔐</div>
+        <div style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:4}}>Panel de administración</div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:26,fontFamily:'monospace'}}>solar-hub.co · acceso restringido</div>
+        <div style={{position:'relative',marginBottom:14}}>
+          <input type={show?'text':'password'} value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==='Enter'&&check()} placeholder="Contraseña de administrador"
+            style={{width:'100%',background:C.dark,border:`1px solid ${err?'#f87171':C.border}`,borderRadius:8,padding:'10px 44px 10px 14px',color:C.text,fontSize:13,boxSizing:'border-box'}} autoFocus/>
+          <button onClick={()=>setShow(!show)} style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:14,padding:0}}>{show?'🙈':'👁'}</button>
+        </div>
+        {err&&<div style={{fontSize:11,color:'#f87171',background:'#f8717115',border:'1px solid #f8717133',borderRadius:6,padding:'7px 12px',marginBottom:14}}>Contraseña incorrecta.</div>}
+        <button onClick={check} style={{width:'100%',background:C.teal,color:'#fff',border:'none',borderRadius:8,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',opacity:!pwd?0.5:1}}>Ingresar al panel →</button>
+        <div style={{marginTop:18,fontSize:10,color:'#2a4050',fontFamily:'monospace'}}>Solo personal autorizado de ALEBAS Ingeniería SAS</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState('quoter');
+  const [adminAuth, setAdminAuth] = React.useState(false);
   const [boTab, setBoTab] = useState('dashboard');
   const [panels, setPanels] = useState(DEFAULT_PANELS);
   const [inverters, setInverters] = useState(DEFAULT_INVERTERS);
@@ -57,6 +87,7 @@ export default function App() {
         setLoadsSource(d.source || 'n8n');
       }
     }).catch(() => {});
+      try { const r = storage.get('sh:admin'); if (r?.value==='1') setAdminAuth(true); } catch {}
   }, []);
 
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
@@ -69,6 +100,8 @@ export default function App() {
   const addInst = i => { const n = [i, ...installers]; setInstallers(n); sv('al:installers', n); };
   const addSupp = s => { const n = [s, ...suppliers]; setSuppliers(n); sv('al:suppliers', n); };
   const uSupp = d => { setSuppliers(d); sv('al:suppliers', d); };
+
+  const logout = () => { storage.set('sh:admin','0'); setAdminAuth(false); setView('quoter'); };
 
   const NAV = [
     ['quoter', '☀', 'Cotizador Solar'],
@@ -104,6 +137,7 @@ export default function App() {
               whiteSpace: 'nowrap',
             }}>{ic} <span className="al-nav-label">{l}</span></button>
           ))}
+          {adminAuth && view==='backoffice' && <button onClick={logout} style={{padding:'5px 10px',borderRadius:5,border:'1px solid #f8717133',cursor:'pointer',fontWeight:600,fontSize:11,background:'transparent',color:'#f87171',marginLeft:4}}>Salir ×</button>}
         </div>
       </nav>
 
@@ -119,7 +153,7 @@ export default function App() {
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
       {view === 'proveedor' && <SupplierPortal addSupplierSubmission={addSupp} />}
       {view === 'backoffice' && (
-        <BackOffice
+          adminAuth ? <BackOffice
           tab={boTab} setTab={setBoTab}
           panels={panels} uP={uP}
           inverters={inverters} uI={uI}
@@ -130,7 +164,7 @@ export default function App() {
           suppliers={suppliers} uSupp={uSupp}
           loadsCatalog={loadsCatalog} loadsSource={loadsSource}
           setLoadsCatalog={setLoadsCatalog} setLoadsSource={setLoadsSource}
-        />
+        /> : <AdminLogin onSuccess={()=>setAdminAuth(true)}/>
       )}
 
       <footer className="al-footer" style={{
