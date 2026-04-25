@@ -224,8 +224,7 @@ export default function App() {
         padding: '8px 12px', position: 'fixed', bottom: 0, left: 0, right: 0,
         zIndex: 98, boxShadow: '0 -2px 10px rgba(0,0,0,0.4)'
       }}>
-        <div style={{ maxWidth: 780, margin: '0 auto' }}>
-          <div className="al-foot-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div className="al-foot-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
               <img src={logo} alt="SolarHub" style={{ height: 22, opacity: 0.9, flexShrink: 0 }} />
               <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.25, minWidth: 0 }}>
@@ -248,7 +247,6 @@ export default function App() {
                 <span style={{ fontSize: 9, fontWeight: 700, color: C.yellow }}>Must Energy</span>
               </div>
             </div>
-          </div>
         </div>
       </footer>
     </div>
