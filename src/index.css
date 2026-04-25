@@ -1,90 +1,200 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+/* ── RESET ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── DESIGN TOKENS ── */
+:root {
+  --sun:     #FF8C00;
+  --amber:   #FFB800;
+  --gold:    #FFD93D;
+  --teal:    #01708B;
+  --dark:    #07090F;
+  --card:    #0C1422;
+  --card2:   #0F1A2B;
+  --border:  rgba(1,112,139,0.18);
+  --oBorder: rgba(255,140,0,0.22);
+  --text:    #E8F0F7;
+  --muted:   #7A9EAA;
+  --radius:  10px;
+  --shadow:  0 4px 24px rgba(0,0,0,0.35);
 }
 
-html {
-  --footer-h: 64px;
-}
+/* ── BASE ── */
+html { scroll-behavior: smooth; }
 
 body {
-  background: #050d12;
+  background: var(--dark);
   min-height: 100vh;
-  font-family: system-ui, -apple-system, sans-serif;
-  color: #e8f4f7;
-  -webkit-text-size-adjust: 100%;
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-img { max-width: 100%; height: auto; }
+/* ── TYPOGRAPHY ── */
+h1, h2, h3 { font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.4rem); }
+h2 { font-size: clamp(1.2rem, 3vw, 1.7rem); }
 
+/* ── FORM ELEMENTS ── */
 input, select, textarea {
-  font-family: inherit;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  color: var(--text);
   outline: none;
-  font-size: 16px;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--sun) !important;
+  box-shadow: 0 0 0 3px rgba(255,140,0,0.15) !important;
 }
 
 input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+/* ── BUTTONS ── */
+button {
+  font-family: 'Outfit', sans-serif;
+  transition: transform .15s, opacity .15s, box-shadow .15s;
 }
+button:active { transform: scale(0.97); }
 
-button { font-family: inherit; }
-
+/* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-thumb { background: #01708B44; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(1,112,139,0.4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,140,0,0.5); }
 
-/* ======= Mobile responsiveness ======= */
-@media (max-width: 640px) {
-  html { --footer-h: 92px; }
+/* ── SELECTION ── */
+::selection { background: rgba(255,140,0,0.25); color: #fff; }
 
-  /* Nav: logo arriba, botones en fila horizontal con scroll */
-  .al-nav {
-    padding: 6px 10px !important;
-    gap: 6px !important;
-  }
-  .al-logo { height: 32px !important; }
-  .al-nav-btns {
-    width: 100%;
-    overflow-x: auto;
-    justify-content: flex-start !important;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-  .al-nav-btns::-webkit-scrollbar { display: none; }
-  .al-nav-btn {
-    font-size: 11px !important;
-    padding: 5px 9px !important;
-  }
+/* ── UTILITIES ── */
+.sun-text { color: var(--sun) !important; }
+.teal-text { color: var(--teal) !important; }
+.muted-text { color: var(--muted) !important; }
+
+/* ── CARDS ── */
+.al-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: box-shadow .2s, border-color .2s;
+}
+.al-card:hover { border-color: rgba(255,140,0,0.2); }
+
+/* ── NAVBAR ── */
+.al-nav {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(7,9,15,0.92) !important;
+}
+
+/* ── LOGO ── */
+.al-logo { filter: drop-shadow(0 0 8px rgba(255,140,0,0.3)); }
+
+/* ── BRAND TEXT ── */
+.al-brand { line-height: 1.05 !important; }
+
+/* ── PROGRESS BAR ── */
+.al-step-bar {
+  height: 3px !important;
+  border-radius: 3px;
+  transition: background-color .3s, width .3s;
+}
+.al-step-active { background: linear-gradient(90deg, var(--teal), var(--sun)) !important; }
+.al-step-done   { background: var(--teal) !important; }
+.al-step-pending { background: rgba(1,112,139,0.15) !important; }
+
+/* ── BADGES / CHIPS ── */
+.al-badge {
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.al-badge-sun  { background: rgba(255,140,0,0.12); border: 1px solid rgba(255,140,0,0.3); color: var(--sun); }
+.al-badge-teal { background: rgba(1,112,139,0.12); border: 1px solid rgba(1,112,139,0.3); color: var(--teal); }
+
+/* ── INPUTS OVERRIDE ── */
+.al-input {
+  background: rgba(7,9,15,0.8) !important;
+  border: 1.5px solid rgba(1,112,139,0.2) !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  color: var(--text) !important;
+  font-size: 14px !important;
+  width: 100% !important;
+  transition: border-color .2s, box-shadow .2s !important;
+}
+.al-input:focus {
+  border-color: var(--sun) !important;
+  box-shadow: 0 0 0 3px rgba(255,140,0,0.12) !important;
+}
+
+/* ── PRIMARY BUTTON ── */
+.al-btn-primary {
+  background: linear-gradient(135deg, var(--sun), var(--amber)) !important;
+  color: #07090F !important;
+  border: none !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2px !important;
+  box-shadow: 0 4px 14px rgba(255,140,0,0.3) !important;
+  border-radius: 8px !important;
+  transition: all .2s !important;
+}
+.al-btn-primary:hover {
+  box-shadow: 0 6px 20px rgba(255,140,0,0.45) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ── FOOTER ── */
+.al-footer {
+  background: rgba(5,7,9,0.96) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.al-foot-row { padding: 2px 0; }
+.al-foot-legal { font-size: 9px !important; }
+
+/* ── HERO SECTION ── */
+.al-hero {
+  background: linear-gradient(135deg,
+    rgba(1,112,139,0.06) 0%,
+    rgba(255,140,0,0.04) 50%,
+    transparent 100%) !important;
+  border: 1px solid rgba(255,140,0,0.12) !important;
+  border-radius: 12px !important;
+}
+
+/* ── NAV BUTTONS ── */
+.al-nav-btn {
+  border-radius: 7px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2px !important;
+  transition: all .2s !important;
+}
+.al-nav-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+
+/* ── MOBILE ── */
+@media (max-width: 600px) {
   .al-nav-label { display: none; }
-  .al-brand { display: none !important; }
-
-  /* Footer: 2 filas apiladas */
-  .al-footer { padding: 6px 10px !important; }
-  .al-foot-row { flex-direction: column; align-items: flex-start !important; gap: 4px !important; }
   .al-foot-legal { display: none; }
-  .al-mayoristas { gap: 4px !important; }
-
-  /* Grids de stats en 2 columnas */
-  .al-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
-
-  /* Mini-hero en pasos 1-4: pills debajo, logo más chico, tipografía compacta */
-  .al-mini-hero { padding: 12px 14px !important; gap: 10px !important; }
-  .al-mini-hero-logo { height: 38px !important; }
-  .al-mini-hero-title { font-size: 14px !important; }
-  .al-step-pills { width: 100%; justify-content: flex-start !important; gap: 4px !important; }
-  .al-step-pills > span { font-size: 10px !important; padding: 3px 8px !important; }
-
-  /* Tipo de sistema: tarjetas en 1 columna en móvil */
-  .al-type-grid { grid-template-columns: 1fr !important; }
+  .al-mayoristas { display: none !important; }
 }
 
-@media (min-width: 641px) and (max-width: 900px) {
-  .al-mini-hero { padding: 16px 18px !important; gap: 14px !important; }
-  .al-mini-hero-logo { height: 46px !important; }
-  .al-mini-hero-title { font-size: 16px !important; }
+/* ── SAFE AREA (notch/home bar) ── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .al-footer { padding-bottom: max(8px, env(safe-area-inset-bottom)) !important; }
 }
 
-@media (max-width: 400px) {
-  .al-stats-grid { grid-template-columns: 1fr !important; }
-}
+/* ── ANIMATIONS ── */
+@keyframes fadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@keyframes pulse   { 0%,100%{opacity:.7} 50%{opacity:1} }
+@keyframes shimmer { 0%{background-position:-200%} 100%{background-position:200%} }
+
+.animate-fade { animation: fadeIn .3s ease forwards; }
+.animate-pulse { animation: pulse 2s ease-in-out infinite; }
