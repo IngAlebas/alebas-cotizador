@@ -114,32 +114,80 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.dark, color: C.text, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--footer-h, 64px)' }}>
-      <nav className="al-nav" style={{
-        background: '#08151e', borderBottom: `2px solid ${C.teal}`,
-        padding: '6px 12px', display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', gap: 8, minHeight: 56,
-        position: 'sticky', top: 0, zIndex: 99, flexWrap: 'wrap'
+      <nav style={{
+        background: 'linear-gradient(180deg, #0A1018 0%, #08131f 100%)',
+        borderBottom: '1px solid rgba(1,112,139,0.3)',
+        padding: '0 20px',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between',
+        height: 64, position: 'sticky', top: 0, zIndex: 99,
+        boxShadow: '0 2px 24px rgba(0,0,0,0.5)',
+        backdropFilter: 'blur(12px)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <img src={logo} alt="SolarHub by ALEBAS Ingeniería" className="al-logo" style={{ height: 38, width: 'auto' }} />
-          <div className="al-brand" style={{ lineHeight: 1.05, borderLeft: `1px solid ${C.teal}44`, paddingLeft: 10 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: -0.3 }}>
-              Solar<span style={{ color: C.yellow }}>Hub</span>
+        {/* LEFT: Logo + brand */}
+        <div onClick={() => setView('quoter')} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', userSelect: 'none' }}>
+          {/* SolarHub SVG icon: sun + 6 rays + 6 nodes */}
+          <svg viewBox="0 0 40 40" width="38" height="38" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#FFD93D"/>
+                <stop offset="100%" stopColor="#FF8C00"/>
+              </radialGradient>
+            </defs>
+            {/* 6 rays */}
+            {[0,60,120,180,240,300].map((deg,i) => {
+              const rad = (deg - 90) * Math.PI / 180;
+              const x1 = 20 + 10 * Math.cos(rad), y1 = 20 + 10 * Math.sin(rad);
+              const x2 = 20 + 18 * Math.cos(rad), y2 = 20 + 18 * Math.sin(rad);
+              return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={i%2===0?"#FF8C00":"#FFB800"} strokeWidth="1.8" strokeLinecap="round"/>;
+            })}
+            {/* 6 node dots */}
+            {[0,60,120,180,240,300].map((deg,i) => {
+              const rad = (deg - 90) * Math.PI / 180;
+              const x = 20 + 18.5 * Math.cos(rad), y = 20 + 18.5 * Math.sin(rad);
+              return <circle key={i} cx={x} cy={y} r="2.2" fill={i%2===0?"#FF8C00":"#FFB800"}/>;
+            })}
+            {/* Core */}
+            <circle cx="20" cy="20" r="9" fill="url(#sunGrad)"/>
+            <circle cx="20" cy="20" r="4.5" fill="#08131f"/>
+            <circle cx="20" cy="20" r="2.2" fill="#FFD93D"/>
+          </svg>
+
+          {/* Wordmark */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+              <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: '#fff', lineHeight: 1 }}>Solar</span>
+              <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: C.yellow, lineHeight: 1 }}>Hub</span>
             </div>
-            <div style={{ fontSize: 8, color: C.teal, fontWeight: 600, letterSpacing: 1.2 }}>BY ALEBAS INGENIERÍA</div>
+            <div style={{ fontSize: 8, color: C.teal, letterSpacing: '2px', fontWeight: 500, marginTop: 1, textTransform: 'uppercase' }}>
+              El centro de tu energía solar
+            </div>
           </div>
         </div>
-        <div className="al-nav-btns" style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {NAV.map(([id, ic, l]) => (
-            <button key={id} onClick={() => setView(id)} className="al-nav-btn" style={{
-              padding: '6px 12px', borderRadius: 5, border: 'none', cursor: 'pointer',
-              fontWeight: 600, fontSize: 12,
-              background: view === id ? C.teal : 'rgba(1,112,139,0.1)',
-              color: view === id ? '#fff' : C.teal,
-              whiteSpace: 'nowrap',
-            }}>{ic} <span className="al-nav-label">{l}</span></button>
+
+        {/* CENTER: tagline (solo desktop) */}
+        <div className="al-tagline" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none' }}>
+          {['Dimensiona','Cotiza','Conecta','Instala'].map((t,i) => (
+            <span key={t} style={{ fontSize: 11, color: i===1 ? C.yellow : C.teal, fontWeight: i===1 ? 700 : 400, letterSpacing: '0.5px' }}>{t}</span>
           ))}
-          {adminAuth && view==='backoffice' && <button onClick={logout} style={{padding:'5px 10px',borderRadius:5,border:'1px solid #f8717133',cursor:'pointer',fontWeight:600,fontSize:11,background:'transparent',color:'#f87171',marginLeft:4}}>Salir ×</button>}
+        </div>
+
+        {/* RIGHT: nav buttons */}
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {NAV.map(([id, ic, l]) => (
+            <button key={id} onClick={() => setView(id)} style={{
+              padding: '7px 14px', borderRadius: 7,
+              border: view === id ? `1px solid ${C.teal}` : '1px solid transparent',
+              cursor: 'pointer', fontWeight: 600, fontSize: 12,
+              background: view === id ? `${C.teal}22` : 'transparent',
+              color: view === id ? C.teal : '#7a9eaa',
+              transition: 'all .15s',
+              whiteSpace: 'nowrap',
+            }}>{ic} {l}</button>
+          ))}
+          {adminAuth && view==='backoffice' && (
+            <button onClick={logout} style={{ padding:'6px 11px', borderRadius:7, border:'1px solid #f8717133', cursor:'pointer', fontWeight:600, fontSize:11, background:'transparent', color:'#f87171', marginLeft:6 }}>Salir ×</button>
+          )}
         </div>
       </nav>
 
