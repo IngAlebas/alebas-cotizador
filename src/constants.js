@@ -1,116 +1,485 @@
 // ==================== BRAND COLORS ====================
 export const C = {
-  teal: '#FF8C00', tD: '#cc7000', tL: '#FF8C0022',
-  yellow: '#FFD93D', yD: '#FFB800',
+  teal: '#01708B', tD: '#015a70', tL: '#01708B22',
+  yellow: '#EFDB00', yD: '#c4b400',
   gray: '#686B71',
-  dark: '#07090F', card: '#0C1422', card2: '#111f35',
-  border: '#FF8C002a', borderLight: '#FF8C0015',
+  dark: '#050d12', card: '#08151e', card2: '#111f35',
+  border: '#01708B2a', borderLight: '#01708B15',
   text: '#e8f4f7', muted: '#7a9eaa',
-  green: '#4ade80', red: '#f87171', orange: '#FF8C00',
+  green: '#4ade80', red: '#f87171', orange: '#fb923c',
 };
 
-// ==================== OPERATORS ====================
+// ==================== OPERATORS DE RED (OR) ====================
+// Mapeo OR ↔ departamento basado en registros CREG/Superservicios y XM (Sinergox).
+// Códigos SIC para correlacionar con el API de XM (POST /lists, MetricId: ListadoAgentes).
+// Las tarifas son referencia (CU promedio residencial estrato 4 sin subsidio); se actualizan
+// vía PDFs mensuales del operador o el sync con XM en src/services/xm.js (precio bolsa).
+//
+// CU per CREG 091/2007 art. 6:  CU = G + T + D + Cv + PR + R
+//   G  (Generación)      — bolsa + contratos, nacional, varía mensual (XM).
+//   T  (Transmisión STN) — cargo nacional CREG (≈ publicación mensual).
+//   D  (Distribución)    — por OR y nivel de tensión N1-N4; residencial = N1.
+//   Cv (Comercialización)— margen variable del comercializador.
+//   PR (Pérdidas reconocidas) — por OR y nivel.
+//   R  (Restricciones)   — nacional, publicación mensual XM.
+// Las fracciones por defecto reflejan la composición típica 2024-2025 para
+// usuario residencial estrato 4 N1. Cuando el OR proporciona `components`
+// explícitos, se usan esos (esperado al integrar PDFs mensuales por OR).
+export const CU_FRACTIONS_N1_DEFAULT = {
+  G:  0.52,  // Generación (nacional — mismo valor para todo el país)
+  T:  0.08,  // Transmisión
+  D:  0.22,  // Distribución N1 residencial
+  Cv: 0.05,  // Comercialización variable
+  PR: 0.08,  // Pérdidas reconocidas
+  R:  0.05,  // Restricciones
+};
+
+// Deriva los componentes CREG 091 de un operador. Si el OR tiene
+// `components: {G,T,D,Cv,PR,R}` explícitos, se usan; si no, se infieren
+// por fracción sobre la tarifa plana. Retorna también `total` (CU).
+export function splitCU(op, voltageLevel = 'N1') {
+  if (op?.components && typeof op.components === 'object') {
+    const c = op.components;
+    const total = (c.G || 0) + (c.T || 0) + (c.D || 0) + (c.Cv || 0) + (c.PR || 0) + (c.R || 0);
+    return { ...c, total, derived: false, voltageLevel };
+  }
+  const t = op?.tariff || 0;
+  const f = CU_FRACTIONS_N1_DEFAULT; // TODO: tablas N2/N3/N4 cuando tengamos data
+  return {
+    G:  Math.round(t * f.G),
+    T:  Math.round(t * f.T),
+    D:  Math.round(t * f.D),
+    Cv: Math.round(t * f.Cv),
+    PR: Math.round(t * f.PR),
+    R:  Math.round(t * f.R),
+    total: t,
+    derived: true,
+    voltageLevel,
+  };
+}
+
+// CU plena del operador (COP/kWh). Autoconsumo se valora a este precio.
+export function tariffCU(op, voltageLevel = 'N1') {
+  return splitCU(op, voltageLevel).total;
+}
+
+// Precio de remuneración de excedentes AGPE Menor = CU − G (CREG 174/2021 art. 7).
+// Incluye T + D + Cv + PR + R; excluye generación.
+export function excedentePriceFor(op, voltageLevel = 'N1') {
+  const c = splitCU(op, voltageLevel);
+  return c.T + c.D + c.Cv + c.PR + c.R;
+}
 export const OPERATORS = [
-  { name: 'EMSA', region: 'Meta, Casanare, Vichada', tariff: 650, psh: 4.6 },
-  { name: 'EPM', region: 'Antioquia', tariff: 680, psh: 4.5 },
-  { name: 'Enel / Codensa', region: 'Bogotá D.C., Cundinamarca', tariff: 720, psh: 4.2 },
-  { name: 'Celsia', region: 'Valle del Cauca, Tolima', tariff: 660, psh: 4.8 },
-  { name: 'Electrocosta', region: 'Atlántico, Bolívar, Córdoba, Sucre, La Guajira', tariff: 640, psh: 5.2 },
-  { name: 'Afinia', region: 'Córdoba, Sucre, Bolívar (interior)', tariff: 635, psh: 5.0 },
-  { name: 'Electrohuila', region: 'Huila, Caquetá', tariff: 670, psh: 5.1 },
-  { name: 'CHEC', region: 'Caldas, Risaralda (parcial)', tariff: 710, psh: 4.1 },
-  { name: 'Centrales', region: 'Risaralda, Quindío', tariff: 695, psh: 4.3 },
-  { name: 'ESSA', region: 'Santander', tariff: 690, psh: 5.0 },
-  { name: 'CENS', region: 'Norte de Santander', tariff: 700, psh: 4.9 },
-  { name: 'EEB', region: 'Boyacá, Cundinamarca (parcial)', tariff: 705, psh: 4.2 },
-  { name: 'Cedenar', region: 'Nariño, Putumayo', tariff: 680, psh: 4.4 },
-  { name: 'ENERCA', region: 'Arauca', tariff: 655, psh: 4.7 },
-  { name: 'Llanos Energía', region: 'Casanare', tariff: 645, psh: 4.8 },
-  { name: 'Dispac', region: 'Chocó', tariff: 720, psh: 4.0 },
-  { name: 'No sé / Otro', region: '', tariff: 670, psh: 4.5 },
+  { sic: 'EMSC', name: 'EMSA',           fullName: 'Electrificadora del Meta',                    region: 'Meta', tariff: 650, psh: 4.6 },
+  { sic: 'EPMC', name: 'EPM',            fullName: 'Empresas Públicas de Medellín',               region: 'Antioquia', tariff: 680, psh: 4.5 },
+  { sic: 'ENDC', name: 'Enel Colombia',  fullName: 'Enel Colombia (ex Codensa)',                  region: 'Bogotá D.C., Cundinamarca', tariff: 720, psh: 4.2 },
+  { sic: 'EBSC', name: 'EBSA',           fullName: 'Empresa de Energía de Boyacá',                region: 'Boyacá', tariff: 705, psh: 4.2 },
+  { sic: 'CETC', name: 'Celsia Tolima',  fullName: 'Celsia Colombia (Tolima)',                    region: 'Tolima', tariff: 670, psh: 4.8 },
+  { sic: 'CEVC', name: 'Celsia Valle',   fullName: 'Celsia Colombia (Valle del Cauca)',           region: 'Valle del Cauca', tariff: 660, psh: 4.6 },
+  { sic: 'CDLC', name: 'Cedelca',        fullName: 'Compañía Energética del Cauca',               region: 'Cauca', tariff: 685, psh: 4.4 },
+  { sic: 'AIRC', name: 'Air-e',          fullName: 'Air-e (sucesor Electricaribe)',               region: 'Atlántico, Magdalena, La Guajira', tariff: 640, psh: 5.3 },
+  { sic: 'AFNC', name: 'Afinia',         fullName: 'Afinia (filial EPM, ex Electricaribe)',       region: 'Bolívar, Sucre, Córdoba, Cesar', tariff: 635, psh: 5.0 },
+  { sic: 'EHUC', name: 'Electrohuila',   fullName: 'Electrificadora del Huila',                   region: 'Huila, Caquetá', tariff: 670, psh: 5.1 },
+  { sic: 'CHEC', name: 'CHEC',           fullName: 'Centrales Hidroeléctricas de Caldas',         region: 'Caldas', tariff: 710, psh: 4.1 },
+  { sic: 'EDEC', name: 'EDEQ',           fullName: 'Empresa de Energía del Quindío',              region: 'Quindío', tariff: 700, psh: 4.4 },
+  { sic: 'EEPC', name: 'EEP',            fullName: 'Energía de Pereira',                          region: 'Risaralda', tariff: 695, psh: 4.5 },
+  { sic: 'ESSC', name: 'ESSA',           fullName: 'Electrificadora de Santander',                region: 'Santander', tariff: 690, psh: 5.0 },
+  { sic: 'CENC', name: 'CENS',           fullName: 'Centrales Eléctricas de Norte de Santander',  region: 'Norte de Santander', tariff: 700, psh: 4.9 },
+  { sic: 'CEDC', name: 'Cedenar',        fullName: 'Centrales Eléctricas de Nariño',              region: 'Nariño, Putumayo', tariff: 680, psh: 4.4 },
+  { sic: 'ENRC', name: 'ENERCA',         fullName: 'Empresa de Energía de Casanare',              region: 'Casanare', tariff: 645, psh: 4.8 },
+  { sic: 'ENLC', name: 'ENELAR',         fullName: 'Empresa de Energía de Arauca',                region: 'Arauca', tariff: 655, psh: 4.7 },
+  { sic: 'DSPC', name: 'Dispac',         fullName: 'Distribuidora del Pacífico',                  region: 'Chocó', tariff: 720, psh: 4.0 },
+  { sic: '',     name: 'No sé / Otro',   fullName: '',                                            region: '', tariff: 670, psh: 4.5 },
 ];
 
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
 // Zonas desde Bogotá D.C. como origen
+// Cap regulatorio: AGPE Mayor (CREG 174/2021) hasta 1 MW; usamos 500 kW como
+// límite operativo del cotizador para evitar dimensionamientos fuera de alcance.
+export const MAX_KWP_AGPE = 500;
+
+// CREG 174/2021: Menor ≤100 kW (excedentes valorados a tarifa CU del comercializador,
+// netting 1:1 mensual); Mayor 100 kW–1 MW (excedentes valorados al precio bolsa XM).
+export const AGPE_LIMIT_KW_MENOR = 100;
+
+// Destinos courier: capital + ciudades intermedias relevantes por depto.
+// `id` único (slug), `zona` aplica a tarifa courier (origen Bogotá D.C.).
 export const DESTINOS_COURIER = [
-  { dept: 'Bogotá D.C.', capital: 'Bogotá', zona: 'L', km: 0, tiempo: '24h' },
-  { dept: 'Cundinamarca', capital: 'Facatativá', zona: 'R', km: 80, tiempo: '24-48h' },
-  { dept: 'Boyacá', capital: 'Tunja', zona: 'R', km: 150, tiempo: '24-48h' },
-  { dept: 'Tolima', capital: 'Ibagué', zona: 'R', km: 210, tiempo: '24-48h' },
-  { dept: 'Meta', capital: 'Villavicencio', zona: 'R', km: 90, tiempo: '24-48h' },
-  { dept: 'Huila', capital: 'Neiva', zona: 'R', km: 310, tiempo: '24-48h' },
-  { dept: 'Caldas', capital: 'Manizales', zona: 'R', km: 310, tiempo: '24-48h' },
-  { dept: 'Risaralda', capital: 'Pereira', zona: 'R', km: 330, tiempo: '24-48h' },
-  { dept: 'Quindío', capital: 'Armenia', zona: 'R', km: 300, tiempo: '24-48h' },
-  { dept: 'Santander', capital: 'Bucaramanga', zona: 'N1', km: 400, tiempo: '48h' },
-  { dept: 'Antioquia', capital: 'Medellín', zona: 'N1', km: 415, tiempo: '48h' },
-  { dept: 'Valle del Cauca', capital: 'Cali', zona: 'N1', km: 460, tiempo: '48h' },
-  { dept: 'Norte de Santander', capital: 'Cúcuta', zona: 'N1', km: 590, tiempo: '48-72h' },
-  { dept: 'Cauca', capital: 'Popayán', zona: 'N1', km: 580, tiempo: '48-72h' },
-  { dept: 'Casanare', capital: 'Yopal', zona: 'N1', km: 380, tiempo: '48h' },
-  { dept: 'Arauca', capital: 'Arauca', zona: 'N1', km: 530, tiempo: '48-72h' },
-  { dept: 'Nariño', capital: 'Pasto', zona: 'N2', km: 820, tiempo: '48-72h' },
-  { dept: 'Putumayo', capital: 'Mocoa', zona: 'N2', km: 700, tiempo: '48-72h' },
-  { dept: 'Atlántico', capital: 'Barranquilla', zona: 'N2', km: 1000, tiempo: '48-72h' },
-  { dept: 'Bolívar', capital: 'Cartagena', zona: 'N2', km: 1050, tiempo: '48-72h' },
-  { dept: 'Magdalena', capital: 'Santa Marta', zona: 'N2', km: 1070, tiempo: '48-72h' },
-  { dept: 'Cesar', capital: 'Valledupar', zona: 'N2', km: 850, tiempo: '48-72h' },
-  { dept: 'Córdoba', capital: 'Montería', zona: 'N2', km: 890, tiempo: '48-72h' },
-  { dept: 'Sucre', capital: 'Sincelejo', zona: 'N2', km: 930, tiempo: '48-72h' },
-  { dept: 'La Guajira', capital: 'Riohacha', zona: 'N2', km: 1150, tiempo: '48-72h' },
-  { dept: 'Caquetá', capital: 'Florencia', zona: 'N2', km: 590, tiempo: '48-72h' },
-  { dept: 'Vichada', capital: 'Puerto Carreño', zona: 'D', km: 840, tiempo: '72-96h' },
-  { dept: 'Guaviare', capital: 'San José G.', zona: 'D', km: 580, tiempo: '72-96h' },
-  { dept: 'Chocó', capital: 'Quibdó', zona: 'D', km: 650, tiempo: '72-96h' },
-  { dept: 'Amazonas', capital: 'Leticia', zona: 'D', km: 1600, tiempo: '96h+' },
-  { dept: 'Vaupés', capital: 'Mitú', zona: 'D', km: 1300, tiempo: '96h+' },
-  { dept: 'Guainía', capital: 'Inírida', zona: 'D', km: 1100, tiempo: '96h+' },
-  { dept: 'San Andrés', capital: 'San Andrés (aéreo)', zona: 'D', km: 1800, tiempo: '96h+' },
+  // Bogotá / Cundinamarca
+  { id: 'bogota',        dept: 'Bogotá D.C.',        city: 'Bogotá',           zona: 'L',  km: 0,    tiempo: '24h',    lat: 4.7110, lon: -74.0721 },
+  { id: 'soacha',        dept: 'Cundinamarca',       city: 'Soacha',           zona: 'L',  km: 18,   tiempo: '24h',    lat: 4.5792, lon: -74.2170 },
+  { id: 'facatativa',    dept: 'Cundinamarca',       city: 'Facatativá',       zona: 'R',  km: 40,   tiempo: '24h',    lat: 4.8136, lon: -74.3537 },
+  { id: 'zipaquira',     dept: 'Cundinamarca',       city: 'Zipaquirá',        zona: 'R',  km: 50,   tiempo: '24h',    lat: 5.0222, lon: -74.0045 },
+  { id: 'fusagasuga',    dept: 'Cundinamarca',       city: 'Fusagasugá',       zona: 'R',  km: 65,   tiempo: '24-48h', lat: 4.3333, lon: -74.3667 },
+  { id: 'girardot',      dept: 'Cundinamarca',       city: 'Girardot',         zona: 'R',  km: 134,  tiempo: '24-48h', lat: 4.3001, lon: -74.8000 },
+  { id: 'chia',          dept: 'Cundinamarca',       city: 'Chía',             zona: 'R',  km: 23,   tiempo: '24h',    lat: 4.8625, lon: -74.0525 },
+
+  // Boyacá
+  { id: 'tunja',         dept: 'Boyacá',             city: 'Tunja',            zona: 'R',  km: 150,  tiempo: '24-48h', lat: 5.5446, lon: -73.3573 },
+  { id: 'duitama',       dept: 'Boyacá',             city: 'Duitama',          zona: 'R',  km: 205,  tiempo: '24-48h', lat: 5.8245, lon: -73.0328 },
+  { id: 'sogamoso',      dept: 'Boyacá',             city: 'Sogamoso',         zona: 'R',  km: 225,  tiempo: '24-48h', lat: 5.7141, lon: -72.9318 },
+  { id: 'chiquinquira',  dept: 'Boyacá',             city: 'Chiquinquirá',     zona: 'R',  km: 130,  tiempo: '24-48h', lat: 5.6136, lon: -73.8178 },
+
+  // Tolima
+  { id: 'ibague',        dept: 'Tolima',             city: 'Ibagué',           zona: 'R',  km: 210,  tiempo: '24-48h', lat: 4.4389, lon: -75.2322 },
+  { id: 'espinal',       dept: 'Tolima',             city: 'Espinal',          zona: 'R',  km: 165,  tiempo: '24-48h', lat: 4.1497, lon: -74.8842 },
+  { id: 'honda',         dept: 'Tolima',             city: 'Honda',            zona: 'R',  km: 155,  tiempo: '24-48h', lat: 5.2081, lon: -74.7417 },
+  { id: 'melgar',        dept: 'Tolima',             city: 'Melgar',           zona: 'R',  km: 100,  tiempo: '24-48h', lat: 4.2050, lon: -74.6420 },
+
+  // Meta
+  { id: 'villavicencio', dept: 'Meta',               city: 'Villavicencio',    zona: 'R',  km: 90,   tiempo: '24-48h', lat: 4.1420, lon: -73.6266 },
+  { id: 'acacias',       dept: 'Meta',               city: 'Acacías',          zona: 'R',  km: 120,  tiempo: '24-48h', lat: 3.9893, lon: -73.7578 },
+  { id: 'granada-meta',  dept: 'Meta',               city: 'Granada',          zona: 'R',  km: 170,  tiempo: '24-48h', lat: 3.5467, lon: -73.7050 },
+  { id: 'puerto-lopez',  dept: 'Meta',               city: 'Puerto López',     zona: 'R',  km: 175,  tiempo: '24-48h', lat: 4.0886, lon: -72.9583 },
+
+  // Huila
+  { id: 'neiva',         dept: 'Huila',              city: 'Neiva',            zona: 'R',  km: 310,  tiempo: '24-48h', lat: 2.9273, lon: -75.2819 },
+  { id: 'pitalito',      dept: 'Huila',              city: 'Pitalito',         zona: 'R',  km: 500,  tiempo: '48-72h', lat: 1.8589, lon: -76.0508 },
+  { id: 'garzon',        dept: 'Huila',              city: 'Garzón',           zona: 'R',  km: 420,  tiempo: '48h',    lat: 2.1959, lon: -75.6278 },
+
+  // Caldas
+  { id: 'manizales',     dept: 'Caldas',             city: 'Manizales',        zona: 'R',  km: 310,  tiempo: '24-48h', lat: 5.0689, lon: -75.5174 },
+  { id: 'la-dorada',     dept: 'Caldas',             city: 'La Dorada',        zona: 'R',  km: 205,  tiempo: '24-48h', lat: 5.4506, lon: -74.6575 },
+  { id: 'chinchina',     dept: 'Caldas',             city: 'Chinchiná',        zona: 'R',  km: 320,  tiempo: '24-48h', lat: 4.9833, lon: -75.6167 },
+
+  // Risaralda
+  { id: 'pereira',       dept: 'Risaralda',          city: 'Pereira',          zona: 'R',  km: 330,  tiempo: '24-48h', lat: 4.8133, lon: -75.6961 },
+  { id: 'dosquebradas',  dept: 'Risaralda',          city: 'Dosquebradas',     zona: 'R',  km: 335,  tiempo: '24-48h', lat: 4.8306, lon: -75.6764 },
+
+  // Quindío
+  { id: 'armenia',       dept: 'Quindío',            city: 'Armenia',          zona: 'R',  km: 300,  tiempo: '24-48h', lat: 4.5339, lon: -75.6811 },
+  { id: 'calarca',       dept: 'Quindío',            city: 'Calarcá',          zona: 'R',  km: 295,  tiempo: '24-48h', lat: 4.5236, lon: -75.6439 },
+
+  // Santander
+  { id: 'bucaramanga',   dept: 'Santander',          city: 'Bucaramanga',      zona: 'N1', km: 400,  tiempo: '48h',    lat: 7.1193, lon: -73.1227 },
+  { id: 'floridablanca', dept: 'Santander',          city: 'Floridablanca',    zona: 'N1', km: 405,  tiempo: '48h',    lat: 7.0697, lon: -73.0897 },
+  { id: 'giron',         dept: 'Santander',          city: 'Girón',            zona: 'N1', km: 398,  tiempo: '48h',    lat: 7.0722, lon: -73.1686 },
+  { id: 'barrancabermeja', dept: 'Santander',        city: 'Barrancabermeja',  zona: 'N1', km: 320,  tiempo: '48h',    lat: 7.0653, lon: -73.8547 },
+  { id: 'san-gil',       dept: 'Santander',          city: 'San Gil',          zona: 'N1', km: 310,  tiempo: '48h',    lat: 6.5550, lon: -73.1336 },
+
+  // Antioquia
+  { id: 'medellin',      dept: 'Antioquia',          city: 'Medellín',         zona: 'N1', km: 415,  tiempo: '48h',    lat: 6.2442, lon: -75.5812 },
+  { id: 'bello',         dept: 'Antioquia',          city: 'Bello',            zona: 'N1', km: 420,  tiempo: '48h',    lat: 6.3373, lon: -75.5567 },
+  { id: 'envigado',      dept: 'Antioquia',          city: 'Envigado',         zona: 'N1', km: 420,  tiempo: '48h',    lat: 6.1702, lon: -75.5836 },
+  { id: 'itagui',        dept: 'Antioquia',          city: 'Itagüí',           zona: 'N1', km: 418,  tiempo: '48h',    lat: 6.1817, lon: -75.5994 },
+  { id: 'rionegro',      dept: 'Antioquia',          city: 'Rionegro',         zona: 'N1', km: 390,  tiempo: '48h',    lat: 6.1556, lon: -75.3744 },
+  { id: 'apartado',      dept: 'Antioquia',          city: 'Apartadó',         zona: 'N1', km: 680,  tiempo: '72h',    lat: 7.8833, lon: -76.6333 },
+
+  // Valle del Cauca
+  { id: 'cali',          dept: 'Valle del Cauca',    city: 'Cali',             zona: 'N1', km: 460,  tiempo: '48h',    lat: 3.4516, lon: -76.5320 },
+  { id: 'palmira',       dept: 'Valle del Cauca',    city: 'Palmira',          zona: 'N1', km: 475,  tiempo: '48h',    lat: 3.5395, lon: -76.3033 },
+  { id: 'buga',          dept: 'Valle del Cauca',    city: 'Buga',             zona: 'N1', km: 390,  tiempo: '48h',    lat: 3.9014, lon: -76.2978 },
+  { id: 'tulua',         dept: 'Valle del Cauca',    city: 'Tuluá',            zona: 'N1', km: 380,  tiempo: '48h',    lat: 4.0847, lon: -76.1953 },
+  { id: 'buenaventura',  dept: 'Valle del Cauca',    city: 'Buenaventura',     zona: 'N1', km: 580,  tiempo: '48-72h', lat: 3.8831, lon: -77.0311 },
+
+  // Norte de Santander
+  { id: 'cucuta',        dept: 'Norte de Santander', city: 'Cúcuta',           zona: 'N1', km: 590,  tiempo: '48-72h', lat: 7.8939, lon: -72.5078 },
+  { id: 'ocana',         dept: 'Norte de Santander', city: 'Ocaña',            zona: 'N1', km: 560,  tiempo: '48-72h', lat: 8.2378, lon: -73.3561 },
+  { id: 'pamplona',      dept: 'Norte de Santander', city: 'Pamplona',         zona: 'N1', km: 520,  tiempo: '48-72h', lat: 7.3764, lon: -72.6514 },
+
+  // Cauca
+  { id: 'popayan',       dept: 'Cauca',              city: 'Popayán',          zona: 'N1', km: 580,  tiempo: '48-72h', lat: 2.4448, lon: -76.6147 },
+  { id: 'santander-quilichao', dept: 'Cauca',        city: 'Santander de Quilichao', zona: 'N1', km: 500, tiempo: '48h', lat: 3.0100, lon: -76.4850 },
+
+  // Casanare
+  { id: 'yopal',         dept: 'Casanare',           city: 'Yopal',            zona: 'N1', km: 380,  tiempo: '48h',    lat: 5.3378, lon: -72.3959 },
+  { id: 'aguazul',       dept: 'Casanare',           city: 'Aguazul',          zona: 'N1', km: 360,  tiempo: '48h',    lat: 5.1722, lon: -72.5475 },
+  { id: 'villanueva-casanare', dept: 'Casanare',     city: 'Villanueva',       zona: 'N1', km: 280,  tiempo: '48h',    lat: 4.6119, lon: -72.9264 },
+
+  // Arauca
+  { id: 'arauca',        dept: 'Arauca',             city: 'Arauca',           zona: 'N1', km: 530,  tiempo: '48-72h', lat: 7.0903, lon: -70.7617 },
+  { id: 'saravena',      dept: 'Arauca',             city: 'Saravena',         zona: 'N1', km: 600,  tiempo: '72h',    lat: 6.9586, lon: -71.8722 },
+
+  // Nariño
+  { id: 'pasto',         dept: 'Nariño',             city: 'Pasto',            zona: 'N2', km: 820,  tiempo: '48-72h', lat: 1.2136, lon: -77.2811 },
+  { id: 'ipiales',       dept: 'Nariño',             city: 'Ipiales',          zona: 'N2', km: 900,  tiempo: '72h',    lat: 0.8272, lon: -77.6458 },
+  { id: 'tumaco',        dept: 'Nariño',             city: 'Tumaco',           zona: 'N2', km: 1000, tiempo: '72-96h', lat: 1.7911, lon: -78.7947 },
+
+  // Putumayo
+  { id: 'mocoa',         dept: 'Putumayo',           city: 'Mocoa',            zona: 'N2', km: 700,  tiempo: '48-72h', lat: 1.1503, lon: -76.6483 },
+  { id: 'puerto-asis',   dept: 'Putumayo',           city: 'Puerto Asís',      zona: 'N2', km: 820,  tiempo: '72h',    lat: 0.5058, lon: -76.4983 },
+
+  // Atlántico
+  { id: 'barranquilla',  dept: 'Atlántico',          city: 'Barranquilla',     zona: 'N2', km: 1000, tiempo: '48-72h', lat: 10.9685, lon: -74.7813 },
+  { id: 'soledad',       dept: 'Atlántico',          city: 'Soledad',          zona: 'N2', km: 1003, tiempo: '48-72h', lat: 10.9167, lon: -74.7667 },
+  { id: 'sabanalarga',   dept: 'Atlántico',          city: 'Sabanalarga',      zona: 'N2', km: 945,  tiempo: '48-72h', lat: 10.6311, lon: -74.9211 },
+
+  // Bolívar
+  { id: 'cartagena',     dept: 'Bolívar',            city: 'Cartagena',        zona: 'N2', km: 1050, tiempo: '48-72h', lat: 10.3910, lon: -75.4794 },
+  { id: 'magangue',      dept: 'Bolívar',            city: 'Magangué',         zona: 'N2', km: 830,  tiempo: '72h',    lat: 9.2408, lon: -74.7531 },
+  { id: 'turbaco',       dept: 'Bolívar',            city: 'Turbaco',          zona: 'N2', km: 1040, tiempo: '48-72h', lat: 10.3311, lon: -75.4089 },
+
+  // Magdalena
+  { id: 'santa-marta',   dept: 'Magdalena',          city: 'Santa Marta',      zona: 'N2', km: 1070, tiempo: '48-72h', lat: 11.2408, lon: -74.1990 },
+  { id: 'cienaga',       dept: 'Magdalena',          city: 'Ciénaga',          zona: 'N2', km: 1040, tiempo: '48-72h', lat: 11.0006, lon: -74.2472 },
+  { id: 'fundacion',     dept: 'Magdalena',          city: 'Fundación',        zona: 'N2', km: 960,  tiempo: '48-72h', lat: 10.5194, lon: -74.1856 },
+
+  // Cesar
+  { id: 'valledupar',    dept: 'Cesar',              city: 'Valledupar',       zona: 'N2', km: 850,  tiempo: '48-72h', lat: 10.4631, lon: -73.2532 },
+  { id: 'aguachica',     dept: 'Cesar',              city: 'Aguachica',        zona: 'N2', km: 520,  tiempo: '48-72h', lat: 8.3092, lon: -73.6075 },
+
+  // Córdoba
+  { id: 'monteria',      dept: 'Córdoba',            city: 'Montería',         zona: 'N2', km: 890,  tiempo: '48-72h', lat: 8.7479, lon: -75.8814 },
+  { id: 'sahagun',       dept: 'Córdoba',            city: 'Sahagún',          zona: 'N2', km: 820,  tiempo: '48-72h', lat: 8.9464, lon: -75.4433 },
+  { id: 'lorica',        dept: 'Córdoba',            city: 'Lorica',           zona: 'N2', km: 930,  tiempo: '72h',    lat: 9.2397, lon: -75.8136 },
+
+  // Sucre
+  { id: 'sincelejo',     dept: 'Sucre',              city: 'Sincelejo',        zona: 'N2', km: 930,  tiempo: '48-72h', lat: 9.3047, lon: -75.3978 },
+  { id: 'corozal',       dept: 'Sucre',              city: 'Corozal',          zona: 'N2', km: 945,  tiempo: '48-72h', lat: 9.3192, lon: -75.2933 },
+
+  // La Guajira
+  { id: 'riohacha',      dept: 'La Guajira',         city: 'Riohacha',         zona: 'N2', km: 1150, tiempo: '48-72h', lat: 11.5444, lon: -72.9072 },
+  { id: 'maicao',        dept: 'La Guajira',         city: 'Maicao',           zona: 'N2', km: 1200, tiempo: '72h',    lat: 11.3775, lon: -72.2372 },
+
+  // Caquetá
+  { id: 'florencia',     dept: 'Caquetá',            city: 'Florencia',        zona: 'N2', km: 590,  tiempo: '48-72h', lat: 1.6144, lon: -75.6062 },
+  { id: 'san-vicente-caguan', dept: 'Caquetá',       city: 'San Vicente del Caguán', zona: 'N2', km: 720, tiempo: '72h', lat: 2.1167, lon: -74.7703 },
+
+  // Zonas difícil acceso
+  { id: 'puerto-carreno', dept: 'Vichada',           city: 'Puerto Carreño',   zona: 'D', km: 840,  tiempo: '72-96h', lat: 6.1888, lon: -67.4856 },
+  { id: 'san-jose-guaviare', dept: 'Guaviare',       city: 'San José del Guaviare', zona: 'D', km: 580, tiempo: '72-96h', lat: 2.5667, lon: -72.6450 },
+  { id: 'quibdo',         dept: 'Chocó',             city: 'Quibdó',           zona: 'D', km: 650,  tiempo: '72-96h', lat: 5.6919, lon: -76.6583 },
+  { id: 'leticia',        dept: 'Amazonas',          city: 'Leticia',          zona: 'D', km: 1600, tiempo: '96h+',   lat: -4.2150, lon: -69.9406 },
+  { id: 'mitu',           dept: 'Vaupés',            city: 'Mitú',             zona: 'D', km: 1300, tiempo: '96h+',   lat: 1.2536, lon: -70.2336 },
+  { id: 'inirida',        dept: 'Guainía',           city: 'Inírida',          zona: 'D', km: 1100, tiempo: '96h+',   lat: 3.8653, lon: -67.9239 },
+  { id: 'san-andres',     dept: 'San Andrés',        city: 'San Andrés (aéreo)', zona: 'D', km: 1800, tiempo: '96h+', lat: 12.5847, lon: -81.7006 },
 ];
 
-// Tarifas Interrapidísimo 2025-2026 (oficiales)
-export const INTER_ZONAS = {
-  L:  { label: 'Local',          base: 7900,  kgAd: 3400 },
-  R:  { label: 'Regional',       base: 10100, kgAd: 4000 },
-  N1: { label: 'Nacional Z1',    base: 18500, kgAd: 4400 },
-  N2: { label: 'Nacional Z2',    base: 23600, kgAd: 5500 },
-  D:  { label: 'Difícil acceso', base: 80000, kgAd: 12000 },
+// ==================== CARRIERS (Transportadoras nacionales) ====================
+// Tarifas referenciales 2025-2026 (COP). base = primer kg incluido; kgAd = kg adicional.
+// Fuente: comparativos públicos + tarifarios de cotización online.
+// El cotizador calcula todas y selecciona la más económica por destino/peso.
+export const CARRIERS = {
+  interrapidisimo: {
+    label: 'Interrapidísimo',
+    note: 'Líder nacional en tiempos cortos',
+    zonas: {
+      L:  { base: 7900,  kgAd: 3400 },
+      R:  { base: 10100, kgAd: 4000 },
+      N1: { base: 18500, kgAd: 4400 },
+      N2: { base: 23600, kgAd: 5500 },
+      D:  { base: 80000, kgAd: 12000 },
+    },
+  },
+  servientrega: {
+    label: 'Servientrega',
+    note: 'Cobertura más amplia en municipios pequeños',
+    zonas: {
+      L:  { base: 8500,  kgAd: 3600 },
+      R:  { base: 11200, kgAd: 4300 },
+      N1: { base: 19800, kgAd: 4800 },
+      N2: { base: 25800, kgAd: 6000 },
+      D:  { base: 85000, kgAd: 13000 },
+    },
+  },
+  envia: {
+    label: 'Envía Colvanes',
+    note: 'Competitivo en cargas medianas',
+    zonas: {
+      L:  { base: 8200,  kgAd: 3500 },
+      R:  { base: 10800, kgAd: 4100 },
+      N1: { base: 19200, kgAd: 4600 },
+      N2: { base: 24800, kgAd: 5800 },
+      D:  { base: 78000, kgAd: 11500 },
+    },
+  },
+  coordinadora: {
+    label: 'Coordinadora',
+    note: 'Fuerte en paquetería pesada (>30 kg)',
+    zonas: {
+      L:  { base: 9500,  kgAd: 3200 },
+      R:  { base: 12000, kgAd: 3800 },
+      N1: { base: 20500, kgAd: 4200 },
+      N2: { base: 26000, kgAd: 5200 },
+      D:  { base: 90000, kgAd: 12500 },
+    },
+  },
+  tcc: {
+    label: 'TCC',
+    note: 'Logística industrial, entrega puerta a puerta',
+    zonas: {
+      L:  { base: 8900,  kgAd: 3300 },
+      R:  { base: 11500, kgAd: 3900 },
+      N1: { base: 19500, kgAd: 4300 },
+      N2: { base: 25000, kgAd: 5400 },
+      D:  { base: 82000, kgAd: 12000 },
+    },
+  },
+  saferbo: {
+    label: 'Saferbo',
+    note: 'Económico para carga seca >50 kg',
+    zonas: {
+      L:  { base: 9800,  kgAd: 3100 },
+      R:  { base: 12500, kgAd: 3700 },
+      N1: { base: 20000, kgAd: 4100 },
+      N2: { base: 25500, kgAd: 5100 },
+      D:  { base: 88000, kgAd: 11800 },
+    },
+  },
+  deprisa: {
+    label: 'Deprisa (Avianca)',
+    note: 'Aéreo — único a San Andrés en 24-48h',
+    zonas: {
+      L:  { base: 10500, kgAd: 3800 },
+      R:  { base: 13500, kgAd: 4500 },
+      N1: { base: 22000, kgAd: 5000 },
+      N2: { base: 28000, kgAd: 6300 },
+      D:  { base: 95000, kgAd: 14000 },
+    },
+  },
 };
 
-// Tarifas Servientrega (referencia comparable)
-export const SERVI_ZONAS = {
-  L:  { label: 'Local',          base: 8500,  kgAd: 3600 },
-  R:  { label: 'Regional',       base: 11200, kgAd: 4300 },
-  N1: { label: 'Nacional Z1',    base: 19800, kgAd: 4800 },
-  N2: { label: 'Nacional Z2',    base: 25800, kgAd: 6000 },
-  D:  { label: 'Difícil acceso', base: 85000, kgAd: 13000 },
-};
+// Alias backwards-compat (Quoter viejo usaba estas constantes directamente)
+export const INTER_ZONAS = Object.fromEntries(
+  Object.entries(CARRIERS.interrapidisimo.zonas).map(([k, v]) => [k, { ...v, label: { L: 'Local', R: 'Regional', N1: 'Nacional Z1', N2: 'Nacional Z2', D: 'Difícil acceso' }[k] }])
+);
+export const SERVI_ZONAS = Object.fromEntries(
+  Object.entries(CARRIERS.servientrega.zonas).map(([k, v]) => [k, { ...v, label: INTER_ZONAS[k].label }])
+);
 
 export const SOBREFLETE = 0.02;
 
+export const ZONA_LABEL = { L: 'Local', R: 'Regional', N1: 'Nacional Z1', N2: 'Nacional Z2', D: 'Difícil acceso' };
+
 // ==================== EQUIPMENT DEFAULTS ====================
+// Schema extendido con specs eléctricos (Voc, Vmp, Isc, Imp, coef. temp.)
+// y de inversores (vocMax, mppt range, idcMax, mpptCount). Estos campos
+// se pueden enriquecer desde la base CEC / NREL SAM vía BackOffice.
+// Los defaults son valores típicos de datasheet — importar desde CEC
+// garantiza precisión oficial para validar layouts y construir unifilares.
+// Stock semanal: { qty, supplier, updatedAt } — refleja el inventario
+// disponible esta semana. El selector automático prioriza equipos con
+// qty>0 sobre los agotados para minimizar plazos de entrega.
+const STOCK_DATE = '2026-04-15';
 export const DEFAULT_PANELS = [
-  { id: 'p1', brand: 'JA Solar',       model: 'JAM72S20-545MR',  wp: 545, price: 290000, kg: 24.9 },
-  { id: 'p2', brand: 'Risen Energy',   model: 'RSM144-7-550M',   wp: 550, price: 285000, kg: 25.5 },
-  { id: 'p3', brand: 'Canadian Solar', model: 'CS6W-550MS',      wp: 550, price: 280000, kg: 25.0 },
-  { id: 'p4', brand: 'Trina Solar',    model: 'TSM-550DE09',     wp: 550, price: 295000, kg: 25.5 },
+  { id: 'p1', brand: 'JA Solar',       model: 'JAM72S20-545MR',  wp: 545, price: 290000, kg: 24.9,
+    lengthMm: 2278, widthMm: 1134,
+    voc: 49.75, vmp: 41.8, isc: 13.85, imp: 13.04, tempCoeffPmax: -0.35, tempCoeffVoc: -0.275, cellCount: 144,
+    stock: { qty: 280, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'p2', brand: 'Risen Energy',   model: 'RSM144-7-550M',   wp: 550, price: 285000, kg: 25.5,
+    lengthMm: 2279, widthMm: 1134,
+    voc: 49.8, vmp: 41.95, isc: 13.95, imp: 13.11, tempCoeffPmax: -0.35, tempCoeffVoc: -0.28, cellCount: 144,
+    stock: { qty: 120, supplier: 'Energreen', updatedAt: STOCK_DATE } },
+  { id: 'p3', brand: 'Canadian Solar', model: 'CS6W-550MS',      wp: 550, price: 280000, kg: 25.0,
+    lengthMm: 2266, widthMm: 1134,
+    voc: 49.8, vmp: 41.7, isc: 13.95, imp: 13.19, tempCoeffPmax: -0.34, tempCoeffVoc: -0.26, cellCount: 144,
+    stock: { qty: 60, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'p4', brand: 'Trina Solar',    model: 'TSM-550DE09',     wp: 550, price: 295000, kg: 25.5,
+    lengthMm: 2279, widthMm: 1134,
+    voc: 49.9, vmp: 41.9, isc: 13.93, imp: 13.13, tempCoeffPmax: -0.34, tempCoeffVoc: -0.25, cellCount: 144,
+    stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
 ];
+
+// Factor de empacado (packing factor): fracción del techo realmente utilizable
+// para paneles una vez descontados pasillos, setbacks, GCR inter-fila y áreas
+// de servicio. Residencial ~0.68 (mantenimiento, claraboyas); industrial plano
+// con tilt ~0.58 (GCR más exigente). Default 0.65.
+export const DEFAULT_PACKING_FACTOR = 0.65;
+
+// Área física de la huella del panel (proyección en planta) en m².
+// Fallback a 2.2 m² si el panel del catálogo no trae dimensiones.
+export const panelFootprintM2 = (panel) => {
+  if (panel?.lengthMm && panel?.widthMm) {
+    return (panel.lengthMm * panel.widthMm) / 1_000_000;
+  }
+  return 2.2;
+};
+
+// m² de techo requeridos por panel, incluido pasillo/GCR/setbacks.
+export const panelRoofAreaM2 = (panel, packingFactor = DEFAULT_PACKING_FACTOR) => {
+  return panelFootprintM2(panel) / Math.max(0.3, Math.min(0.95, packingFactor));
+};
 
 export const DEFAULT_INVERTERS = [
-  { id: 'i1', brand: 'Growatt', model: 'MIN 3000TL-XH',      kw: 3,  phase: 1, price: 1850000, type: 'on-grid',  kg: 14 },
-  { id: 'i2', brand: 'Growatt', model: 'MIN 5000TL-XH',      kw: 5,  phase: 1, price: 2450000, type: 'on-grid',  kg: 19 },
-  { id: 'i3', brand: 'Growatt', model: 'MID 10KTL3-X2',      kw: 10, phase: 3, price: 4200000, type: 'on-grid',  kg: 32 },
-  { id: 'i4', brand: 'Solis',   model: 'S6-GR1P5K-M',        kw: 5,  phase: 1, price: 2550000, type: 'on-grid',  kg: 20 },
-  { id: 'i5', brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000, type: 'hybrid',   kg: 22 },
-  { id: 'i6', brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000, type: 'hybrid',   kg: 36 },
-  { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3,  phase: 1, price: 3200000, type: 'off-grid', kg: 17 },
-  { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4,  phase: 1, price: 5500000, type: 'off-grid', kg: 28 },
+  // ───── On-grid monofásico (residencial) ─────
+  { id: 'i1', brand: 'Growatt', model: 'MIN 3000TL-XH',      kw: 3,  phase: 1, price: 1850000, type: 'on-grid',  kg: 14,
+    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240,
+    stock: { qty: 8, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i2', brand: 'Growatt', model: 'MIN 5000TL-XH',      kw: 5,  phase: 1, price: 2450000, type: 'on-grid',  kg: 19,
+    vocMax: 550,  mpptVmin: 80,  mpptVmax: 500, mpptCount: 2, idcMax: 13.5, efficiency: 97.6, vac: 240,
+    stock: { qty: 6, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i4', brand: 'Solis',   model: 'S6-GR1P5K-M',        kw: 5,  phase: 1, price: 2550000, type: 'on-grid',  kg: 20,
+    vocMax: 600,  mpptVmin: 90,  mpptVmax: 520, mpptCount: 2, idcMax: 16,   efficiency: 97.5, vac: 240,
+    stock: { qty: 2, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  // ───── On-grid trifásico (comercial / industrial) ─────
+  { id: 'i3',  brand: 'Growatt', model: 'MID 10KTL3-X2',    kw: 10,  phase: 3, price: 4200000,  type: 'on-grid', kg: 32,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 2, idcMax: 25,   efficiency: 98.4, vac: 400,
+    stock: { qty: 4, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i9',  brand: 'Growatt', model: 'MID 15KTL3-X2',    kw: 15,  phase: 3, price: 6200000,  type: 'on-grid', kg: 42,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400,
+    stock: { qty: 3, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i10', brand: 'Growatt', model: 'MID 20KTL3-X2',    kw: 20,  phase: 3, price: 7900000,  type: 'on-grid', kg: 45,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 2, idcMax: 32,   efficiency: 98.5, vac: 400,
+    stock: { qty: 2, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i11', brand: 'Growatt', model: 'MAX 30KTL3-LV',    kw: 30,  phase: 3, price: 10500000, type: 'on-grid', kg: 58,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 3, idcMax: 36,   efficiency: 98.6, vac: 400,
+    stock: { qty: 1, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i12', brand: 'Growatt', model: 'MAX 50KTL3-LV',    kw: 50,  phase: 3, price: 15800000, type: 'on-grid', kg: 75,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 960, mpptCount: 4, idcMax: 36,   efficiency: 98.6, vac: 400,
+    stock: { qty: 0, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i13', brand: 'Growatt', model: 'MAX 100KTL3-X LV', kw: 100, phase: 3, price: 29500000, type: 'on-grid', kg: 84,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 1000, mpptCount: 10, idcMax: 30, efficiency: 98.7, vac: 400,
+    stock: { qty: 0, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i14', brand: 'Sungrow', model: 'SG125CX-P2',       kw: 125, phase: 3, price: 36000000, type: 'on-grid', kg: 95,
+    vocMax: 1500, mpptVmin: 200, mpptVmax: 1300, mpptCount: 12, idcMax: 30, efficiency: 98.7, vac: 800,
+    stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  // ───── Híbrido (con baterías, on-grid + backup) ─────
+  { id: 'i5',  brand: 'Growatt', model: 'SPH 5000TL BL-UP',   kw: 5,  phase: 1, price: 4800000,  type: 'hybrid', kg: 22,
+    vocMax: 550,  mpptVmin: 120, mpptVmax: 450, mpptCount: 2, idcMax: 13.5, efficiency: 97.5, vac: 240,
+    stock: { qty: 4, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i6',  brand: 'Growatt', model: 'SPH 10000TL3 BH-UP', kw: 10, phase: 3, price: 7200000,  type: 'hybrid', kg: 36,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 800, mpptCount: 2, idcMax: 25,   efficiency: 98.2, vac: 400,
+    stock: { qty: 2, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i15', brand: 'Solis',   model: 'S6-EH3P15K-H',       kw: 15, phase: 3, price: 10800000, type: 'hybrid', kg: 45,
+    vocMax: 1000, mpptVmin: 200, mpptVmax: 850, mpptCount: 3, idcMax: 30,   efficiency: 98.3, vac: 400,
+    stock: { qty: 1, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'i16', brand: 'Solis',   model: 'S6-EH3P30K-H',       kw: 30, phase: 3, price: 18500000, type: 'hybrid', kg: 62,
+    vocMax: 1100, mpptVmin: 200, mpptVmax: 950, mpptCount: 3, idcMax: 32,   efficiency: 98.4, vac: 400,
+    stock: { qty: 0, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  // ───── Off-grid (aislados, ZNI) ─────
+  { id: 'i7', brand: 'Growatt', model: 'OFF3000TL-HVM',       kw: 3, phase: 1, price: 3200000, type: 'off-grid', kg: 17,
+    vocMax: 500, mpptVmin: 120, mpptVmax: 430, mpptCount: 1, idcMax: 18, efficiency: 96.5, vac: 240,
+    stock: { qty: 3, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'i8', brand: 'Victron', model: 'MultiPlus-II 5000VA', kw: 4, phase: 1, price: 5500000, type: 'off-grid', kg: 28,
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 20, efficiency: 96,   vac: 230,
+    stock: { qty: 2, supplier: 'Energreen', updatedAt: STOCK_DATE } },
+  { id: 'i17',brand: 'Victron', model: 'Quattro 10000VA',     kw: 8, phase: 1, price: 14500000, type: 'off-grid', kg: 45,
+    vocMax: 250, mpptVmin: 60,  mpptVmax: 200, mpptCount: 1, idcMax: 30, efficiency: 96,   vac: 230,
+    stock: { qty: 0, supplier: 'Energreen', updatedAt: STOCK_DATE } },
 ];
 
+// Catálogo curado de baterías LFP para el mercado colombiano. Voltaje
+// nominal, kWh útiles, descarga máxima y ciclos vienen de datasheets
+// oficiales 2024-2026. Extensible desde /api/batteries (ver src/services/batteries.js)
+// o manualmente en BackOffice → Baterías.
 export const DEFAULT_BATTERIES = [
-  { id: 'b1', brand: 'Pylontech', model: 'US3000C',         kwh: 3.5, price: 3200000, kg: 37 },
-  { id: 'b2', brand: 'BYD',       model: 'Battery-Box HVS 7.7', kwh: 7.7, price: 7500000, kg: 80 },
-  { id: 'b3', brand: 'Hubble',    model: 'AM-10',           kwh: 10,  price: 9800000, kg: 95 },
+  // ───── LV 48V (residencial, la mayoría de híbridos en Colombia) ─────
+  { id: 'b1',  brand: 'Pylontech', model: 'US3000C',              kwh: 3.5, price: 3200000,  kg: 37,  voltage: 48,   chemistry: 'LFP', maxDischargeA: 74,  cycles: 6000,
+    stock: { qty: 12, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b2',  brand: 'Pylontech', model: 'US5000',               kwh: 4.8, price: 4500000,  kg: 45,  voltage: 48,   chemistry: 'LFP', maxDischargeA: 100, cycles: 6000,
+    stock: { qty: 8,  supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b3',  brand: 'Hubble',    model: 'AM-2 S-10',            kwh: 10,  price: 9800000,  kg: 95,  voltage: 51.2, chemistry: 'LFP', maxDischargeA: 150, cycles: 6000,
+    stock: { qty: 3,  supplier: 'Energreen',            updatedAt: STOCK_DATE } },
+  { id: 'b4',  brand: 'Dyness',    model: 'B4850',                kwh: 2.4, price: 2400000,  kg: 27,  voltage: 48,   chemistry: 'LFP', maxDischargeA: 50,  cycles: 6000,
+    stock: { qty: 20, supplier: 'Solartex',             updatedAt: STOCK_DATE } },
+  { id: 'b5',  brand: 'Deye',      model: 'SE-G5.1 Pro-B',        kwh: 5.12,price: 4800000,  kg: 48,  voltage: 51.2, chemistry: 'LFP', maxDischargeA: 100, cycles: 6000,
+    stock: { qty: 15, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b6',  brand: 'GoodWe',    model: 'Lynx Home U 5.4',      kwh: 5.4, price: 5100000,  kg: 52,  voltage: 51.2, chemistry: 'LFP', maxDischargeA: 100, cycles: 6000,
+    stock: { qty: 4,  supplier: 'Solartex',             updatedAt: STOCK_DATE } },
+  // ───── HV stack (≥ 200V, para inversores híbridos trifásicos) ─────
+  { id: 'b7',  brand: 'BYD',       model: 'Battery-Box Premium HVS 7.7', kwh: 7.7,  price: 7500000, kg: 80,  voltage: 409, chemistry: 'LFP', maxDischargeA: 25, cycles: 8000,
+    stock: { qty: 2, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'b8',  brand: 'BYD',       model: 'Battery-Box Premium HVM 11', kwh: 11.04, price: 11200000, kg: 114, voltage: 307, chemistry: 'LFP', maxDischargeA: 50, cycles: 8000,
+    stock: { qty: 1, supplier: 'Solartex', updatedAt: STOCK_DATE } },
+  { id: 'b9',  brand: 'Huawei',    model: 'LUNA2000-5-S0',        kwh: 5,   price: 6200000,  kg: 50,  voltage: 360, chemistry: 'LFP', maxDischargeA: 14,  cycles: 6000,
+    stock: { qty: 3, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  { id: 'b10', brand: 'Huawei',    model: 'LUNA2000-15-S0',       kwh: 15,  price: 17500000, kg: 150, voltage: 360, chemistry: 'LFP', maxDischargeA: 42,  cycles: 6000,
+    stock: { qty: 0, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
+  // ───── Servo / baterías de servicio pesado (off-grid extendido) ─────
+  { id: 'b11', brand: 'Victron',   model: 'LiFePO4 25.6V 200Ah',  kwh: 5.12,price: 8500000,  kg: 72,  voltage: 25.6, chemistry: 'LFP', maxDischargeA: 200, cycles: 5000,
+    stock: { qty: 2, supplier: 'Energreen', updatedAt: STOCK_DATE } },
+  { id: 'b12', brand: 'Pylontech', model: 'Force-H2 10.65',       kwh: 10.65, price: 11800000, kg: 138, voltage: 384, chemistry: 'LFP', maxDischargeA: 25, cycles: 6000,
+    stock: { qty: 1, supplier: 'Importaciones Alebas', updatedAt: STOCK_DATE } },
 ];
 
 export const DEFAULT_PRICING = {
@@ -135,22 +504,99 @@ export const DEPTS = [
 export const fmt = n => new Intl.NumberFormat('es-CO').format(Math.round(n));
 export const fmtCOP = n => `$${fmt(n)}`;
 
-export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh) {
+// Calcula paneles por string (pps) y número de strings (ns) respetando los
+// límites eléctricos del inversor. Si el panel o inversor no tiene specs,
+// cae a la heurística antigua (700V nominal / 40V panel).
+//   - pps_max_volt: limitado por Vdc_max (Voc en frío × pps ≤ vocMax × 0.95)
+//   - pps_max_mppt: limitado por el techo MPPT (Vmp STC × pps ≤ mpptVmax × 0.97)
+//   - pps_min: piso MPPT en caliente (Vmp caliente × pps ≥ mpptVmin × 1.05)
+// Si pps_min > pps_max el par panel/inversor es INCOMPATIBLE — la función
+// retorna feasible=false para que el selector de inversor pueda reintentar.
+// En ese caso usa pps_max (sin violar vocMax), aunque caiga bajo MPPT.
+export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC = 65) {
+  const hasSpecs = panel?.voc && inverter?.vocMax && inverter?.mpptVmax;
+  if (!hasSpecs) {
+    const pps = Math.floor(700 / 40);
+    const ns = Math.max(1, Math.ceil(numPanels / pps));
+    return { pps, ns, ppss: Math.ceil(numPanels / ns), specsSource: 'heuristic', feasible: true, actualPanels: numPanels, currentLimited: false };
+  }
+  const tcVoc = panel.tempCoeffVoc ?? -0.28;
+  const tcPmax = panel.tempCoeffPmax ?? -0.35;
+  const vocCold = panel.voc * (1 + (tcVoc / 100) * (coldTempC - 25));
+  const vmpHot = panel.vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
+  const ppsMaxVolt = Math.floor((inverter.vocMax * 0.95) / vocCold);
+  const ppsMaxMppt = Math.floor((inverter.mpptVmax * 0.97) / panel.vmp);
+  const ppsHardMax = Math.max(1, Math.min(ppsMaxVolt, ppsMaxMppt));
+  const ppsMin = inverter.mpptVmin ? Math.ceil((inverter.mpptVmin * 1.05) / vmpHot) : 1;
+  const feasible = ppsMin <= ppsHardMax;
+  let pps = ppsHardMax; // Never exceed ppsHardMax → Vdc_max safe
+  pps = Math.min(pps, numPanels);
+  let ns = Math.max(1, Math.ceil(numPanels / pps));
+
+  // Cap ns by Idc_max: max parallel strings per MPPT = floor(idcMax / imp).
+  // If the resulting ns is smaller, the system is current-limited and
+  // calcSystem will reduce actKwp to the panels that can actually be wired.
+  let currentLimited = false;
+  if (inverter.idcMax && panel.imp) {
+    const mpptCount = Math.max(1, inverter.mpptCount || 1);
+    const maxStrPerMppt = Math.max(1, Math.floor(inverter.idcMax / panel.imp));
+    const maxNsCurrent = maxStrPerMppt * mpptCount;
+    if (ns > maxNsCurrent) {
+      ns = maxNsCurrent;
+      currentLimited = true;
+    }
+  }
+
+  const actualPanels = Math.min(ns * pps, numPanels);
+  const ppss = Math.ceil(actualPanels / ns); // clean pps after capping
+  return { pps, ns, ppss, specsSource: 'inverter-limited', feasible, ppsMin, ppsHardMax, actualPanels, currentLimited };
+}
+
+// opts.pvgisAnnualKwh: si se pasa, sobreescribe la producción heurística (PSH).
+// opts.targetKwp: si se pasa, dimensiona al kWp objetivo en lugar del consumo
+//   (útil cuando el cliente quiere sobredimensionar para generar excedentes).
+// Cap por MAX_KWP_AGPE para evitar dimensionar fuera del alcance regulatorio.
+// inv: puede ser el objeto inversor completo (preferido, para usar specs
+// eléctricos reales al dimensionar strings) o un número (kW) legado.
+export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) {
+  const invObj = (typeof inv === 'object' && inv !== null) ? inv : { kw: inv };
+  const invKw = invObj.kw;
   const PR = 0.78;
   const daily = monthlyKwh / 30;
-  const kwpN = daily / (psh * PR);
-  const numPanels = Math.ceil(kwpN * 1000 / panel.wp);
+  const consumptionKwp = daily / (psh * PR);
+  const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;
+  const kwpN = Math.min(rawTarget, MAX_KWP_AGPE);
+  const cappedByRegulation = rawTarget > MAX_KWP_AGPE;
+  const coldTempC = opts.coldTempC ?? 10;  // Temperatura mínima de celda (NASA POWER o default NEC 690.7)
+  const hotTempC  = opts.hotTempC  ?? 65;  // Temperatura máxima de celda (NASA POWER + offset NOCT)
+  const numPanelsIdeal = Math.ceil(kwpN * 1000 / panel.wp);
+  // sizeStrings may cap ns when Idc_max would be exceeded; actualPanels reflects
+  // the true number that can be wired. We use it for all energy/financial calcs.
+  const { pps, ns, ppss, actualPanels, currentLimited } = sizeStrings(panel, invObj, numPanelsIdeal, coldTempC, hotTempC);
+  const numPanels = currentLimited ? actualPanels : numPanelsIdeal;
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
-  const dp = actKwp * psh * PR;
-  const mp = Math.round(dp * 30);
-  const ap = Math.round(dp * 365);
+
+  let dp, mp, ap;
+  const usingPVGIS = opts.pvgisAnnualKwh && opts.pvgisAnnualKwh > 0;
+  if (usingPVGIS) {
+    ap = Math.round(opts.pvgisAnnualKwh);
+  } else {
+    dp = parseFloat((actKwp * psh * PR).toFixed(1));
+    ap = Math.round(dp * 365);
+  }
+  // Factor de sombreado local de Google Solar API dataLayers (0–1).
+  // 1.0 = sin sombra (factor por defecto cuando la API no reporta).
+  const shade = opts.shadeIndex != null ? Math.max(0.1, Math.min(1, Number(opts.shadeIndex))) : 1;
+  ap = Math.round(ap * shade);
+  mp = Math.round(ap / 12);
+  dp = parseFloat((ap / 365).toFixed(1));
+
   const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
-  const pps = Math.floor(700 / 40);
-  const ns = Math.ceil(numPanels / pps);
-  const ppss = Math.ceil(numPanels / ns);
-  const roof = parseFloat((numPanels * 2.2).toFixed(0));
+  // Área real de techo ocupada, usando footprint real + packing factor
+  const packing = opts.packingFactor || DEFAULT_PACKING_FACTOR;
+  const roof = parseFloat((numPanels * panelRoofAreaM2(panel, packing)).toFixed(1));
   const tB = bUnit && bQty ? parseFloat((bQty * bUnit.kwh).toFixed(1)) : 0;
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
   const kgTotal = (numPanels * (panel.kg || 25.5))
@@ -158,7 +604,8 @@ export function calcSystem(monthlyKwh, panel, invKw, bUnit, bQty, psh) {
     + invKw              // inversor aprox
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
-  return { numPanels, actKwp, dp: dp.toFixed(1), mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal };
+  const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
+  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited };
 }
 
 export function calcTransport(zonas, zona, kgTotal, valorDec) {
@@ -166,6 +613,28 @@ export function calcTransport(zonas, zona, kgTotal, valorDec) {
   const flete = Math.round(z.base + Math.max(0, kgTotal - 1) * z.kgAd);
   const sf = Math.round(valorDec * SOBREFLETE);
   return { flete, sf, total: flete + sf };
+}
+
+// Cotiza en todas las transportadoras y devuelve la más económica.
+// `valorDec` (declarado) aplica sobreflete 2% — mismo para todas (normativa).
+// Retorna { best: {carrierId, label, flete, sf, total}, quotes: [...ordenadas] }.
+export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIERS) {
+  const sf = Math.round(valorDec * SOBREFLETE);
+  const quotes = Object.entries(carriers).map(([carrierId, c]) => {
+    const z = c.zonas[zona];
+    if (!z) return null;
+    const flete = Math.round(z.base + Math.max(0, kgTotal - 1) * z.kgAd);
+    return {
+      carrierId,
+      label: c.label,
+      note: c.note || '',
+      flete,
+      sf,
+      total: flete + sf,
+    };
+  }).filter(Boolean);
+  quotes.sort((a, b) => a.total - b.total);
+  return { best: quotes[0] || null, quotes };
 }
 
 export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
@@ -184,10 +653,256 @@ export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   return { pC, iC, bC, sA, st, ca, pt, ins, eng: pricing.engineering, emsa: pricing.emsa_tramites, transport: transport || 0, bBase, iva, sB, tot };
 }
 
-export function autoInverter(kwp, sysType, inverters) {
-  const typed = inverters.filter(i => i.type === sysType);
-  const fit = typed.filter(i => i.kw >= kwp * 0.75).sort((a, b) => a.kw - b.kw);
-  return fit[0] || typed[0] || inverters[0];
+// Calcula el beneficio económico anual aplicando la regulación AGPE.
+//   - autoConsumo (energía generada que coincide con consumo): ahorro a tarifa CU plena.
+//   - excedentes (energía inyectada a la red): valorada según categoría AGPE.
+//     · Menor (kWp ≤ 100): CREG 174/2021 art. 7 — excedentes a CU − G (sin el
+//       componente de generación, porque no se paga el kWh de bolsa/contrato).
+//     · Mayor (100 < kWp ≤ 1000): liquidación a precio bolsa XM (PrecBolsNal).
+// Parámetros:
+//   tariffCUValue         — CU plena COP/kWh (para autoconsumo; ver splitCU/tariffCU).
+//   spotPriceCOPkWh       — precio bolsa horario (sólo Mayor).
+//   opts.excedentePrice   — precio de excedentes Menor (COP/kWh). Si se provee,
+//                           reemplaza el cálculo CU − G. Típicamente viene de
+//                           excedentePriceFor(operator, voltageLevel).
+// IMPORTANTE: los sistemas off-grid NO están conectados a la red y por
+// definición no entregan excedentes — la energía sobrante se pierde
+// (o se limita vía dump load). Para off-grid gridExport=false y sólo
+// se contabiliza ahorro por autoconsumo.
+export function calcAGPEBenefit(annualProdKwh, monthlyConsumptionKwh, tariffCUValue, spotPriceCOPkWh, kwp, opts = {}) {
+  const gridExport = opts.gridExport !== false;
+  const annualConsumption = monthlyConsumptionKwh * 12;
+  const autoConsumed = Math.min(annualProdKwh, annualConsumption);
+  const rawExcedentes = Math.max(0, annualProdKwh - annualConsumption);
+  const excedentes = gridExport ? rawExcedentes : 0;
+  const energiaDesperdiciada = gridExport ? 0 : rawExcedentes;
+  const isMenor = kwp <= AGPE_LIMIT_KW_MENOR;
+  const ahorroAutoconsumo = Math.round(autoConsumed * tariffCUValue);
+  // Precio excedentes Menor: preferir el valor explícito (CU − G de componentes
+  // reales del OR); si no, caer al default de fracción G_N1.
+  const fallbackCUminusG = tariffCUValue * (1 - CU_FRACTIONS_N1_DEFAULT.G);
+  const menorPrice = opts.excedentePrice != null ? opts.excedentePrice : fallbackCUminusG;
+  const priceExcedentes = gridExport ? (isMenor ? menorPrice : (spotPriceCOPkWh || 0)) : 0;
+  const ingresoExcedentes = Math.round(excedentes * priceExcedentes);
+  const totalAnual = ahorroAutoconsumo + ingresoExcedentes;
+  const pctOfCU = tariffCUValue > 0 ? Math.round((priceExcedentes / tariffCUValue) * 100) : 0;
+  return {
+    autoConsumed: Math.round(autoConsumed),
+    excedentes: Math.round(excedentes),
+    energiaDesperdiciada: Math.round(energiaDesperdiciada),
+    ahorroAutoconsumo,
+    ingresoExcedentes,
+    priceExcedentes,
+    totalAnual,
+    gridExport,
+    agpeCategory: gridExport ? (isMenor ? 'Menor' : 'Mayor') : 'No aplica (off-grid)',
+    rule: gridExport
+      ? (isMenor ? `Excedentes a CU − G (≈${pctOfCU}% de CU, CREG 174/2021)` : 'Excedentes a precio bolsa XM')
+      : 'Sistema aislado — no entrega excedentes a la red',
+  };
+}
+
+// Evalúa si un panel y un inversor son eléctricamente compatibles sin
+// violar Vdc_max ni el rango MPPT (los dos extremos: Voc frío y Vmp caliente).
+// Retorna { feasible, ppsMaxVolt, ppsMaxMppt, ppsMin } para scoring.
+export function inverterCompatibility(panel, inverter, coldTempC = 10, hotTempC = 65) {
+  if (!panel?.voc || !inverter?.vocMax) return { feasible: true, ppsMaxVolt: 0, ppsMaxMppt: 0, ppsMin: 0, unknown: true };
+  const tcVoc = panel.tempCoeffVoc ?? -0.28;
+  const tcPmax = panel.tempCoeffPmax ?? -0.35;
+  const vocCold = panel.voc * (1 + (tcVoc / 100) * (coldTempC - 25));
+  const vmpHot = panel.vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
+  const ppsMaxVolt = Math.floor((inverter.vocMax * 0.95) / vocCold);
+  const ppsMaxMppt = inverter.mpptVmax ? Math.floor((inverter.mpptVmax * 0.97) / panel.vmp) : ppsMaxVolt;
+  const ppsMin = inverter.mpptVmin ? Math.ceil((inverter.mpptVmin * 1.05) / vmpHot) : 1;
+  const feasible = ppsMin <= Math.min(ppsMaxVolt, ppsMaxMppt);
+  return { feasible, ppsMaxVolt, ppsMaxMppt, ppsMin };
+}
+
+// Rango óptimo de DC/AC ratio por tipo de sistema.
+//   on-grid: 1.10–1.35 (sobredimensionar paneles aprovecha horas de hombro sin clipping severo)
+//   hybrid : 1.00–1.25 (excedente carga baterías; ratios altos empiezan a clippear)
+//   off-grid: 0.95–1.15 (sin red, cualquier excedente se pierde una vez llenas las baterías)
+const DCAC_RANGE = {
+  'on-grid':  { min: 1.10, max: 1.35, ideal: 1.20 },
+  'hybrid':   { min: 1.00, max: 1.25, ideal: 1.15 },
+  'off-grid': { min: 0.95, max: 1.15, ideal: 1.05 },
+};
+
+// Familias de inversor aceptables según tipo de sistema.
+//   on-grid : on-grid (principal) | hybrid (fallback, inyecta pero más caro y sobra función batería)
+//   hybrid  : hybrid (único — requiere carga de baterías + inyección)
+//   off-grid: off-grid (principal) | hybrid (fallback sólo si el modelo declara `offGridCapable`)
+function acceptableInverterTypes(sysType) {
+  if (sysType === 'on-grid')  return ['on-grid', 'hybrid'];
+  if (sysType === 'hybrid')   return ['hybrid'];
+  if (sysType === 'off-grid') return ['off-grid', 'hybrid'];
+  return [sysType];
+}
+
+// Scoring de selección de inversor. Prioriza compatibilidad eléctrica y tipo exacto:
+//   +10000 compatible con el panel (Voc frío y Vmp caliente dentro del rango)
+//   +5000  corriente DC factible (Idc_max / Imp por MPPT suficiente para los strings)
+//   +3000  tipo coincide exactamente con sysType (vs. familia aceptable)
+//   +2000  DC/AC dentro del rango recomendado para el sysType
+//   +500   stock disponible esta semana (inv.stock?.qty > 0)
+//   -|DC/AC - ideal|·100   penalización por alejarse del ratio ideal del sysType
+//   -0.1·|kW - kwp|        desempate por proximidad de potencia
+//  Fallback: si no existe coincidencia exacta con sysType, acepta la familia
+//  alternativa (hybrid sustituye a on-grid u off-grid cuando no hay stock exacto).
+//  Para sistemas off-grid sólo se acepta hybrid si declara `offGridCapable: true`.
+export function selectCompatibleInverter(panel, kwp, sysType, inverters, opts = {}) {
+  const coldTempC = opts.coldTempC ?? 10;
+  const hotTempC  = opts.hotTempC  ?? 65;
+  // phases = fases aceptables (RETIE 240). [1] para monofásico/bifásico 120/240V,
+  // [3] para trifásico. Si no se provee, aceptamos cualquier fase.
+  const phases   = Array.isArray(opts.phases) && opts.phases.length ? opts.phases : null;
+  const okTypes = acceptableInverterTypes(sysType);
+  const matchPhase = (i) => !phases || phases.includes(i.phase);
+  const pool = inverters.filter(i => {
+    if (!okTypes.includes(i.type)) return false;
+    if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
+    if (!matchPhase(i)) return false;
+    return true;
+  });
+  if (!pool.length) {
+    // Fallback: relajamos el filtro de fase primero (mejor tipo correcto que fase correcta).
+    const byType = inverters.filter(i => okTypes.includes(i.type)
+      && !(sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable));
+    if (byType.length) {
+      return [...byType].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp))[0];
+    }
+    // Último recurso — no existe nada del tipo correcto; devolver el inversor
+    // más cercano en potencia para evitar crash, la UI debe advertir.
+    const any = [...inverters].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp));
+    return any[0] || inverters[0];
+  }
+  const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
+  const scored = pool.map(inv => {
+    const compat = inverterCompatibility(panel, inv, coldTempC, hotTempC);
+    const dcAc = inv.kw ? kwp / inv.kw : 0;
+    const ratioGood = dcAc >= range.min && dcAc <= range.max;
+    const stock = inv.stock?.qty > 0;
+    const exactType = inv.type === sysType;
+
+    // Check Idc_max feasibility: can this inverter handle all the strings
+    // required for kwp without exceeding its DC current rating?
+    let currentFeasible = true;
+    if (panel.wp > 0 && panel.imp && inv.idcMax && inv.mpptCount) {
+      const numP = Math.ceil(kwp * 1000 / panel.wp);
+      const ppsForCheck = Math.max(1, compat.ppsHardMax || Math.floor(700 / 40));
+      const nsNeeded = Math.ceil(numP / ppsForCheck);
+      const maxStrPerMppt = Math.max(1, Math.floor(inv.idcMax / panel.imp));
+      const maxNsCurrent = maxStrPerMppt * Math.max(1, inv.mpptCount);
+      currentFeasible = nsNeeded <= maxNsCurrent;
+    }
+
+    let score = 0;
+    if (compat.feasible) score += 10000;
+    if (currentFeasible) score += 5000;
+    if (exactType) score += 3000;
+    if (ratioGood) score += 2000;
+    if (stock) score += 500;
+    score -= Math.abs(dcAc - range.ideal) * 100;
+    score -= Math.abs(inv.kw - kwp) * 0.1;
+    return { inv, score, compat, dcAc };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].inv;
+}
+
+// Wrapper legado — usa selectCompatibleInverter cuando hay un panel,
+// cae al scoring por kW cuando no. Mantiene compatibilidad con llamadas
+// que sólo conocen kWp y tipo. Aplica la misma política de familias
+// aceptables (hybrid sustituye a on-grid/off-grid cuando falta stock exacto).
+export function autoInverter(kwp, sysType, inverters, panel) {
+  if (panel) return selectCompatibleInverter(panel, kwp, sysType, inverters);
+  const okTypes = acceptableInverterTypes(sysType);
+  const pool = inverters.filter(i => {
+    if (!okTypes.includes(i.type)) return false;
+    if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
+    return true;
+  });
+  if (!pool.length) return inverters[0];
+  const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
+  const targetMin = kwp / range.max;
+  const targetMax = kwp / range.min;
+  // Prioriza tipo exacto > rango kW > cercanía en potencia.
+  const exact = pool.filter(i => i.type === sysType);
+  const primary = exact.length ? exact : pool;
+  const inRange = primary.filter(i => i.kw >= targetMin && i.kw <= targetMax).sort((a, b) => a.kw - b.kw);
+  if (inRange.length) return inRange[0];
+  const above = primary.filter(i => i.kw >= targetMin).sort((a, b) => a.kw - b.kw);
+  if (above.length) return above[0];
+  return [...primary].sort((a, b) => b.kw - a.kw)[0];
+}
+
+// Valida que el layout de strings sea eléctricamente compatible con el inversor:
+//  1. Voc corregido por temperatura fría × strLen ≤ Vdc_max del inversor.
+//     Usa tempCoeffVoc (%/°C) y una temperatura de diseño fría (NEC 690.7
+//     para Colombia: ~5°C en zonas de mayor altitud; default 10°C).
+//  2. Vmp corregido × strLen dentro del rango MPPT [mpptVmin, mpptVmax]
+//     (caliente reduce Vmp → puede salir por debajo del piso MPPT).
+//  3. Imp (corriente por string) ≤ idcMax / mpptCount.
+//  4. numStrings ≤ mpptCount × 2 (típico: 2 strings por MPPT en paralelo).
+// Retorna { ok, errors: [], warnings: [], metrics: {...} } para mostrar
+// en el Quoter paso 5 junto al unifilar.
+export function validateLayout(panel, inverter, panelsPerString, numStrings, coldTempC = 10, hotTempC = 65) {
+  const errors = [];
+  const warnings = [];
+  if (!panel || !inverter) return { ok: false, errors: ['Panel o inversor no definido'], warnings: [], metrics: {} };
+
+  const voc = panel.voc || 0;
+  const vmp = panel.vmp || 0;
+  const imp = panel.imp || 0;
+  const tcVoc = panel.tempCoeffVoc || -0.28; // %/°C
+  const tcPmax = panel.tempCoeffPmax || -0.35;
+  const vocMax = inverter.vocMax || 0;
+  const mpptMin = inverter.mpptVmin || 0;
+  const mpptMax = inverter.mpptVmax || 0;
+  const mpptCount = inverter.mpptCount || 1;
+  const idcMax = inverter.idcMax || 0;
+
+  // Voc en frío (suma por string)
+  const vocCold = voc * (1 + (tcVoc / 100) * (coldTempC - 25));
+  const stringVocCold = vocCold * panelsPerString;
+  // Vmp en caliente (coef Pmax es cercano al de Vmp en términos %)
+  const vmpHot = vmp * (1 + (tcPmax / 100) * (hotTempC - 25));
+  const stringVmpHot = vmpHot * panelsPerString;
+  const stringVmpStc = vmp * panelsPerString;
+  const stringsPerMppt = Math.ceil(numStrings / mpptCount);
+  const currentPerMppt = imp * stringsPerMppt;
+
+  if (vocMax && stringVocCold > vocMax) {
+    errors.push(`Voc en frío por string (${stringVocCold.toFixed(1)}V @ ${coldTempC}°C) supera Vdc_max del inversor (${vocMax}V). Reducir paneles por string.`);
+  } else if (vocMax && stringVocCold > vocMax * 0.95) {
+    warnings.push(`Voc en frío (${stringVocCold.toFixed(1)}V) muy cerca del límite (${vocMax}V). Margen <5%.`);
+  }
+  if (mpptMax && stringVmpStc > mpptMax) {
+    errors.push(`Vmp STC por string (${stringVmpStc.toFixed(1)}V) supera techo MPPT (${mpptMax}V). Inversor no podrá seguir el punto de máxima potencia.`);
+  }
+  if (mpptMin && stringVmpHot < mpptMin) {
+    warnings.push(`Vmp en caliente (${stringVmpHot.toFixed(1)}V @ ${hotTempC}°C) cae por debajo del piso MPPT (${mpptMin}V). Pérdida de producción al mediodía.`);
+  }
+  if (idcMax && currentPerMppt > idcMax) {
+    errors.push(`Corriente por MPPT (${currentPerMppt.toFixed(1)}A con ${stringsPerMppt} strings) supera Idc_max (${idcMax}A). Reducir strings en paralelo.`);
+  }
+  if (numStrings > mpptCount * 2) {
+    warnings.push(`${numStrings} strings en ${mpptCount} MPPT → ${stringsPerMppt} strings por MPPT. Validar combinador/fusibles.`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    metrics: {
+      stringVocCold: parseFloat(stringVocCold.toFixed(1)),
+      stringVmpStc: parseFloat(stringVmpStc.toFixed(1)),
+      stringVmpHot: parseFloat(stringVmpHot.toFixed(1)),
+      currentPerMppt: parseFloat(currentPerMppt.toFixed(2)),
+      stringsPerMppt,
+      vocMax, mpptMin, mpptMax, idcMax, mpptCount,
+    },
+  };
 }
 
 // localStorage helpers (replaces window.storage for production)
