@@ -1,12 +1,17 @@
 // ==================== BRAND COLORS ====================
 export const C = {
-  teal: '#01708B', tD: '#015a70', tL: '#01708B22',
-  yellow: '#EFDB00', yD: '#c4b400',
-  gray: '#686B71',
-  dark: '#050d12', card: '#08151e', card2: '#111f35',
+  // SolarHub brand palette
+  teal:   '#01708B', tD: '#015a70', tL: '#01708B22',  // ALEBAS teal (mantiene identidad)
+  yellow: '#FF8C00', yD: '#cc7000', yL: '#FF8C0022',  // Solar Orange (reemplaza amarillo)
+  orange: '#FF8C00',                                   // alias
+  amber:  '#FFB800',                                   // tono cálido secundario
+  gold:   '#FFD93D',                                   // acento dorado
+  gray:   '#686B71',
+  dark:   '#07090F', card: '#0C1422', card2: '#111f35',
   border: '#01708B2a', borderLight: '#01708B15',
-  text: '#e8f4f7', muted: '#7a9eaa',
-  green: '#4ade80', red: '#f87171', orange: '#fb923c',
+  oBorder: '#FF8C0030',                               // border naranja
+  text:   '#e8f4f7', muted: '#7a9eaa',
+  green:  '#4ade80', red: '#f87171',
 };
 
 // ==================== OPERATORS DE RED (OR) ====================
