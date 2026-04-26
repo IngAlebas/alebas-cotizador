@@ -3,7 +3,7 @@
 Estado del proyecto Railway `spectacular-integrity` al momento de escribir este doc:
 
 - ✅ Servicio **Postgres** online (con `postgres-volume`)
-- ✅ Servicio **n8n** online en `app.alebas.co` (con `n8n-volume`)
+- ✅ Servicio **n8n** online en `api.solar-hub.co` (con `n8n-volume`)
 - ⏳ Falta: vincular DB → n8n → credencial → schema → workflows → frontend
 
 Sigue los pasos en orden. Cada `[ ]` es un checkpoint.
@@ -21,8 +21,8 @@ Sigue los pasos en orden. Cada `[ ]` es un checkpoint.
   ```
   GOOGLE_API_KEY      = <key de Google Cloud, con Geocoding + Solar API habilitadas>
   ANTHROPIC_API_KEY   = sk-ant-...
-  N8N_HOST            = app.alebas.co
-  WEBHOOK_URL         = https://app.alebas.co/
+  N8N_HOST            = api.solar-hub.co
+  WEBHOOK_URL         = https://api.solar-hub.co/
   GENERIC_TIMEZONE    = America/Bogota
   ```
 - [ ] 1.7 Espera a que el servicio n8n termine el redeploy (badge verde **Online**)
@@ -31,7 +31,7 @@ Sigue los pasos en orden. Cada `[ ]` es un checkpoint.
 
 ## Paso 2 — Crear credencial Postgres dentro de n8n
 
-- [ ] 2.1 Abre `https://app.alebas.co` → login en n8n
+- [ ] 2.1 Abre `https://api.solar-hub.co` → login en n8n
 - [ ] 2.2 Menú lateral → **Credentials** → **+ Add Credential** → busca **Postgres**
 - [ ] 2.3 Completa con los valores de Railway → Postgres → tab Variables:
 
@@ -91,7 +91,7 @@ Checkpoints:
 ## Paso 5 — Probar con curl
 
 ```bash
-BASE=https://app.alebas.co/webhook
+BASE=https://api.solar-hub.co/webhook
 
 # 5.1 validate-contact (ok)
 curl -sS -X POST $BASE/validate-contact \
@@ -141,7 +141,7 @@ Checkpoints esperados:
   - Start Command: `npx serve -s build -l $PORT`
 - [ ] 6.4 Variables:
   ```
-  REACT_APP_N8N_BASE_URL = https://app.alebas.co/webhook
+  REACT_APP_N8N_BASE_URL = https://api.solar-hub.co/webhook
   REACT_APP_N8N_TOKEN    = <opcional, si usas x-alebas-token>
   ```
 - [ ] 6.5 Settings → **Domains** → **+ Custom Domain** → `cotizador.alebas.co`
@@ -168,7 +168,7 @@ Checkpoints esperados:
 
 - [ ] 8.1 **Rotar `GOOGLE_API_KEY`** (fue pegada en chat) → Google Cloud Console → APIs & Services → Credentials → Regenerate
 - [ ] 8.2 Restringir la nueva key:
-  - Application restrictions: HTTP referrers → `https://cotizador.alebas.co/*`, `https://app.alebas.co/*`
+  - Application restrictions: HTTP referrers → `https://cotizador.alebas.co/*`, `https://api.solar-hub.co/*`
   - API restrictions: sólo **Geocoding API** + **Solar API**
 - [ ] 8.3 (Opcional) Basic auth en n8n panel admin:
   ```
@@ -276,7 +276,7 @@ DATOS_GOV_TOKEN = <opcional, sin token hay rate limit>
 ### Alternativa temporal (si urge desplegar antes)
 
 Mantener Vercel para las funciones `/api/*` y Railway sólo para n8n + frontend:
-- Frontend en Railway apunta a `app.alebas.co/webhook` para los workflows nuevos
+- Frontend en Railway apunta a `api.solar-hub.co/webhook` para los workflows nuevos
 - Frontend sigue llamando `/api/*` que Vercel resolverá si el dominio apunta allá
 
 **No recomendado** — añade complejidad (dos proveedores, dos dominios). Mejor migrar todo a n8n de una vez.
@@ -308,7 +308,7 @@ Mantener Vercel para las funciones `/api/*` y Railway sólo para n8n + frontend:
 | Servicio frontend para quotes remoto | `src/services/quotes.js` | ✅ commit `fd780e5` |
 | `validateContact()` + `submit()` cablea Postgres | `src/components/Quoter.jsx` | ✅ commit `fd780e5` |
 | Back office leyendo de Postgres | `src/components/BackOffice.jsx` | ⏳ pendiente (paso 9) |
-| n8n desplegado en `app.alebas.co` | Railway | ✅ |
+| n8n desplegado en `api.solar-hub.co` | Railway | ✅ |
 | Postgres plugin en Railway | Railway | ✅ |
 | `DATABASE_URL` referenciado en n8n | Railway | ⏳ paso 1 |
 | Credencial `ALEBAS Postgres` en n8n | n8n UI | ⏳ paso 2 |
