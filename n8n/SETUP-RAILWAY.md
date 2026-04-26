@@ -1,5 +1,9 @@
 # Guía rápida — Desplegar n8n en Railway (sin código)
 
+> ⚠️ **Histórica.** El stack actual usa `api.solar-hub.co` como host de n8n (no Railway).
+> Esta guía se mantiene como referencia si alguna vez se levanta una instancia nueva en Railway.
+> Para la operación día a día, ver `DEPLOY.md` y `CLAUDE.md`.
+
 Esta guía te lleva desde cero hasta tener `REACT_APP_N8N_BASE_URL` apuntando a un n8n real, con los workflows del cotizador importados.
 
 Tiempo estimado: **25-35 min**.

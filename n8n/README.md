@@ -43,7 +43,7 @@ Restringe la key por HTTP referrer/IP en producción.
 ## Frontend `.env.local`
 
 ```
-REACT_APP_N8N_BASE_URL=https://<tu-n8n>.up.railway.app/webhook
+REACT_APP_N8N_BASE_URL=https://api.solar-hub.co/webhook
 REACT_APP_N8N_TOKEN=           # opcional, si validas x-alebas-token en n8n
 ```
 
