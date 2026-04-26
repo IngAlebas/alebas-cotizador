@@ -190,9 +190,8 @@ Shortcuts configurados:
 
 | Dominio | Servicio | DNS |
 |---|---|---|
-| `solar-hub.co` | Vercel | Hostinger |
-| `www.solar-hub.co` | Vercel | Hostinger |
-| `cotiza.alebas.co` | Vercel (mismo proyecto) | Latinoamérica Hosting |
+| `solar-hub.co` | Vercel (redirect 307 → www) | Hostinger |
+| `www.solar-hub.co` | Vercel (canónico, production) | Hostinger |
 | `app.alebas.co` | Railway n8n | Latinoamérica Hosting |
 
 **Railway:** proyecto `spectacular-integrity`

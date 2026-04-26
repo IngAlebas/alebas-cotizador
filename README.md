@@ -19,12 +19,12 @@ Cotizador solar fotovoltaico profesional para ALEBAS Ingeniería SAS.
 4. Framework: Create React App (auto-detectado)
 5. Deploy
 
-## Dominio custom (cotiza.alebas.co)
+## Dominio custom (solar-hub.co)
 
 En Vercel → Project → Settings → Domains:
-- Agrega: `cotiza.alebas.co`
-- Copia el CNAME que te da Vercel
-- En Latinoamérica Hosting → DNS → agrega CNAME `cotiza` → valor Vercel
+- `www.solar-hub.co` → canónico (sirve contenido)
+- `solar-hub.co` → redirect 307 a `www.solar-hub.co`
+- DNS configurado en Hostinger
 
 ## Desarrollo local
 
