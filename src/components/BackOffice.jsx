@@ -406,7 +406,7 @@ function OperatorsMgr({ operators, upd, ss }) {
       )}
       {syncStatus?.warn === 'not-configured' && (
         <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: C.yellow }}>
-          ℹ Sync XM no configurado. Define <code>REACT_APP_N8N_BASE_URL</code> en Vercel → Settings → Environment Variables apuntando al webhook n8n (ej. <code>https://app.alebas.co/webhook</code>). La lista local de {operators.length} operadores permanece activa.
+          ℹ Sync XM no configurado. Define <code>REACT_APP_N8N_BASE_URL</code> en Vercel → Settings → Environment Variables apuntando al webhook n8n (ej. <code>https://api.solar-hub.co/webhook</code>). La lista local de {operators.length} operadores permanece activa.
         </div>
       )}
       {syncStatus?.warn === 'error' && (
