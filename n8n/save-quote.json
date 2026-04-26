@@ -30,7 +30,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO users (email, phone, name, company, first_seen, last_seen, quote_count)\nVALUES ($1, $2, $3, $4, NOW(), NOW(), 1)\nON CONFLICT (email) DO UPDATE SET\n  phone = COALESCE(EXCLUDED.phone, users.phone),\n  name = COALESCE(EXCLUDED.name, users.name),\n  company = COALESCE(EXCLUDED.company, users.company),\n  last_seen = NOW(),\n  quote_count = users.quote_count + 1\nRETURNING id;",
         "options": {
-          "queryReplacement": "={{ $json.email }},{{ $json.phone }},{{ $json.name }},{{ $json.company }}"
+          "queryReplacement": "={{ [$json.email, $json.phone, $json.name, $json.company] }}"
         }
       },
       "id": "c2000000-0001-4000-9000-000000000003",
@@ -55,7 +55,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO quotes (\n  user_id, system_type, monthly_kwh, operator, dept, address, lat, lon,\n  kwp, num_panels, panel_id, production_kwh_month, coverage_pct,\n  shade_index, shade_source,\n  total_cop, total_usd, section_a_cop, section_b_cop, transport_cop,\n  annual_sav_cop, roi_years, has_excedentes, agpe_category,\n  regulatory_ids, payload, ip, user_agent\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8,\n  $9, $10, $11, $12, $13,\n  $14, $15,\n  $16, $17, $18, $19, $20,\n  $21, $22, $23, $24,\n  $25::text[], $26::jsonb, NULLIF($27,'')::inet, $28\n) RETURNING id, created_at;",
         "options": {
-          "queryReplacement": "={{ $json.user_id }},{{ $json.system_type }},{{ $json.monthly_kwh }},{{ $json.operator }},{{ $json.dept }},{{ $json.address }},{{ $json.lat }},{{ $json.lon }},{{ $json.kwp }},{{ $json.num_panels }},{{ $json.panel_id }},{{ $json.production_kwh_month }},{{ $json.coverage_pct }},{{ $json.shade_index }},{{ $json.shade_source }},{{ $json.total_cop }},{{ $json.total_usd }},{{ $json.section_a_cop }},{{ $json.section_b_cop }},{{ $json.transport_cop }},{{ $json.annual_sav_cop }},{{ $json.roi_years }},{{ $json.has_excedentes }},{{ $json.agpe_category }},{{ JSON.stringify($json.regulatory_ids || []).replace(/^\\[/,'{').replace(/\\]$/,'}').replace(/\"/g,'') }},{{ JSON.stringify($json.payload) }},{{ $json.ip || '' }},{{ $json.user_agent }}"
+          "queryReplacement": "={{ [$json.user_id, $json.system_type, $json.monthly_kwh, $json.operator, $json.dept, $json.address, $json.lat, $json.lon, $json.kwp, $json.num_panels, $json.panel_id, $json.production_kwh_month, $json.coverage_pct, $json.shade_index, $json.shade_source, $json.total_cop, $json.total_usd, $json.section_a_cop, $json.section_b_cop, $json.transport_cop, $json.annual_sav_cop, $json.roi_years, $json.has_excedentes, $json.agpe_category, $json.regulatory_ids || [], JSON.stringify($json.payload), $json.ip || '', $json.user_agent] }}"
         }
       },
       "id": "c2000000-0001-4000-9000-000000000005",
