@@ -19,7 +19,7 @@ clientes, instaladores, ingenieros y financiadores.
 
 ```
 Frontend  React 18 (CRA)  →  Vercel  →  solar-hub.co
-Backend   n8n en Railway  →  app.alebas.co
+Backend   n8n en Railway  →  api.solar-hub.co
 DB        PostgreSQL       →  Railway (mismo proyecto que n8n)
 ```
 
@@ -77,7 +77,7 @@ alebas-cotizador/
 ├── api/                   ← ⚠️ DEPRECATED — reemplazado por n8n/
 │   └── DEPRECATED.md      ← Mapa de equivalencias api/ → n8n workflows
 │
-└── n8n/                   ← Workflows JSON — importar en app.alebas.co
+└── n8n/                   ← Workflows JSON — importar en api.solar-hub.co
     ├── README.md          ← Instrucciones de import y activación
     ├── SETUP-RAILWAY.md   ← Guía vincular Postgres con n8n
     ├── schema.sql         ← Esquema de tablas (quotes, contacts, etc.)
@@ -107,7 +107,7 @@ alebas-cotizador/
 Copiar `.env.example` a `.env.local` y completar:
 
 ```env
-REACT_APP_N8N_BASE_URL=https://app.alebas.co/webhook
+REACT_APP_N8N_BASE_URL=https://api.solar-hub.co/webhook
 REACT_APP_N8N_TOKEN=          # token compartido opcional
 # Google Solar API → configurar en n8n, NO en frontend
 ```
@@ -192,10 +192,10 @@ Shortcuts configurados:
 |---|---|---|
 | `solar-hub.co` | Vercel (redirect 307 → www) | Hostinger |
 | `www.solar-hub.co` | Vercel (canónico, production) | Hostinger |
-| `app.alebas.co` | Railway n8n | Latinoamérica Hosting |
+| `api.solar-hub.co` | Railway n8n | Hostinger |
 
 **Railway:** proyecto `spectacular-integrity`
-- Servicio n8n: `app.alebas.co` ✅
+- Servicio n8n: `api.solar-hub.co` ✅
 - PostgreSQL: online con `postgres-volume` ✅
 - Pendiente: vincular DB → n8n (ver `DEPLOY.md`)
 
@@ -252,7 +252,7 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 ## Próximos pasos verificados (de DEPLOY.md)
 
 1. **Vincular PostgreSQL con n8n** en Railway (ver `DEPLOY.md`)
-2. **Importar y activar** los 14 workflows en `n8n/` → `app.alebas.co`
+2. **Importar y activar** los 14 workflows en `n8n/` → `api.solar-hub.co`
 3. **Configurar** `REACT_APP_N8N_BASE_URL` en Vercel → Environment Variables
 4. **Poblar DB** con catálogo CEC: `node n8n/seed/load-cec.js`
 5. **Agregar keys** en n8n: Google Maps, Google Solar, Groq, Gemini
