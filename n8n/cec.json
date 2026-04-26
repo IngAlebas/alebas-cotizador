@@ -52,7 +52,7 @@
         "operation": "executeQuery",
         "query": "={{ $json.type === 'panel'\n  ? `SELECT id, manufacturer, model, pmax_w, voc, isc, vmp, imp, efficiency, length_m, width_m, bifacial, raw\n     FROM cec_panels\n     WHERE manufacturer ILIKE '%' || $1 || '%'\n        OR model        ILIKE '%' || $1 || '%'\n     ORDER BY\n       CASE WHEN manufacturer ILIKE $1 || '%' THEN 0 ELSE 1 END,\n       manufacturer, model\n     LIMIT ${$json.limit}`\n  : `SELECT id, manufacturer, model, pac_w, vdc_min, vdc_max, mppt_count, phase, raw\n     FROM cec_inverters\n     WHERE manufacturer ILIKE '%' || $1 || '%'\n        OR model        ILIKE '%' || $1 || '%'\n     ORDER BY\n       CASE WHEN manufacturer ILIKE $1 || '%' THEN 0 ELSE 1 END,\n       manufacturer, model\n     LIMIT ${$json.limit}` }}",
         "options": {
-          "queryReplacement": "={{ $json.q }}"
+          "queryReplacement": "={{ [$json.q] }}"
         }
       },
       "id": "c8000000-0008-4000-9000-000000000004",
