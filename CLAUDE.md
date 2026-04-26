@@ -213,7 +213,7 @@ Shortcuts configurados:
 | TRM | `services/trm.js` | `trm.json` | ✅ |
 | CEC Database | `services/cec.js` | `cec.json` | ✅ |
 | Save/List quotes | `services/quotes.js` | `save-quote.json` + `list-quotes.json` | 🔲 n8n pendiente activar |
-| AI cascade (Groq/Gemini/Claude) | `services/aiAssistant.js` | `ai-recommend.json` | 🔲 pendiente keys |
+| AI cascade (Groq/Gemini/Mistral/Claude Haiku) | `services/aiAssistant.js` | `ai-recommend.json` | 🔲 n8n activar + keys Railway |
 | Push notifications | `public/sw.js` | — | 🔲 falta backend |
 
 ---
@@ -255,7 +255,12 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 2. **Importar y activar** los 14 workflows en `n8n/` → `api.solar-hub.co`
 3. **Configurar** `REACT_APP_N8N_BASE_URL` en Vercel → Environment Variables
 4. **Poblar DB** con catálogo CEC: `node n8n/seed/load-cec.js`
-5. **Agregar keys** en n8n: Google Maps, Google Solar, Groq, Gemini
+5. **Agregar keys en Railway** (env vars del servicio n8n):
+   - `GROQ_API_KEY` → console.groq.com (gratis, 1.ª en cascade AI)
+   - `GOOGLE_AI_KEY` → aistudio.google.com (gratis, 2.ª en cascade AI)
+   - `MISTRAL_API_KEY` → console.mistral.ai (gratis, 3.ª en cascade AI)
+   - `ANTHROPIC_API_KEY` → console.anthropic.com (Claude Haiku, respaldo final)
+   - `GOOGLE_API_KEY` → Google Cloud (Maps + Solar API — solo en n8n, NO en frontend)
 6. **Activar** `save-quote` + `list-quotes` → persistencia de cotizaciones
 7. **Push notifications** → backend suscripciones
 
