@@ -19,7 +19,7 @@ clientes, instaladores, ingenieros y financiadores.
 
 ```
 Frontend  React 18 (CRA)  →  Vercel  →  solar-hub.co
-Backend   n8n en Railway  →  app.alebas.co
+Backend   n8n en Railway  →  api.solar-hub.co
 DB        PostgreSQL       →  Railway (mismo proyecto que n8n)
 ```
 
@@ -77,7 +77,7 @@ alebas-cotizador/
 ├── api/                   ← ⚠️ DEPRECATED — reemplazado por n8n/
 │   └── DEPRECATED.md      ← Mapa de equivalencias api/ → n8n workflows
 │
-└── n8n/                   ← Workflows JSON — importar en app.alebas.co
+└── n8n/                   ← Workflows JSON — importar en api.solar-hub.co
     ├── README.md          ← Instrucciones de import y activación
     ├── SETUP-RAILWAY.md   ← Guía vincular Postgres con n8n
     ├── schema.sql         ← Esquema de tablas (quotes, contacts, etc.)
@@ -107,7 +107,7 @@ alebas-cotizador/
 Copiar `.env.example` a `.env.local` y completar:
 
 ```env
-REACT_APP_N8N_BASE_URL=https://app.alebas.co/webhook
+REACT_APP_N8N_BASE_URL=https://api.solar-hub.co/webhook
 REACT_APP_N8N_TOKEN=          # token compartido opcional
 # Google Solar API → configurar en n8n, NO en frontend
 ```
@@ -190,13 +190,12 @@ Shortcuts configurados:
 
 | Dominio | Servicio | DNS |
 |---|---|---|
-| `solar-hub.co` | Vercel | Hostinger |
-| `www.solar-hub.co` | Vercel | Hostinger |
-| `cotiza.alebas.co` | Vercel (mismo proyecto) | Latinoamérica Hosting |
-| `app.alebas.co` | Railway n8n | Latinoamérica Hosting |
+| `solar-hub.co` | Vercel (redirect 307 → www) | Hostinger |
+| `www.solar-hub.co` | Vercel (canónico, production) | Hostinger |
+| `api.solar-hub.co` | Railway n8n | Hostinger |
 
 **Railway:** proyecto `spectacular-integrity`
-- Servicio n8n: `app.alebas.co` ✅
+- Servicio n8n: `api.solar-hub.co` ✅
 - PostgreSQL: online con `postgres-volume` ✅
 - Pendiente: vincular DB → n8n (ver `DEPLOY.md`)
 
@@ -214,7 +213,7 @@ Shortcuts configurados:
 | TRM | `services/trm.js` | `trm.json` | ✅ |
 | CEC Database | `services/cec.js` | `cec.json` | ✅ |
 | Save/List quotes | `services/quotes.js` | `save-quote.json` + `list-quotes.json` | 🔲 n8n pendiente activar |
-| AI cascade (Groq/Gemini/Claude) | `services/aiAssistant.js` | `ai-recommend.json` | 🔲 pendiente keys |
+| AI cascade (Groq/Gemini/Mistral/Claude Haiku) | `services/aiAssistant.js` | `ai-recommend.json` | 🔲 n8n activar + keys Railway |
 | Push notifications | `public/sw.js` | — | 🔲 falta backend |
 
 ---
@@ -253,10 +252,15 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 ## Próximos pasos verificados (de DEPLOY.md)
 
 1. **Vincular PostgreSQL con n8n** en Railway (ver `DEPLOY.md`)
-2. **Importar y activar** los 14 workflows en `n8n/` → `app.alebas.co`
+2. **Importar y activar** los 14 workflows en `n8n/` → `api.solar-hub.co`
 3. **Configurar** `REACT_APP_N8N_BASE_URL` en Vercel → Environment Variables
 4. **Poblar DB** con catálogo CEC: `node n8n/seed/load-cec.js`
-5. **Agregar keys** en n8n: Google Maps, Google Solar, Groq, Gemini
+5. **Agregar keys en Railway** (env vars del servicio n8n):
+   - `GROQ_API_KEY` → console.groq.com (gratis, 1.ª en cascade AI)
+   - `GOOGLE_AI_KEY` → aistudio.google.com (gratis, 2.ª en cascade AI)
+   - `MISTRAL_API_KEY` → console.mistral.ai (gratis, 3.ª en cascade AI)
+   - `ANTHROPIC_API_KEY` → console.anthropic.com (Claude Haiku, respaldo final)
+   - `GOOGLE_API_KEY` → Google Cloud (Maps + Solar API — solo en n8n, NO en frontend)
 6. **Activar** `save-quote` + `list-quotes` → persistencia de cotizaciones
 7. **Push notifications** → backend suscripciones
 
