@@ -13,7 +13,7 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
-import { aiRecommend, aiConfigured } from '../services/aiAssistant';
+import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
@@ -81,6 +81,18 @@ function phasesForAcometida(acometida) {
 }
 
 const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
+
+// Pasos visuales mostrados durante la ejecución del Asistente IA.
+// Son sólo cosméticos: la IA ejecuta una sola llamada, pero los pasos avanzan
+// con un timer para dar feedback de progreso (similar a Vercel/Cursor).
+const AI_STEPS = [
+  'Empaquetando datos del sistema',
+  'Consultando modelo (Groq → Gemini → Claude)',
+  'Validando RETIE / CREG 174-2021 / AGPE',
+  'Detectando alertas de dimensionamiento',
+  'Generando recomendaciones técnicas',
+  'Estructurando mejoras aplicables',
+];
 
 export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote, loadsCatalog }) {
   const [step, setStep] = useState(0);
@@ -205,6 +217,70 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [aiData, setAiData] = useState(null);
   const [aiError, setAiError] = useState(null);
   const [aiUnavailable, setAiUnavailable] = useState(false);
+  const [aiApplied, setAiApplied] = useState(null); // { fields: string[], at: number }
+  const [aiStep, setAiStep] = useState(0); // 0..AI_STEPS.length
+
+  // Coerciona y valida `value` para `field` antes de aplicarlo al estado.
+  // Retorna `undefined` si la action es inválida (silenciosamente descartada).
+  const coerceActionValue = (field, value) => {
+    if (!APPLYABLE_FIELDS.includes(field)) return undefined;
+    switch (field) {
+      case 'systemType':
+        return ['on-grid', 'hybrid', 'off-grid'].includes(value) ? value : undefined;
+      case 'acometida':
+        return ['monofasico', 'bifasico', 'trifasico'].includes(value) ? value : undefined;
+      case 'busVoltage': {
+        const n = Number(value);
+        return [12, 24, 48].includes(n) ? n : undefined;
+      }
+      case 'backupHours': {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 && n <= 48 ? n : undefined;
+      }
+      case 'autonomyDays': {
+        const n = Number(value);
+        return [1, 2, 3].includes(n) ? n : undefined;
+      }
+      case 'criticalPct': {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined;
+      }
+      case 'battQty': {
+        const n = Math.round(Number(value));
+        return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
+      }
+      case 'monthlyKwh':
+      case 'availableArea': {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 ? String(n) : undefined;
+      }
+      case 'wantsExcedentes':
+        return typeof value === 'boolean' ? value : undefined;
+      default:
+        return undefined;
+    }
+  };
+
+  const applyAiActions = () => {
+    if (!aiData?.actions?.length) return;
+    const applied = [];
+    setF(prev => {
+      const next = { ...prev };
+      for (const a of aiData.actions) {
+        const v = coerceActionValue(a.field, a.value);
+        if (v === undefined) continue;
+        if (next[a.field] === v) continue; // ya está aplicado
+        next[a.field] = v;
+        applied.push(a.field);
+        // Efectos secundarios coherentes con el resto de la UI:
+        if (a.field === 'busVoltage') { next.battId = ''; next.battManual = false; }
+        if (a.field === 'battQty') { next.battManual = true; }
+        if (a.field === 'acometida') { next.phaseManual = true; }
+      }
+      return next;
+    });
+    setAiApplied({ fields: applied, at: Date.now() });
+  };
   // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
   // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
   const [validatingContact, setValidatingContact] = useState(false);
@@ -314,6 +390,26 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       u('wantsExcedentes', false);
     }
   }, [f.wantsExcedentes, gridExport, hasArea, areaAllowsExcedentes]);
+
+  // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
+  // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
+  // applyAiActions; este efecto corre tras el commit con el `f` ya actualizado.
+  useEffect(() => {
+    if (aiApplied && step === 5) {
+      calculate();
+    }
+  }, [aiApplied]); // eslint-disable-line
+
+  // Avance progresivo de la lista de pasos visibles durante el análisis IA.
+  // Se incrementa hasta el penúltimo paso; el último se marca como completado
+  // recién cuando la respuesta llega (en el bloque .finally del onClick).
+  useEffect(() => {
+    if (!aiLoading) return;
+    const tick = setInterval(() => {
+      setAiStep(s => Math.min(s + 1, AI_STEPS.length - 1));
+    }, 700);
+    return () => clearInterval(tick);
+  }, [aiLoading]);
 
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
@@ -1377,7 +1473,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 type="button"
                 disabled={aiLoading}
                 onClick={async () => {
-                  setAiError(null); setAiLoading(true);
+                  setAiError(null); setAiLoading(true); setAiApplied(null); setAiStep(0);
                   try {
                     const out = await aiRecommend('review', {
                       systemType: f.systemType,
@@ -1402,13 +1498,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       setAiError(msg);
                     }
                   }
-                  finally { setAiLoading(false); }
+                  finally { setAiStep(AI_STEPS.length); setAiLoading(false); }
                 }}
                 style={{ ...ss.btn, background: C.yellow, color: '#000', padding: '7px 13px', fontSize: 11, opacity: aiLoading ? 0.6 : 1 }}
               >
-                {aiLoading ? '⏳ Analizando…' : aiData ? '↻ Volver a analizar' : '✦ Analizar con IA'}
+                {aiLoading
+                  ? <><span className="animate-spin" style={{ marginRight: 6 }}>◐</span>Analizando…</>
+                  : aiData ? '↻ Volver a analizar' : '✦ Analizar con IA'}
               </button>
             </div>
+            {aiLoading && (
+              <div style={{ background: C.dark, border: `1px solid ${C.yellow}33`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: C.yellow, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                  Cadena de revisión
+                </div>
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                  {AI_STEPS.map((label, i) => {
+                    const done = i < aiStep;
+                    const active = i === aiStep;
+                    const pending = i > aiStep;
+                    if (pending) return null; // entran progresivamente
+                    return (
+                      <li key={i} className="animate-slide-in" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: done ? C.muted : '#fff', marginBottom: 4 }}>
+                        <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center' }}>
+                          {done && <span className="animate-check-pop" style={{ color: '#4ade80' }}>✓</span>}
+                          {active && <span className="animate-spin" style={{ color: C.yellow }}>◐</span>}
+                        </span>
+                        <span style={{ textDecoration: done ? 'none' : 'none' }}>{label}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             {aiError && <div style={{ fontSize: 11, color: C.orange }}>⚠ {aiError}</div>}
             {aiData && (
               <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.55 }}>
@@ -1437,8 +1559,48 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </ul>
                   </div>
                 )}
+                {(() => {
+                  const pending = (aiData.actions || [])
+                    .map(a => ({ ...a, coerced: coerceActionValue(a.field, a.value) }))
+                    .filter(a => a.coerced !== undefined && f[a.field] !== a.coerced);
+                  if (!pending.length && !aiApplied) return null;
+                  return (
+                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.teal}44` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase' }}>
+                          {pending.length > 0 ? `Mejoras automáticas (${pending.length})` : 'Mejoras aplicadas'}
+                        </div>
+                        {pending.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={applyAiActions}
+                            style={{ ...ss.btn, background: C.teal, color: '#000', padding: '7px 13px', fontSize: 11 }}
+                          >
+                            ✓ Aplicar mejoras y recalcular
+                          </button>
+                        )}
+                      </div>
+                      {pending.length > 0 && (
+                        <ul style={{ margin: 0, paddingLeft: 18, color: '#fff' }}>
+                          {pending.map((a, i) => (
+                            <li key={i} style={{ marginBottom: 3 }}>
+                              <strong style={{ color: C.teal }}>{a.label || a.field}</strong>
+                              {a.reason ? <span style={{ color: C.muted }}> — {a.reason}</span> : null}
+                              <span style={{ color: C.muted, fontSize: 10 }}> · {a.field}: {String(f[a.field])} → {String(a.coerced)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {aiApplied && pending.length === 0 && (
+                        <div style={{ fontSize: 11, color: C.teal }}>
+                          ✓ Cambios aplicados ({aiApplied.fields.join(', ')}). El sistema fue recalculado.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
-                  Cadena de revisión interna
+                  Cadena de revisión interna{aiData.provider ? ` · ${aiData.provider}` : ''}
                 </div>
               </div>
             )}
@@ -1978,12 +2140,39 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
     { icon: '🌡', name: 'NASA POWER', desc: 'Temperaturas de módulo (cold/hot)' },
     { icon: '💱', name: 'Banrep TRM', desc: 'Tasa USD/COP oficial' },
     { icon: '⚡', name: `XM — ${operator.name}`, desc: 'Precio spot en bolsa de energía' },
-    ...(f.systemType !== 'on-grid' ? [{ icon: '🔋', name: 'Dimensionamiento de banco', desc: 'DoD 80% · η 90% · voltaje bus' }] : []),
-    { icon: '🛡', name: 'Validación RETIE + AGPE', desc: 'CREG 174/2021 · Ley 1715 · Código de medida' },
-    { icon: '✦', name: 'Inversor compatible', desc: 'Voc/Vmp, MPPT y rango de strings' },
+    ...(f.systemType !== 'on-grid' ? [{
+      icon: '🔋', name: 'Dimensionamiento de banco', desc: 'DoD 80% · η 90% · voltaje bus',
+      subSteps: [
+        'Calculando energía diaria a respaldar',
+        'Aplicando profundidad de descarga (DoD 80%)',
+        'Compensando por eficiencia inversor/cableado',
+        'Resolviendo serie/paralelo en bus DC',
+      ],
+    }] : []),
+    {
+      icon: '🛡', name: 'Validación RETIE + AGPE', desc: 'CREG 174/2021 · Ley 1715 · Código de medida',
+      subSteps: [
+        'Sección 240 — clasificación de acometida',
+        'Inscripción AGPE ante operador de red',
+        'Compensación de excedentes (CREG 174/2021)',
+        'Código de medida y bidireccionalidad',
+      ],
+    },
+    {
+      icon: '✦', name: 'Inversor compatible', desc: 'Voc/Vmp, MPPT y rango de strings',
+      subSteps: [
+        'Voc en serie ≤ 1000 V DC (RETIE)',
+        'Vmp dentro del rango MPPT del inversor',
+        'Isc del string ≤ Idc máx por entrada',
+        'Strings en paralelo dentro de capacidad',
+        'Fase de salida ↔ acometida del cliente',
+        'Sobredimensionado DC/AC dentro de tolerancia',
+      ],
+    },
   ], [operator.name, f.systemType, needsB]);
 
   const [cursor, setCursor] = useState(0);
+  const [subCursor, setSubCursor] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -1991,6 +2180,19 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
     const t2 = setInterval(() => setElapsed(e => e + 1), 1000);
     return () => { clearInterval(t); clearInterval(t2); };
   }, [tools.length]);
+
+  // Sub-cursor: avanza entre los sub-pasos del tool activo. Se reinicia cada
+  // vez que el cursor principal cambia para que cada herramienta tenga su
+  // propia animación de validación interna.
+  useEffect(() => {
+    setSubCursor(0);
+    const sub = tools[cursor]?.subSteps;
+    if (!sub || !sub.length) return;
+    const id = setInterval(() => {
+      setSubCursor(s => Math.min(s + 1, sub.length));
+    }, 220);
+    return () => clearInterval(id);
+  }, [cursor, tools]);
 
   return (
     <div style={{
@@ -2044,7 +2246,7 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
               const bg = state === 'run' ? `${C.yellow}12` : state === 'done' ? `${C.teal}08` : 'transparent';
               return (
                 <div key={t.name} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
+                  display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                   padding: '8px 11px', borderRadius: 7,
                   background: bg,
                   border: `1px solid ${state === 'run' ? `${C.yellow}44` : state === 'done' ? `${C.teal}22` : C.border}`,
@@ -2064,6 +2266,31 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
                     )}
                     {state === 'pend' && <span style={{ color: C.muted, fontSize: 11 }}>•</span>}
                   </div>
+                  {state === 'run' && t.subSteps?.length > 0 && (
+                    <div style={{ flexBasis: '100%', marginTop: 8, paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {t.subSteps.map((s, j) => {
+                        const sDone = j < subCursor;
+                        const sActive = j === subCursor;
+                        const sPend = j > subCursor;
+                        if (sPend) return null;
+                        return (
+                          <div key={j} style={{
+                            display: 'flex', alignItems: 'center', gap: 7,
+                            fontSize: 10.5, color: sDone ? C.muted : '#fff',
+                            animation: 'slideIn 0.2s ease',
+                          }}>
+                            <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>
+                              {sDone && <span style={{ color: '#4ade80', fontSize: 11, fontWeight: 800 }}>✓</span>}
+                              {sActive && (
+                                <div style={{ width: 8, height: 8, borderRadius: '50%', border: `2px solid ${C.yellow}33`, borderTopColor: C.yellow, animation: 'spin 0.7s linear infinite' }} />
+                              )}
+                            </span>
+                            <span style={{ letterSpacing: 0.1 }}>{s}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
