@@ -13,7 +13,7 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
-import { aiRecommend, aiConfigured } from '../services/aiAssistant';
+import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
@@ -205,6 +205,69 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [aiData, setAiData] = useState(null);
   const [aiError, setAiError] = useState(null);
   const [aiUnavailable, setAiUnavailable] = useState(false);
+  const [aiApplied, setAiApplied] = useState(null); // { fields: string[], at: number }
+
+  // Coerciona y valida `value` para `field` antes de aplicarlo al estado.
+  // Retorna `undefined` si la action es inválida (silenciosamente descartada).
+  const coerceActionValue = (field, value) => {
+    if (!APPLYABLE_FIELDS.includes(field)) return undefined;
+    switch (field) {
+      case 'systemType':
+        return ['on-grid', 'hybrid', 'off-grid'].includes(value) ? value : undefined;
+      case 'acometida':
+        return ['monofasico', 'bifasico', 'trifasico'].includes(value) ? value : undefined;
+      case 'busVoltage': {
+        const n = Number(value);
+        return [12, 24, 48].includes(n) ? n : undefined;
+      }
+      case 'backupHours': {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 && n <= 48 ? n : undefined;
+      }
+      case 'autonomyDays': {
+        const n = Number(value);
+        return [1, 2, 3].includes(n) ? n : undefined;
+      }
+      case 'criticalPct': {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined;
+      }
+      case 'battQty': {
+        const n = Math.round(Number(value));
+        return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
+      }
+      case 'monthlyKwh':
+      case 'availableArea': {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 ? String(n) : undefined;
+      }
+      case 'wantsExcedentes':
+        return typeof value === 'boolean' ? value : undefined;
+      default:
+        return undefined;
+    }
+  };
+
+  const applyAiActions = () => {
+    if (!aiData?.actions?.length) return;
+    const applied = [];
+    setF(prev => {
+      const next = { ...prev };
+      for (const a of aiData.actions) {
+        const v = coerceActionValue(a.field, a.value);
+        if (v === undefined) continue;
+        if (next[a.field] === v) continue; // ya está aplicado
+        next[a.field] = v;
+        applied.push(a.field);
+        // Efectos secundarios coherentes con el resto de la UI:
+        if (a.field === 'busVoltage') { next.battId = ''; next.battManual = false; }
+        if (a.field === 'battQty') { next.battManual = true; }
+        if (a.field === 'acometida') { next.phaseManual = true; }
+      }
+      return next;
+    });
+    setAiApplied({ fields: applied, at: Date.now() });
+  };
   // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
   // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
   const [validatingContact, setValidatingContact] = useState(false);
@@ -314,6 +377,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       u('wantsExcedentes', false);
     }
   }, [f.wantsExcedentes, gridExport, hasArea, areaAllowsExcedentes]);
+
+  // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
+  // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
+  // applyAiActions; este efecto corre tras el commit con el `f` ya actualizado.
+  useEffect(() => {
+    if (aiApplied && step === 5) {
+      calculate();
+    }
+  }, [aiApplied]); // eslint-disable-line
 
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
@@ -1377,7 +1449,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 type="button"
                 disabled={aiLoading}
                 onClick={async () => {
-                  setAiError(null); setAiLoading(true);
+                  setAiError(null); setAiLoading(true); setAiApplied(null);
                   try {
                     const out = await aiRecommend('review', {
                       systemType: f.systemType,
@@ -1437,8 +1509,48 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </ul>
                   </div>
                 )}
+                {(() => {
+                  const pending = (aiData.actions || [])
+                    .map(a => ({ ...a, coerced: coerceActionValue(a.field, a.value) }))
+                    .filter(a => a.coerced !== undefined && f[a.field] !== a.coerced);
+                  if (!pending.length && !aiApplied) return null;
+                  return (
+                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.teal}44` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase' }}>
+                          {pending.length > 0 ? `Mejoras automáticas (${pending.length})` : 'Mejoras aplicadas'}
+                        </div>
+                        {pending.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={applyAiActions}
+                            style={{ ...ss.btn, background: C.teal, color: '#000', padding: '7px 13px', fontSize: 11 }}
+                          >
+                            ✓ Aplicar mejoras y recalcular
+                          </button>
+                        )}
+                      </div>
+                      {pending.length > 0 && (
+                        <ul style={{ margin: 0, paddingLeft: 18, color: '#fff' }}>
+                          {pending.map((a, i) => (
+                            <li key={i} style={{ marginBottom: 3 }}>
+                              <strong style={{ color: C.teal }}>{a.label || a.field}</strong>
+                              {a.reason ? <span style={{ color: C.muted }}> — {a.reason}</span> : null}
+                              <span style={{ color: C.muted, fontSize: 10 }}> · {a.field}: {String(f[a.field])} → {String(a.coerced)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {aiApplied && pending.length === 0 && (
+                        <div style={{ fontSize: 11, color: C.teal }}>
+                          ✓ Cambios aplicados ({aiApplied.fields.join(', ')}). El sistema fue recalculado.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{ marginTop: 6, fontSize: 10, color: C.muted, textAlign: 'right' }}>
-                  Cadena de revisión interna
+                  Cadena de revisión interna{aiData.provider ? ` · ${aiData.provider}` : ''}
                 </div>
               </div>
             )}
