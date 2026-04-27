@@ -26,6 +26,19 @@ DATABASE_URL=... node n8n/seed/load-cec.js --inverters
 DATABASE_URL=... node n8n/seed/load-cec.js --batteries
 ```
 
+## Seed rápido de baterías sin Node.js
+
+Si no tienes Node disponible (p. ej. necesitas seedear desde la UI de n8n):
+
+```bash
+psql "$DATABASE_URL" -f n8n/seed/batteries.sql
+```
+
+O desde n8n: nodo Postgres → Operation: **Execute Query** → pegar el contenido
+de `n8n/seed/batteries.sql` → **Execute step**. El script es idempotente
+(`ON CONFLICT DO NOTHING`) y crea la tabla + UNIQUE constraint si no existen,
+así que se puede correr varias veces sin riesgo.
+
 ## Fuentes
 
 | Tabla | Origen | Frecuencia de actualización |
