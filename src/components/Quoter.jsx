@@ -264,12 +264,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const applyAiActions = () => {
     if (!aiData?.actions?.length) return;
     const applied = [];
+    const appliedDetails = []; // snapshot: [{ field, from, to, label, reason }]
     setF(prev => {
       const next = { ...prev };
       for (const a of aiData.actions) {
         const v = coerceActionValue(a.field, a.value);
         if (v === undefined) continue;
         if (next[a.field] === v) continue; // ya está aplicado
+        appliedDetails.push({ field: a.field, from: next[a.field], to: v, label: a.label || '', reason: a.reason || '' });
         next[a.field] = v;
         applied.push(a.field);
         // Efectos secundarios coherentes con el resto de la UI:
@@ -279,7 +281,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       }
       return next;
     });
-    setAiApplied({ fields: applied, at: Date.now() });
+    setAiApplied({ fields: applied, details: appliedDetails, at: Date.now() });
   };
   // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
   // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
@@ -2073,6 +2075,57 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 )}
               </div>
+
+              {(aiData || aiApplied) && (
+                <div style={{ background: C.dark, border: `1px solid ${C.yellow}44`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                    ✦ Asistente IA — Análisis técnico{aiData?.provider ? ` · ${aiData.provider}` : ''}
+                  </div>
+                  {aiData?.summary && (
+                    <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.55, marginBottom: 10 }}>{aiData.summary}</div>
+                  )}
+                  {aiData?.findings?.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Hallazgos</div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: '#fff', lineHeight: 1.5 }}>
+                        {aiData.findings.map((x, i) => <li key={i} style={{ marginBottom: 2 }}>{x}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {aiData?.warnings?.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: C.orange, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Alertas</div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: C.orange, lineHeight: 1.5 }}>
+                        {aiData.warnings.map((x, i) => <li key={i} style={{ marginBottom: 2 }}>{x}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {aiData?.suggestions?.length > 0 && (
+                    <div style={{ marginBottom: aiApplied?.details?.length ? 10 : 0 }}>
+                      <div style={{ fontSize: 10, color: C.yellow, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Sugerencias</div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: C.yellow, lineHeight: 1.5 }}>
+                        {aiData.suggestions.map((x, i) => <li key={i} style={{ marginBottom: 2 }}>{x}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {aiApplied?.details?.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.teal}55` }}>
+                      <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                        ✓ Cambios aplicados al dimensionamiento ({aiApplied.details.length})
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: '#fff', lineHeight: 1.55 }}>
+                        {aiApplied.details.map((d, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}>
+                            <strong style={{ color: C.teal }}>{d.label || d.field}</strong>
+                            <span style={{ color: C.muted, fontSize: 10 }}> · {d.field}: {String(d.from)} → {String(d.to)}</span>
+                            {d.reason && <div style={{ color: C.muted, fontStyle: 'italic', marginTop: 1 }}>{d.reason}</div>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {obs.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
