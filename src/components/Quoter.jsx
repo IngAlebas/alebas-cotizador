@@ -82,6 +82,18 @@ function phasesForAcometida(acometida) {
 
 const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
 
+// Pasos visuales mostrados durante la ejecución del Asistente IA.
+// Son sólo cosméticos: la IA ejecuta una sola llamada, pero los pasos avanzan
+// con un timer para dar feedback de progreso (similar a Vercel/Cursor).
+const AI_STEPS = [
+  'Empaquetando datos del sistema',
+  'Consultando modelo (Groq → Gemini → Claude)',
+  'Validando RETIE / CREG 174-2021 / AGPE',
+  'Detectando alertas de dimensionamiento',
+  'Generando recomendaciones técnicas',
+  'Estructurando mejoras aplicables',
+];
+
 export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote, loadsCatalog }) {
   const [step, setStep] = useState(0);
   const [f, setF] = useState(Q0);
@@ -206,6 +218,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [aiError, setAiError] = useState(null);
   const [aiUnavailable, setAiUnavailable] = useState(false);
   const [aiApplied, setAiApplied] = useState(null); // { fields: string[], at: number }
+  const [aiStep, setAiStep] = useState(0); // 0..AI_STEPS.length
 
   // Coerciona y valida `value` para `field` antes de aplicarlo al estado.
   // Retorna `undefined` si la action es inválida (silenciosamente descartada).
@@ -386,6 +399,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       calculate();
     }
   }, [aiApplied]); // eslint-disable-line
+
+  // Avance progresivo de la lista de pasos visibles durante el análisis IA.
+  // Se incrementa hasta el penúltimo paso; el último se marca como completado
+  // recién cuando la respuesta llega (en el bloque .finally del onClick).
+  useEffect(() => {
+    if (!aiLoading) return;
+    const tick = setInterval(() => {
+      setAiStep(s => Math.min(s + 1, AI_STEPS.length - 1));
+    }, 700);
+    return () => clearInterval(tick);
+  }, [aiLoading]);
 
   const calculate = async () => {
     const kwh = parseFloat(f.monthlyKwh);
@@ -1449,7 +1473,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 type="button"
                 disabled={aiLoading}
                 onClick={async () => {
-                  setAiError(null); setAiLoading(true); setAiApplied(null);
+                  setAiError(null); setAiLoading(true); setAiApplied(null); setAiStep(0);
                   try {
                     const out = await aiRecommend('review', {
                       systemType: f.systemType,
@@ -1474,13 +1498,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       setAiError(msg);
                     }
                   }
-                  finally { setAiLoading(false); }
+                  finally { setAiStep(AI_STEPS.length); setAiLoading(false); }
                 }}
                 style={{ ...ss.btn, background: C.yellow, color: '#000', padding: '7px 13px', fontSize: 11, opacity: aiLoading ? 0.6 : 1 }}
               >
-                {aiLoading ? '⏳ Analizando…' : aiData ? '↻ Volver a analizar' : '✦ Analizar con IA'}
+                {aiLoading
+                  ? <><span className="animate-spin" style={{ marginRight: 6 }}>◐</span>Analizando…</>
+                  : aiData ? '↻ Volver a analizar' : '✦ Analizar con IA'}
               </button>
             </div>
+            {aiLoading && (
+              <div style={{ background: C.dark, border: `1px solid ${C.yellow}33`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: C.yellow, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                  Cadena de revisión
+                </div>
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                  {AI_STEPS.map((label, i) => {
+                    const done = i < aiStep;
+                    const active = i === aiStep;
+                    const pending = i > aiStep;
+                    if (pending) return null; // entran progresivamente
+                    return (
+                      <li key={i} className="animate-slide-in" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: done ? C.muted : '#fff', marginBottom: 4 }}>
+                        <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center' }}>
+                          {done && <span className="animate-check-pop" style={{ color: '#4ade80' }}>✓</span>}
+                          {active && <span className="animate-spin" style={{ color: C.yellow }}>◐</span>}
+                        </span>
+                        <span style={{ textDecoration: done ? 'none' : 'none' }}>{label}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             {aiError && <div style={{ fontSize: 11, color: C.orange }}>⚠ {aiError}</div>}
             {aiData && (
               <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.55 }}>
@@ -2090,12 +2140,39 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
     { icon: '🌡', name: 'NASA POWER', desc: 'Temperaturas de módulo (cold/hot)' },
     { icon: '💱', name: 'Banrep TRM', desc: 'Tasa USD/COP oficial' },
     { icon: '⚡', name: `XM — ${operator.name}`, desc: 'Precio spot en bolsa de energía' },
-    ...(f.systemType !== 'on-grid' ? [{ icon: '🔋', name: 'Dimensionamiento de banco', desc: 'DoD 80% · η 90% · voltaje bus' }] : []),
-    { icon: '🛡', name: 'Validación RETIE + AGPE', desc: 'CREG 174/2021 · Ley 1715 · Código de medida' },
-    { icon: '✦', name: 'Inversor compatible', desc: 'Voc/Vmp, MPPT y rango de strings' },
+    ...(f.systemType !== 'on-grid' ? [{
+      icon: '🔋', name: 'Dimensionamiento de banco', desc: 'DoD 80% · η 90% · voltaje bus',
+      subSteps: [
+        'Calculando energía diaria a respaldar',
+        'Aplicando profundidad de descarga (DoD 80%)',
+        'Compensando por eficiencia inversor/cableado',
+        'Resolviendo serie/paralelo en bus DC',
+      ],
+    }] : []),
+    {
+      icon: '🛡', name: 'Validación RETIE + AGPE', desc: 'CREG 174/2021 · Ley 1715 · Código de medida',
+      subSteps: [
+        'Sección 240 — clasificación de acometida',
+        'Inscripción AGPE ante operador de red',
+        'Compensación de excedentes (CREG 174/2021)',
+        'Código de medida y bidireccionalidad',
+      ],
+    },
+    {
+      icon: '✦', name: 'Inversor compatible', desc: 'Voc/Vmp, MPPT y rango de strings',
+      subSteps: [
+        'Voc en serie ≤ 1000 V DC (RETIE)',
+        'Vmp dentro del rango MPPT del inversor',
+        'Isc del string ≤ Idc máx por entrada',
+        'Strings en paralelo dentro de capacidad',
+        'Fase de salida ↔ acometida del cliente',
+        'Sobredimensionado DC/AC dentro de tolerancia',
+      ],
+    },
   ], [operator.name, f.systemType, needsB]);
 
   const [cursor, setCursor] = useState(0);
+  const [subCursor, setSubCursor] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -2103,6 +2180,19 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
     const t2 = setInterval(() => setElapsed(e => e + 1), 1000);
     return () => { clearInterval(t); clearInterval(t2); };
   }, [tools.length]);
+
+  // Sub-cursor: avanza entre los sub-pasos del tool activo. Se reinicia cada
+  // vez que el cursor principal cambia para que cada herramienta tenga su
+  // propia animación de validación interna.
+  useEffect(() => {
+    setSubCursor(0);
+    const sub = tools[cursor]?.subSteps;
+    if (!sub || !sub.length) return;
+    const id = setInterval(() => {
+      setSubCursor(s => Math.min(s + 1, sub.length));
+    }, 220);
+    return () => clearInterval(id);
+  }, [cursor, tools]);
 
   return (
     <div style={{
@@ -2156,7 +2246,7 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
               const bg = state === 'run' ? `${C.yellow}12` : state === 'done' ? `${C.teal}08` : 'transparent';
               return (
                 <div key={t.name} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
+                  display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
                   padding: '8px 11px', borderRadius: 7,
                   background: bg,
                   border: `1px solid ${state === 'run' ? `${C.yellow}44` : state === 'done' ? `${C.teal}22` : C.border}`,
@@ -2176,6 +2266,31 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
                     )}
                     {state === 'pend' && <span style={{ color: C.muted, fontSize: 11 }}>•</span>}
                   </div>
+                  {state === 'run' && t.subSteps?.length > 0 && (
+                    <div style={{ flexBasis: '100%', marginTop: 8, paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {t.subSteps.map((s, j) => {
+                        const sDone = j < subCursor;
+                        const sActive = j === subCursor;
+                        const sPend = j > subCursor;
+                        if (sPend) return null;
+                        return (
+                          <div key={j} style={{
+                            display: 'flex', alignItems: 'center', gap: 7,
+                            fontSize: 10.5, color: sDone ? C.muted : '#fff',
+                            animation: 'slideIn 0.2s ease',
+                          }}>
+                            <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>
+                              {sDone && <span style={{ color: '#4ade80', fontSize: 11, fontWeight: 800 }}>✓</span>}
+                              {sActive && (
+                                <div style={{ width: 8, height: 8, borderRadius: '50%', border: `2px solid ${C.yellow}33`, borderTopColor: C.yellow, animation: 'spin 0.7s linear infinite' }} />
+                              )}
+                            </span>
+                            <span style={{ letterSpacing: 0.1 }}>{s}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
