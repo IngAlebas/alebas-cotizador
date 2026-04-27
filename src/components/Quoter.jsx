@@ -1681,9 +1681,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap', padding: '6px 0 14px' }}>
             <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
             <div style={{ fontSize: 18, color: C.teal }}>→</div>
-            <div style={{ background: `${C.teal}22`, border: `1px solid ${C.teal}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
+            <div style={{ background: res.inv ? `${C.teal}22` : `${C.orange}22`, border: `1px solid ${res.inv ? C.teal : C.orange}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Inversor</div>
-              <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{res.inv?.brand} {res.inv?.kw} kW</div>
+              {res.inv ? (
+                <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{res.inv.brand} {res.inv.kw} kW</div>
+              ) : (
+                <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginTop: 2 }}>⚠ Consultar stock</div>
+              )}
             </div>
             <div style={{ fontSize: 18, color: C.teal }}>→</div>
             {needsB && (
@@ -2016,6 +2020,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           }
           if (f.systemType === 'off-grid' && res.mp > (parseFloat(f.monthlyKwh) || 0) * 1.1) {
             obs.push({ type: 'info', title: 'Excedente off-grid no monetizable', text: 'El sistema genera más que el consumo. Al no estar conectado al SIN, el excedente se desperdicia (dump load). Considera cargas diferibles: bombeo, termotanque, climatización o ampliar banco.' });
+          }
+          if (!res.inv) {
+            const sysLabel = f.systemType === 'off-grid' ? 'aislado (off-grid)'
+                           : f.systemType === 'hybrid' ? 'híbrido'
+                           : 'on-grid';
+            obs.push({ type: 'warn', title: 'Inversor no disponible — consultar stock', text: `No hay inversor ${sysLabel} compatible en el catálogo para ${res.actKwp} kWp · ${ACOMETIDA_INFO[f.acometida].label}. El presupuesto se muestra sin la línea de inversor; antes de la propuesta detallada un ingeniero ALEBAS confirma stock o solicita importación.` });
           }
           if (res.inv) {
             const expected = phasesForAcometida(f.acometida);

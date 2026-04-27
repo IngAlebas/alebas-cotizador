@@ -564,8 +564,13 @@ export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC
 // inv: puede ser el objeto inversor completo (preferido, para usar specs
 // eléctricos reales al dimensionar strings) o un número (kW) legado.
 export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) {
+  // inv puede ser null cuando no hay inversor compatible en stock. Usamos un
+  // proxy con la potencia teórica (target kWp) para no romper los cálculos
+  // de paneles/producción; el budget y la UI marcarán el faltante por separado.
+  const noInverter = inv == null;
   const invObj = (typeof inv === 'object' && inv !== null) ? inv : { kw: inv };
-  const invKw = invObj.kw;
+  const fallbackKw = (opts.targetKwp && opts.targetKwp > 0) ? opts.targetKwp : (monthlyKwh / 30 / (psh * 0.78));
+  const invKw = noInverter ? Math.max(1, fallbackKw) : invObj.kw;
   const PR = 0.78;
   const daily = monthlyKwh / 30;
   const consumptionKwp = daily / (psh * PR);
@@ -606,11 +611,11 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
   const kgTotal = (numPanels * (panel.kg || 25.5))
     + (numPanels * 7.5)  // estructura
-    + invKw              // inversor aprox
+    + (noInverter ? 0 : invKw)  // inversor aprox (0 si no hay disponible)
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
   const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
-  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited };
+  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited, noInverter };
 }
 
 export function calcTransport(zonas, zona, kgTotal, valorDec) {
@@ -644,7 +649,9 @@ export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIE
 
 export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   const pC = sys.numPanels * panel.price;
-  const iC = inv.price;
+  // Si no hay inversor compatible en stock (inv=null) el costo va en 0 y la UI
+  // muestra "consultar stock". El presupuesto queda como referencia parcial.
+  const iC = inv?.price || 0;
   const bC = bUnit && bQty ? bQty * bUnit.price : 0;
   const sA = pC + iC + bC;
   const st = sys.numPanels * pricing.structure_per_panel;
@@ -776,10 +783,10 @@ export function selectCompatibleInverter(panel, kwp, sysType, inverters, opts = 
     if (byType.length) {
       return [...byType].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp))[0];
     }
-    // Último recurso — no existe nada del tipo correcto; devolver el inversor
-    // más cercano en potencia para evitar crash, la UI debe advertir.
-    const any = [...inverters].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp));
-    return any[0] || inverters[0];
+    // No existe ningún inversor del tipo correcto en el catálogo. Devolvemos null
+    // para que la UI muestre "consultar stock" en vez de un inversor incompatible
+    // (ej: un on-grid no sirve para off-grid porque no maneja banco de baterías).
+    return null;
   }
   const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
   const scored = pool.map(inv => {
@@ -827,7 +834,7 @@ export function autoInverter(kwp, sysType, inverters, panel) {
     if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
     return true;
   });
-  if (!pool.length) return inverters[0];
+  if (!pool.length) return null;
   const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
   const targetMin = kwp / range.max;
   const targetMax = kwp / range.min;
