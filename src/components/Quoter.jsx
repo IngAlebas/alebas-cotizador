@@ -116,6 +116,20 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [bgt, setBgt] = useState(null);
   const [done, setDone] = useState(false);
   const [resultTab, setResultTab] = useState('resumen');
+
+  // Genera un PDF de resumen ejecutivo técnico con el diálogo nativo del navegador.
+  // Renderiza una vista oculta normalmente (visible solo en @media print) — más
+  // limpio que un dump de los tabs y diseñado para A4 con identidad de marca.
+  const downloadQuotePDF = () => {
+    const cliente = (f.name || 'cliente').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase();
+    const fecha = new Date().toISOString().slice(0, 10);
+    const prevTitle = document.title;
+    document.title = `cotizacion-solar-${cliente}-${fecha}`;
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => { document.title = prevTitle; }, 300);
+    }, 50);
+  };
   const [loadPicker, setLoadPicker] = useState({ open: false, search: '', category: 'all' });
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
   const loadsPresets = (Array.isArray(loadsCatalog) && loadsCatalog.length) ? loadsCatalog : DEFAULT_LOADS_CATALOG;
@@ -2220,45 +2234,102 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               );
             })}
           </div>
-          {needsB && batt && f.battQty > 0 && (
-            <>
-              <div style={{ fontSize: 12, color: C.muted, margin: '4px 0 8px' }}>
-                Banco de baterías: {bankSeries}S × {bankParallel}P ·
-                {' '}bus DC a <span style={{ color: C.yellow }}>{bankSeries * batt.voltage} V</span> ·
-                {' '}total <span style={{ color: C.yellow }}>{(batt.kwh * f.battQty).toFixed(2)} kWh</span>
-                {bankOrphan > 0 && <span style={{ color: C.orange }}> · ⚠ {bankOrphan} sobrante{bankOrphan > 1 ? 's' : ''}</span>}
-              </div>
-              <div style={{ background: C.dark, border: `1px dashed ${C.yellow}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
-                {Array.from({ length: bankParallel }).map((_, pIdx) => (
-                  <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: pIdx < bankParallel - 1 ? 9 : 0 }}>
-                    <div style={{ fontSize: 12, color: C.yellow, fontWeight: 700, minWidth: 44, letterSpacing: 0.5 }}>P{pIdx + 1}</div>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
-                      {Array.from({ length: bankSeries }).map((_, sIdx) => (
-                        <React.Fragment key={sIdx}>
-                          <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 4, padding: '4px 8px', minWidth: 62, textAlign: 'center' }}>
-                            <div style={{ fontSize: 9, color: C.muted, lineHeight: 1 }}>🔋</div>
-                            <div style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>{batt.voltage}V</div>
-                            <div style={{ fontSize: 9, color: C.yellow }}>{batt.kwh}kWh</div>
-                          </div>
-                          {sIdx < bankSeries - 1 && (
-                            <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>—</div>
-                          )}
-                        </React.Fragment>
-                      ))}
+          {needsB && batt && f.battQty > 0 && (() => {
+            const totalKwh = +(batt.kwh * f.battQty).toFixed(2);
+            const busV = bankSeries * batt.voltage;
+            const branchKwh = +(bankSeries * batt.kwh).toFixed(2);
+            // Modo rack (compacto) cuando hay muchos equipos: la vista row-per-branch
+            // satura el scroll. Pasamos a grid 2D — más técnico (parece rack real) y
+            // más comercial (denso, escaneable, profesional).
+            const compact = f.battQty >= 6 || bankParallel >= 4;
+            const gridCols = Math.min(Math.max(bankParallel, 2), 6);
+            return (
+              <>
+                {/* Header brand-aware con totales del banco */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10,
+                  background: `linear-gradient(135deg, ${C.yellow}18, ${C.yellow}08)`,
+                  border: `1px solid ${C.yellow}44`, borderRadius: 8,
+                  padding: '10px 14px', marginBottom: 8, fontSize: 12,
+                }}>
+                  <span style={{ fontSize: 18 }}>🔋</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1.2, textTransform: 'uppercase', fontWeight: 700 }}>Banco de baterías</div>
+                    <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, lineHeight: 1.3 }}>
+                      Bus DC <span style={{ color: C.yellow }}>{busV} V</span> ·
+                      {' '}<span style={{ color: C.yellow }}>{totalKwh} kWh</span> ·
+                      {' '}{f.battQty} unidades
                     </div>
-                    <div style={{ fontSize: 11, color: C.muted, minWidth: 96, textAlign: 'right' }}>
-                      {bankSeries} en serie · {(bankSeries * batt.kwh).toFixed(2)} kWh
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                      Configuración <strong style={{ color: C.text }}>{bankSeries}S × {bankParallel}P</strong>
+                      {' '}· {batt.voltage}V · {batt.kwh} kWh por unidad
+                      {bankOrphan > 0 && <span style={{ color: C.orange }}> · ⚠ {bankOrphan} sobrante{bankOrphan > 1 ? 's' : ''}</span>}
                     </div>
                   </div>
-                ))}
-                {bankParallel > 1 && (
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.yellow}33`, fontSize: 10, color: C.muted, textAlign: 'center', letterSpacing: 0.5 }}>
-                    ↕ {bankParallel} ramas en paralelo al bus {bankSeries * batt.voltage}V
+                </div>
+
+                {compact ? (
+                  /* Modo rack: grid 2D — máx 6 columnas, celdas densas con número y specs. */
+                  <div style={{ background: C.dark, border: `1px dashed ${C.yellow}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${gridCols}, 1fr)`, gap: 6 }}>
+                      {Array.from({ length: f.battQty }).map((_, idx) => {
+                        const branch = Math.floor(idx / bankSeries) + 1;
+                        const seriesPos = (idx % bankSeries) + 1;
+                        return (
+                          <div key={idx} style={{
+                            background: `${C.yellow}1a`,
+                            border: `1px solid ${C.yellow}88`,
+                            borderRadius: 6, padding: '8px 6px', textAlign: 'center',
+                          }}>
+                            <div style={{ fontSize: 8, color: C.muted, fontWeight: 600, marginBottom: 2 }}>
+                              #{idx + 1}{bankSeries > 1 ? ` · S${seriesPos}/P${branch}` : ''}
+                            </div>
+                            <div style={{ fontSize: 12, color: '#fff', fontWeight: 800, lineHeight: 1 }}>{batt.voltage}V</div>
+                            <div style={{ fontSize: 10, color: C.yellow, fontWeight: 700, marginTop: 2 }}>{batt.kwh} kWh</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.yellow}33`, fontSize: 10, color: C.muted, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                      <span>↕ <strong style={{ color: C.text }}>{bankParallel}</strong> ramas en paralelo al bus {busV}V</span>
+                      {bankSeries > 1 && <span>⇒ <strong style={{ color: C.text }}>{bankSeries}</strong> en serie por rama · {branchKwh} kWh/rama</span>}
+                    </div>
+                  </div>
+                ) : (
+                  /* Modo row-per-branch para configuraciones pequeñas (≤5 ramas, <6 baterías). */
+                  <div style={{ background: C.dark, border: `1px dashed ${C.yellow}55`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                    {Array.from({ length: bankParallel }).map((_, pIdx) => (
+                      <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: pIdx < bankParallel - 1 ? 9 : 0 }}>
+                        <div style={{ fontSize: 12, color: C.yellow, fontWeight: 700, minWidth: 44, letterSpacing: 0.5 }}>P{pIdx + 1}</div>
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+                          {Array.from({ length: bankSeries }).map((_, sIdx) => (
+                            <React.Fragment key={sIdx}>
+                              <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 4, padding: '4px 8px', minWidth: 62, textAlign: 'center' }}>
+                                <div style={{ fontSize: 9, color: C.muted, lineHeight: 1 }}>🔋</div>
+                                <div style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>{batt.voltage}V</div>
+                                <div style={{ fontSize: 9, color: C.yellow }}>{batt.kwh}kWh</div>
+                              </div>
+                              {sIdx < bankSeries - 1 && (
+                                <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700 }}>—</div>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.muted, minWidth: 96, textAlign: 'right' }}>
+                          {bankSeries} en serie · {branchKwh} kWh
+                        </div>
+                      </div>
+                    ))}
+                    {bankParallel > 1 && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.yellow}33`, fontSize: 10, color: C.muted, textAlign: 'center', letterSpacing: 0.5 }}>
+                        ↕ {bankParallel} ramas en paralelo al bus {busV}V
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            </>
-          )}
+              </>
+            );
+          })()}
           {(() => {
             // Diagrama gráfico del sistema. Se ajusta al systemType:
             //  - on-grid:  Sol → Inversor → Casa  (+ Red si hay excedentes/AGPE)
@@ -2900,9 +2971,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               Siguiente: {TAB_LABEL[TAB_ORDER[TAB_ORDER.indexOf(resultTab) + 1]]} →
             </button>
           ) : (
-            <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={submit}>
-              Solicitar propuesta detallada →
-            </button>
+            <>
+              <button
+                style={{ ...ss.ghost, fontSize: 13, padding: '12px 22px', borderColor: `${C.yellow}66`, color: C.yellow }}
+                onClick={downloadQuotePDF}
+                title="Genera un resumen ejecutivo técnico en PDF — guárdalo o envíalo">
+                ↓ Descargar PDF
+              </button>
+              <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={submit}>
+                Solicitar propuesta detallada →
+              </button>
+            </>
           )}
         </div>
         {(showNormativo || showObservaciones) && (
@@ -2911,6 +2990,159 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
           </div>
         )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            PDF EJECUTIVO — solo visible en @media print.
+            Resumen técnico-comercial estructurado para A4 con identidad SolarHub.
+            ═══════════════════════════════════════════════════════════════════ */}
+        <div className="al-pdf-summary">
+          {/* Cabecera con marca */}
+          <div className="al-pdf-header">
+            <img src={logo} alt="SolarHub by ALEBAS" />
+            <div>
+              <h1>Cotización Solar Fotovoltaica</h1>
+              <p>El ecosistema solar de Colombia</p>
+            </div>
+            <div className="al-pdf-quote-id">
+              <div>Cotización #{Date.now().toString().slice(-8)}</div>
+              <div>{new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+            </div>
+          </div>
+
+          {/* Datos del cliente */}
+          <section className="al-pdf-section">
+            <h2>Cliente</h2>
+            <table className="al-pdf-table">
+              <tbody>
+                <tr><td>Nombre</td><td>{f.name || '—'}</td></tr>
+                {f.company && <tr><td>Empresa</td><td>{f.company}</td></tr>}
+                <tr><td>Dirección</td><td>{f.address || '—'} · {dest.city}, {dest.dept}</td></tr>
+                <tr><td>Email</td><td>{f.email || '—'}</td></tr>
+                <tr><td>Teléfono</td><td>{f.phone || '—'}</td></tr>
+                <tr><td>Operador de red</td><td>{operator.name}</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* Resumen ejecutivo: numbers grandes */}
+          <section className="al-pdf-section">
+            <h2>Resumen ejecutivo</h2>
+            <div className="al-pdf-kpi-grid">
+              <div className="al-pdf-kpi"><span>Sistema</span><strong>{res.actKwp} kWp</strong><small>{f.systemType}</small></div>
+              <div className="al-pdf-kpi"><span>Generación anual</span><strong>{(res.productionSources?.length ? Math.round(res.productionSources.reduce((a,s)=>a+s.kwh,0)/res.productionSources.length) : res.kwhYear || 0).toLocaleString('es-CO')} kWh</strong><small>{res.productionSource}</small></div>
+              {bgt?.sav > 0 && <div className="al-pdf-kpi"><span>Ahorro anual</span><strong>{fmtCOP(bgt.sav)}</strong><small>tarifa {operator.name}</small></div>}
+              {bgt?.tot > 0 && <div className="al-pdf-kpi"><span>Inversión</span><strong>{fmtCOP(bgt.tot)}</strong><small>{bgt.budgetUsd ? `≈ USD ${fmt(bgt.budgetUsd)}` : ''}</small></div>}
+              {bgt?.roi > 0 && <div className="al-pdf-kpi"><span>Retorno</span><strong>{bgt.roi} años</strong><small>ROI estimado</small></div>}
+              <div className="al-pdf-kpi"><span>Cobertura</span><strong>{res.cov}%</strong><small>{res.sizedFor === 'area' ? 'limitado por área' : res.sizedFor === 'excedentes' ? 'incl. excedentes AGPE' : 'cubre consumo'}</small></div>
+            </div>
+          </section>
+
+          {/* Equipos */}
+          <section className="al-pdf-section">
+            <h2>Configuración técnica</h2>
+            <table className="al-pdf-table">
+              <tbody>
+                <tr><td>Paneles</td><td>{panel.brand} {panel.model} · {panel.wp} Wp × <strong>{res.numPanels}</strong> ({(res.numPanels * panel.wp / 1000).toFixed(2)} kWp DC)</td></tr>
+                <tr><td>Strings</td><td><strong>{res.ns}</strong> string{res.ns > 1 ? 's' : ''} · {res.ppss} paneles/string</td></tr>
+                {res.inv && <tr><td>Inversor</td><td>{res.inv.brand} {res.inv.model} · {res.inv.power} kW · {res.inv.phase === 3 ? 'Trifásico' : res.inv.phase === 2 ? 'Bifásico' : 'Monofásico'}</td></tr>}
+                {needsB && batt && f.battQty > 0 && <tr><td>Banco baterías</td><td>{batt.brand} {batt.model} · {batt.voltage}V · {batt.kwh} kWh × <strong>{f.battQty}</strong> ({bankSeries}S × {bankParallel}P · bus {bankSeries * batt.voltage}V · {(batt.kwh * f.battQty).toFixed(2)} kWh totales)</td></tr>}
+                <tr><td>Acometida</td><td>{ACOMETIDA_INFO[f.acometida]?.label || f.acometida}</td></tr>
+                <tr><td>Área del techo</td><td>{f.availableArea ? `${f.availableArea} m² declarados` : 'no especificada'}{f.googleAreaM2 ? ` · ${Math.round(f.googleAreaM2)} m² aprovechables (Google Solar)` : ''}</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* Estimación de generación */}
+          {res.productionSources?.length > 0 && (
+            <section className="al-pdf-section">
+              <h2>Estimación de generación</h2>
+              <p className="al-pdf-lead">
+                Promedio aplicado al pre-dimensionamiento: <strong>{Math.round(res.productionSources.reduce((a,s)=>a+s.kwh,0)/res.productionSources.length).toLocaleString('es-CO')} kWh/año</strong>{' '}
+                ({res.productionSources.length} fuente{res.productionSources.length > 1 ? 's' : ''} consultada{res.productionSources.length > 1 ? 's' : ''})
+              </p>
+              <table className="al-pdf-table">
+                <thead><tr><th>Fuente</th><th>kWh/año</th><th>Metodología</th></tr></thead>
+                <tbody>
+                  {res.productionSources.map(s => (
+                    <tr key={s.name}>
+                      <td><strong>{s.name}</strong></td>
+                      <td>{s.kwh.toLocaleString('es-CO')}</td>
+                      <td>
+                        {s.name === 'Google Solar' && res.googleSolarEstimate?.methodology}
+                        {s.name === 'PVWatts' && 'NREL TMY3 · pérdidas reales'}
+                        {s.name === 'PVGIS' && 'JRC TMY satelital'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {res.productionDispersion ? (
+                <p className="al-pdf-warn">⚠ Discrepancia entre fuentes: {res.productionDispersion.pct}%. Validar con instalador para diseño detallado.</p>
+              ) : res.productionSources.length >= 2 ? (
+                <p className="al-pdf-info">✓ Convergencia &lt;15% entre fuentes — dimensionamiento robusto.</p>
+              ) : null}
+            </section>
+          )}
+
+          {/* Análisis del techo */}
+          {f.roofConfidence != null && (
+            <section className="al-pdf-section">
+              <h2>Análisis del techo (Google Solar)</h2>
+              <table className="al-pdf-table">
+                <tbody>
+                  <tr><td>Confianza del análisis</td><td><strong>{Math.round(f.roofConfidence * 100)}%</strong> {f.roofImageryQuality && `· imagery ${f.roofImageryQuality}`}</td></tr>
+                  {f.googleAreaM2 && <tr><td>Área aprovechable</td><td>{Math.round(f.googleAreaM2)} m² (excluye bordes, obstáculos, pendientes inviables)</td></tr>}
+                  {f.roofWholeAreaM2 && <tr><td>Área total del techo</td><td>{Math.round(f.roofWholeAreaM2)} m² (con pendiente)</td></tr>}
+                  {f.roofTiltDeg != null && <tr><td>Orientación</td><td>{f.roofAzimuthDeg}° azimuth · {f.roofTiltDeg}° inclinación</td></tr>}
+                  {f.sunshineHoursYear && <tr><td>Horas sol/año</td><td>{Math.round(f.sunshineHoursYear).toLocaleString('es-CO')} h</td></tr>}
+                  {f.shadeIndex != null && <tr><td>Sombreado</td><td>{Math.round((1 - f.shadeIndex) * 100)}% (índice {f.shadeIndex.toFixed(2)})</td></tr>}
+                  {res.googleSolarEstimate && <tr><td>Configuración óptima Google</td><td>{res.googleSolarEstimate.bestConfigPanels} paneles · {res.googleSolarEstimate.bestConfigKwp} kWp · vida útil {res.googleSolarEstimate.panelLifetimeYears} años</td></tr>}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {/* Inversión */}
+          {bgt?.tot > 0 && (
+            <section className="al-pdf-section">
+              <h2>Inversión</h2>
+              <table className="al-pdf-table">
+                <tbody>
+                  {bgt.eq > 0 && <tr><td>Equipos</td><td>{fmtCOP(bgt.eq)}</td></tr>}
+                  {bgt.transport > 0 && <tr><td>Transporte ({bgt.transportCarrier})</td><td>{fmtCOP(bgt.transport)}</td></tr>}
+                  <tr className="al-pdf-total"><td>Total</td><td>{fmtCOP(bgt.tot)}</td></tr>
+                  {bgt.budgetUsd && <tr><td>Equivalente USD</td><td>USD {fmt(bgt.budgetUsd)} (TRM {bgt.trmDate})</td></tr>}
+                </tbody>
+              </table>
+              <p className="al-pdf-info">El precio incluye equipos y transporte. La instalación, ingeniería y permisos se cotizan según el alcance final del proyecto.</p>
+            </section>
+          )}
+
+          {/* Marco normativo */}
+          <section className="al-pdf-section">
+            <h2>Marco normativo aplicable</h2>
+            <ul className="al-pdf-list">
+              <li>RETIE — instalación eléctrica certificada</li>
+              {agpe?.excedentes > 0 && <li>CREG 174-2021 — Régimen AGPE {agpe.agpeCategory || 'Mayor'}</li>}
+              <li>Ley 1715/2014 — incentivos tributarios para FNCE (deducción renta + IVA + arancel)</li>
+              {f.systemType !== 'on-grid' && <li>NTC 2050 (capítulo 6) — sistemas autónomos y de respaldo</li>}
+            </ul>
+          </section>
+
+          {/* Footer */}
+          <div className="al-pdf-footer">
+            <div>
+              <strong>SolarHub by ALEBAS Ingeniería SAS</strong><br />
+              info@alebas.co · solar-hub.co<br />
+              Villavicencio, Meta · Colombia
+            </div>
+            <div className="al-pdf-disclaimer">
+              Esta cotización es una estimación basada en datos públicos (Google Solar, PVGIS, PVWatts, NASA POWER, XM)
+              y modelos de pre-dimensionamiento. La propuesta detallada y firmada requiere visita técnica del
+              ingeniero SolarHub. Validez: 15 días corridos desde la fecha de emisión.
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
