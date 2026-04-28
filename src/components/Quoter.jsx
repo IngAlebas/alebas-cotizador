@@ -102,7 +102,7 @@ const STEPS = ['Tipo', 'Contacto', 'Consumo', 'Transporte', 'Resultado'];
 // con un timer para dar feedback de progreso (similar a Vercel/Cursor).
 const AI_STEPS = [
   'Empaquetando datos del sistema',
-  'Consultando modelo (Groq → Gemini → Claude)',
+  'Consultando modelo (Groq → Gemini → Mistral → Claude)',
   'Validando RETIE / CREG 174-2021 / AGPE',
   'Detectando alertas de dimensionamiento',
   'Generando recomendaciones técnicas',
@@ -2704,6 +2704,42 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           }
           if (areaLimited) {
             obs.push({ type: 'warn', title: `Cobertura parcial (${res.cov}%) por área disponible`, text: `El techo declarado (${area} m²) no alcanza para el 100% de tu consumo. Se requerirían ~${idealArea} m² para cubrir ${f.monthlyKwh} kWh/mes. Alternativas: ampliar área, usar paneles de mayor eficiencia o complementar con un segundo sistema.` });
+          }
+          // Análisis del área disponible vs. la medición real de Google Solar.
+          if (f.googleAreaM2 != null && area > 0) {
+            const gArea = Math.round(f.googleAreaM2);
+            const diff = area - gArea;
+            const pctDiff = Math.abs(diff) / gArea * 100;
+            if (pctDiff > 10) {
+              if (diff < 0) {
+                obs.push({ type: 'info', title: `Área declarada (${area} m²) menor que el aprovechable detectado (${gArea} m²)`, text: `Google Solar identifica ~${gArea} m² aprovechables para paneles en este techo (excluye obstáculos, bordes, pendientes inviables). Tu valor declarado de ${area} m² implica una limitación voluntaria — paneles existentes, vista preservada, arrendamiento parcial, etc. Puedes recuperar hasta ${Math.abs(diff)} m² adicionales si la limitación es ajustable.` });
+              } else {
+                obs.push({ type: 'warn', title: `Área declarada (${area} m²) mayor que el aprovechable detectado (${gArea} m²)`, text: `Google Solar reporta solo ~${gArea} m² aprovechables. Tu valor declarado de ${area} m² podría estar sobrestimando si incluye obstáculos, bordes, pendientes >35° o zonas con sombra crítica. Validar en sitio con instalador antes del diseño detallado.` });
+              }
+            }
+          }
+          // Estimaciones Google Solar — siempre informar al cliente cuando hay datos.
+          if (res.googleSolarEstimate?.specificYieldKwhPerKwpYear) {
+            const gse = res.googleSolarEstimate;
+            obs.push({
+              type: 'info',
+              title: `Estimación Google Solar — ${gse.specificYieldKwhPerKwpYear} kWh/kWp/año`,
+              text: `Modelo 3D del techo (${gse.methodology}) calcula ${gse.bestConfigKwp} kWp óptimos con ${gse.bestConfigPanels} paneles de ${gse.panelCapacityWatts} W (default Google), generando ${gse.yearlyEnergyDcKwh.toLocaleString('es-CO')} kWh/año DC. Vida útil estimada: ${gse.panelLifetimeYears} años. Valor escalado al panel real elegido para el pre-dimensionamiento.`
+            });
+          }
+          // Dispersión multi-fuente — alerta si las estimaciones de producción difieren >15%.
+          if (res.productionDispersion) {
+            obs.push({
+              type: 'warn',
+              title: `Discrepancia ${res.productionDispersion.pct}% entre fuentes de producción`,
+              text: `Las fuentes consultadas (${res.productionSources?.map(s => s.name).join(', ') || 'múltiples'}) reportan rangos de ${res.productionDispersion.min.toLocaleString('es-CO')}–${res.productionDispersion.max.toLocaleString('es-CO')} kWh/año. El pre-dimensionamiento usa el promedio para reducir sesgo. Para diseño detallado, validar con instalador en sitio considerando sombras estacionales y soiling.`
+            });
+          } else if (res.productionSources?.length >= 2) {
+            obs.push({
+              type: 'info',
+              title: `Producción validada por ${res.productionSources.length} fuentes`,
+              text: `${res.productionSources.map(s => `${s.name}: ${s.kwh.toLocaleString('es-CO')} kWh/año`).join(' · ')}. Convergencia <15% entre fuentes — dimensionamiento robusto.`
+            });
           }
           if (f.systemType === 'off-grid' && res.mp > (parseFloat(f.monthlyKwh) || 0) * 1.1) {
             obs.push({ type: 'info', title: 'Excedente off-grid no monetizable', text: 'El sistema genera más que el consumo. Al no estar conectado al SIN, el excedente se desperdicia (dump load). Considera cargas diferibles: bombeo, termotanque, climatización o ampliar banco.' });
