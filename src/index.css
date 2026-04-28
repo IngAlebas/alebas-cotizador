@@ -344,3 +344,57 @@ button:active { transform: scale(0.97); }
 @media (display-mode: standalone) {
   .al-only-browser { display: none !important; }
 }
+
+/* ══════════════════════════════════════
+   PRINT — descarga PDF vía window.print()
+   El cliente arma el PDF desde el diálogo nativo del navegador.
+══════════════════════════════════════ */
+@media print {
+  /* Forzar colores del brand (Chrome respeta solo si hay -webkit-print-color-adjust). */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  /* Ocultar todo lo que no aporta a la cotización impresa. */
+  .al-nav, .al-topnav, .al-bottomnav, .al-footer, .al-no-print,
+  noscript, .leaflet-container, .gm-style {
+    display: none !important;
+  }
+  /* Fondo claro para ahorro de tinta. */
+  html, body { background: #fff !important; color: #07090F !important; }
+  /* Tarjetas: borde sutil + fondo blanco para legibilidad en papel. */
+  .al-card,
+  [style*="background: rgb(12, 20, 34)"],
+  [style*="background:#0C1422"] {
+    background: #fff !important;
+    border-color: #1a3650 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
+  /* Texto siempre legible al imprimir, sin perder los acentos del brand. */
+  body, p, span, div, li {
+    color: #07090F !important;
+  }
+  /* Headers brand-aware (mantenemos teal para títulos). */
+  h1, h2, h3 { color: #01708B !important; page-break-after: avoid; }
+  /* Permitir que cada tab principal arranque en página nueva — evita partir cards. */
+  .al-print-section {
+    page-break-before: always;
+    break-before: page;
+  }
+  .al-print-section:first-child {
+    page-break-before: auto;
+    break-before: auto;
+  }
+  /* Imágenes y mapas estáticos a tamaño completo de página. */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+  /* Tipografía optimizada para papel. */
+  @page {
+    size: A4 portrait;
+    margin: 14mm 12mm;
+  }
+}

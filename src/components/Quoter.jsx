@@ -116,6 +116,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [bgt, setBgt] = useState(null);
   const [done, setDone] = useState(false);
   const [resultTab, setResultTab] = useState('resumen');
+  const [printMode, setPrintMode] = useState(false);
+
+  // Genera un PDF descargable usando el diálogo nativo del navegador (zero deps).
+  // Renderiza todos los tabs en una sola página, llama window.print(), y restaura.
+  const downloadQuotePDF = () => {
+    setPrintMode(true);
+    setTimeout(() => {
+      const cliente = (f.name || 'cliente').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase();
+      const fecha = new Date().toISOString().slice(0, 10);
+      const prevTitle = document.title;
+      document.title = `cotizacion-solar-${cliente}-${fecha}`;
+      window.print();
+      document.title = prevTitle;
+      setTimeout(() => setPrintMode(false), 200);
+    }, 250);
+  };
   const [loadPicker, setLoadPicker] = useState({ open: false, search: '', category: 'all' });
   const u = (k, v) => setF(p => ({ ...p, [k]: v }));
   const loadsPresets = (Array.isArray(loadsCatalog) && loadsCatalog.length) ? loadsCatalog : DEFAULT_LOADS_CATALOG;
@@ -1615,11 +1631,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     ];
     const TAB_ORDER = ['resumen', 'tecnico', 'presupuesto', 'normativo', 'observaciones'];
     const TAB_LABEL = { resumen: 'Resumen', tecnico: 'Técnico', presupuesto: 'Presupuesto', normativo: 'Marco normativo', observaciones: 'Observaciones' };
-    const showResumen = resultTab === 'resumen';
-    const showTecnico = resultTab === 'tecnico';
-    const showPresupuesto = resultTab === 'presupuesto';
-    const showNormativo = resultTab === 'normativo';
-    const showObservaciones = resultTab === 'observaciones';
+    // En printMode mostramos TODAS las secciones simultáneamente para generar el PDF
+    // de una pieza, sin que el cliente tenga que navegar tab por tab.
+    const showResumen = printMode || resultTab === 'resumen';
+    const showTecnico = printMode || resultTab === 'tecnico';
+    const showPresupuesto = printMode || resultTab === 'presupuesto';
+    const showNormativo = printMode || resultTab === 'normativo';
+    const showObservaciones = printMode || resultTab === 'observaciones';
     return (
       <div style={ss.wrap}>
         <div style={{ ...ss.card, textAlign: 'center', padding: '22px', borderColor: C.teal }}>
@@ -2900,9 +2918,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               Siguiente: {TAB_LABEL[TAB_ORDER[TAB_ORDER.indexOf(resultTab) + 1]]} →
             </button>
           ) : (
-            <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={submit}>
-              Solicitar propuesta detallada →
-            </button>
+            <>
+              <button
+                className="al-no-print"
+                style={{ ...ss.ghost, fontSize: 13, padding: '12px 22px', borderColor: `${C.yellow}66`, color: C.yellow }}
+                onClick={downloadQuotePDF}
+                title="Descarga la cotización en PDF — guárdala o envíala antes de pedir la propuesta detallada">
+                ↓ Descargar PDF
+              </button>
+              <button style={{ ...ss.btn, fontSize: 14, padding: '13px 36px' }} onClick={submit}>
+                Solicitar propuesta detallada →
+              </button>
+            </>
           )}
         </div>
         {(showNormativo || showObservaciones) && (
