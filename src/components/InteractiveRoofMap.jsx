@@ -65,8 +65,7 @@ export default function InteractiveRoofMap({
       cancelled = true;
       try { circleRef.current && circleRef.current.setMap(null); } catch (_) {}
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line
 
   // Sync externo: si el padre cambia lat/lon (ej. tras re-lookup, GPS, autocomplete),
   // mover marcador y recentrar. Evita reposicionar si la coord es la que acabamos
