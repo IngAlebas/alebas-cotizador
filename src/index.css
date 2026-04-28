@@ -344,3 +344,229 @@ button:active { transform: scale(0.97); }
 @media (display-mode: standalone) {
   .al-only-browser { display: none !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   PDF — Resumen ejecutivo descargable (.al-pdf-summary)
+   En pantalla: oculto (display: none)
+   En @media print: única vista visible, formato A4 brand-aware.
+══════════════════════════════════════════════════════════════════ */
+.al-pdf-summary { display: none; }
+
+@media print {
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Ocultar todo lo que no sea el PDF executive */
+  body > *:not(.al-pdf-only-wrapper) { display: none !important; }
+  .al-nav, .al-topnav, .al-bottomnav, .al-footer, noscript {
+    display: none !important;
+  }
+  /* Mostrar solo el PDF summary */
+  .al-pdf-summary {
+    display: block !important;
+    background: #fff;
+    color: #07090F;
+    font-family: 'Outfit', system-ui, sans-serif;
+    font-size: 10pt;
+    line-height: 1.4;
+    max-width: 100%;
+  }
+  /* Ocultar el resto del Quoter en print */
+  body { background: #fff !important; }
+  .al-pdf-summary ~ *, .al-pdf-summary + * { display: none !important; }
+
+  /* PDF — Cabecera */
+  .al-pdf-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 3px solid #FF8C00;
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+  }
+  .al-pdf-header img {
+    height: 50px;
+    width: auto;
+    object-fit: contain;
+  }
+  .al-pdf-header h1 {
+    font-size: 18pt;
+    color: #01708B;
+    margin: 0;
+    line-height: 1.1;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .al-pdf-header p {
+    font-size: 9pt;
+    color: #555;
+    margin: 2px 0 0;
+    font-weight: 500;
+  }
+  .al-pdf-quote-id {
+    margin-left: auto;
+    text-align: right;
+    font-size: 8.5pt;
+    color: #555;
+    line-height: 1.4;
+  }
+  .al-pdf-quote-id div:first-child {
+    font-weight: 700;
+    color: #07090F;
+    font-size: 9.5pt;
+  }
+
+  /* PDF — Secciones */
+  .al-pdf-section {
+    margin-bottom: 16px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .al-pdf-section h2 {
+    font-size: 11.5pt;
+    color: #fff;
+    background: linear-gradient(90deg, #01708B, #015d75);
+    padding: 6px 12px;
+    margin: 0 0 8px;
+    border-radius: 3px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  /* PDF — Tablas */
+  .al-pdf-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+  }
+  .al-pdf-table thead th {
+    background: #FF8C0010;
+    color: #07090F;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1.5px solid #FF8C00;
+    font-weight: 700;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .al-pdf-table tbody tr {
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .al-pdf-table tbody td {
+    padding: 6px 10px;
+    vertical-align: top;
+  }
+  .al-pdf-table tbody td:first-child {
+    font-weight: 600;
+    color: #01708B;
+    width: 32%;
+  }
+  .al-pdf-table tbody tr.al-pdf-total td {
+    background: #FF8C0015;
+    font-weight: 800;
+    border-top: 2px solid #FF8C00;
+    font-size: 11pt;
+  }
+
+  /* PDF — KPI grid (resumen ejecutivo) */
+  .al-pdf-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .al-pdf-kpi {
+    background: linear-gradient(135deg, #FF8C0008, #01708B05);
+    border: 1px solid #FF8C0044;
+    border-radius: 4px;
+    padding: 10px 12px;
+    page-break-inside: avoid;
+  }
+  .al-pdf-kpi span {
+    display: block;
+    font-size: 7.5pt;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+  .al-pdf-kpi strong {
+    display: block;
+    font-size: 13pt;
+    color: #07090F;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .al-pdf-kpi small {
+    display: block;
+    font-size: 7.5pt;
+    color: #555;
+    margin-top: 3px;
+  }
+
+  /* PDF — Texto auxiliar */
+  .al-pdf-lead {
+    font-size: 10pt;
+    color: #07090F;
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    background: #01708B08;
+    border-left: 3px solid #01708B;
+    border-radius: 0 3px 3px 0;
+  }
+  .al-pdf-warn {
+    font-size: 9pt;
+    color: #B45309;
+    margin: 8px 0 0;
+    padding: 6px 10px;
+    background: #FFF7ED;
+    border-left: 3px solid #FF8C00;
+    border-radius: 0 3px 3px 0;
+  }
+  .al-pdf-info {
+    font-size: 9pt;
+    color: #065F46;
+    margin: 8px 0 0;
+    padding: 6px 10px;
+    background: #ECFDF5;
+    border-left: 3px solid #059669;
+    border-radius: 0 3px 3px 0;
+  }
+  .al-pdf-list {
+    margin: 4px 0 0 18px;
+    padding: 0;
+    font-size: 9.5pt;
+  }
+  .al-pdf-list li {
+    margin-bottom: 3px;
+  }
+
+  /* PDF — Footer */
+  .al-pdf-footer {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 2px solid #01708B;
+    font-size: 8pt;
+    color: #555;
+    page-break-inside: avoid;
+  }
+  .al-pdf-footer strong {
+    color: #01708B;
+    font-size: 9pt;
+  }
+  .al-pdf-disclaimer {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #e0e0e0;
+    font-style: italic;
+    line-height: 1.4;
+  }
+
+  /* @page A4 */
+  @page {
+    size: A4 portrait;
+    margin: 14mm 12mm;
+  }
+}
