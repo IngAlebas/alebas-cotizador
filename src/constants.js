@@ -13,11 +13,26 @@ export const C = {
   text:   '#e8f4f7', muted: '#7a9eaa',
   green:  '#4ade80', red: '#f87171',
 
-  // FluxAI brand (marca hermana ALEBAS — monitoreo solar). Colores oficiales
-  // tomados del logo SVG. Usar para chips/CTAs/blocks que referencien FluxAI.
+  // FluxAI brand (marca hermana ALEBAS — monitoreo solar).
   fluxBlue:  '#0044A4',
   fluxGreen: '#00C781',
   fluxAccent:'#0C62DC',
+};
+
+// ==================== MATERIALES DE TECHO ====================
+// Tipos comunes en Colombia con datos para el sistema de montaje y la IA.
+//   weightKgM2       — peso del material existente (datos de carga adicional sobre estructura)
+//   mountingType     — tipo de estructura recomendado para PV
+//   notes            — consideraciones técnicas / normativas
+//   structuralRisk   — bandera para sistemas que requieren cálculo estructural reforzado
+export const ROOF_MATERIALS = {
+  zinc:           { label: 'Zinc / lámina ondulada', icon: '⌒',  weightKgM2: 5,   mountingType: 'gancho-zinc',  notes: 'Estructura metálica simple. Sellantes butyl en cada perforación.' },
+  lamina:         { label: 'Lámina galvanizada',     icon: '〰',  weightKgM2: 7,   mountingType: 'gancho-trapezoidal', notes: 'Trapezoidal/standing-seam con clamps que no perforan.' },
+  termoacustica:  { label: 'Termoacústica',          icon: '▦',   weightKgM2: 12,  mountingType: 'tornillo-autoperforante', notes: 'Sandwich panel. Tornillos especiales con goma EPDM.' },
+  losa:           { label: 'Losa de concreto',       icon: '▰',   weightKgM2: 0,   mountingType: 'lastrado-o-anclaje-quimico', notes: 'Sistema lastrado o anclajes químicos. Permite cualquier orientación con estructura inclinada.' },
+  barro:          { label: 'Teja de barro',          icon: '⌇',   weightKgM2: 50,  mountingType: 'gancho-teja-cerámica', structuralRisk: true, notes: 'Frágil. Estructura debe soportar carga viva + paneles + acceso. Cálculo estructural recomendado.' },
+  eternit:        { label: 'Eternit / fibrocemento', icon: '∿',   weightKgM2: 14,  mountingType: 'gancho-asbesto-cemento', structuralRisk: true, notes: 'Ley 1968/2019 prohíbe NUEVAS instalaciones de asbesto. Si el techo existente es de Eternit con asbesto, requiere protocolo de manejo seguro y considerar reemplazo previo.' },
+  otro:           { label: 'Otro / no sé',           icon: '?',   weightKgM2: null, mountingType: 'evaluar-en-sitio', notes: 'Un ingeniero ALEBAS evaluará en visita técnica.' },
 };
 
 // ==================== OPERATORS DE RED (OR) ====================
