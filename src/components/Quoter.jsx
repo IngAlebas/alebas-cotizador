@@ -1480,6 +1480,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     const out = await aiRecommend('review', {
                       systemType: f.systemType,
                       monthlyKwh: Number(f.monthlyKwh),
+                      // Estado actual de campos aplicables — el sanitizer los compara con
+                      // las propuestas del modelo para descartar valores iguales o inválidos.
+                      acometida: f.acometida,
+                      busVoltage: needsB ? f.busVoltage : null,
+                      wantsExcedentes: !!f.wantsExcedentes,
                       operator: operator.name, psh,
                       location: { dept: dest.dept, city: dest.city, lat: f.lat, lon: f.lon, address: f.address || roofQuery || '' },
                       panel: { brand: panel.brand, model: panel.model, wp: panel.wp },
