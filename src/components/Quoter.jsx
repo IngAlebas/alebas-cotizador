@@ -3091,6 +3091,63 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </table>
           </section>
 
+          {/* Layout del sistema — visual de strings + banco de baterías */}
+          <section className="al-pdf-section">
+            <h2>Layout del sistema</h2>
+            <p className="al-pdf-lead">
+              <strong>{res.numPanels} paneles</strong> distribuidos en <strong>{res.ns} string{res.ns > 1 ? 's' : ''}</strong> de {res.ppss} paneles c/u
+              {res.inv && <> · inversor <strong>{res.inv.brand} {res.inv.model}</strong> ({res.inv.power} kW {res.inv.phase === 3 ? 'trifásico' : res.inv.phase === 2 ? 'bifásico' : 'monofásico'})</>}
+              {needsB && batt && f.battQty > 0 && <> · banco <strong>{f.battQty}× {batt.brand} {batt.model}</strong> ({(batt.kwh * f.battQty).toFixed(1)} kWh @ {bankSeries * batt.voltage}V)</>}
+            </p>
+
+            {/* Strings — visual rectangular */}
+            <div className="al-pdf-layout-strings">
+              {Array.from({ length: res.ns }).map((_, sIdx) => {
+                const remaining = res.numPanels - sIdx * res.ppss;
+                const panelsInString = Math.min(res.ppss, remaining);
+                const colors = ['#01708B', '#FF8C00', '#4ade80', '#fb923c', '#a78bfa', '#f472b6'];
+                const col = colors[sIdx % colors.length];
+                return (
+                  <div key={sIdx} className="al-pdf-string-row">
+                    <div className="al-pdf-string-label" style={{ color: col, borderColor: col }}>ST{sIdx + 1}</div>
+                    <div className="al-pdf-string-panels">
+                      {Array.from({ length: panelsInString }).map((_, pIdx) => (
+                        <div key={pIdx} className="al-pdf-panel-cell" style={{ background: `${col}33`, borderColor: col }} />
+                      ))}
+                    </div>
+                    <div className="al-pdf-string-count">{panelsInString} × {panel.wp}W = {(panelsInString * panel.wp / 1000).toFixed(2)} kWp</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Banco de baterías — rack visual */}
+            {needsB && batt && f.battQty > 0 && (() => {
+              const totalKwh = +(batt.kwh * f.battQty).toFixed(1);
+              const busV = bankSeries * batt.voltage;
+              const ah = batt.voltage > 0 ? Math.round(batt.kwh * 1000 / batt.voltage) : null;
+              const gridCols = Math.min(Math.max(bankParallel, 2), 6);
+              return (
+                <div className="al-pdf-batt-rack">
+                  <div className="al-pdf-batt-header">
+                    Banco DC {busV}V · {totalKwh} kWh totales · {bankSeries}S × {bankParallel}P
+                    {ah ? ` · ${ah} Ah por unidad` : ''}
+                    {batt.maxDischargeA ? ` · ${batt.maxDischargeA}A descarga máx` : ''}
+                  </div>
+                  <div className="al-pdf-batt-grid" style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)` }}>
+                    {Array.from({ length: f.battQty }).map((_, idx) => (
+                      <div key={idx} className="al-pdf-batt-cell">
+                        <div className="al-pdf-batt-num">#{idx + 1}</div>
+                        <div className="al-pdf-batt-spec">{batt.voltage}V</div>
+                        <div className="al-pdf-batt-kwh">{batt.kwh} kWh</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </section>
+
           {/* Estimación de generación */}
           {res.productionSources?.length > 0 && (
             <section className="al-pdf-section">
@@ -3123,10 +3180,26 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </section>
           )}
 
-          {/* Análisis del techo */}
+          {/* Análisis del techo + imagen satelital */}
           {f.roofConfidence != null && (
             <section className="al-pdf-section">
               <h2>Análisis del techo (Google Solar)</h2>
+              {(f.roofStaticMapHDUrl || f.roofStaticMapUrl) && (
+                <div className="al-pdf-roof-image-grid">
+                  {f.roofStaticMapHDUrl && (
+                    <div>
+                      <img src={f.roofStaticMapHDUrl} alt="Vista satelital del techo" className="al-pdf-roof-image" crossOrigin="anonymous" />
+                      <div className="al-pdf-image-caption">Satelital · zoom 20 · análisis DSM</div>
+                    </div>
+                  )}
+                  {f.roofStaticMapRoadUrl && (
+                    <div>
+                      <img src={f.roofStaticMapRoadUrl} alt="Mapa de calles" className="al-pdf-roof-image" crossOrigin="anonymous" />
+                      <div className="al-pdf-image-caption">Calles · contexto urbano</div>
+                    </div>
+                  )}
+                </div>
+              )}
               <table className="al-pdf-table">
                 <tbody>
                   <tr><td>Confianza del análisis</td><td><strong>{Math.round(f.roofConfidence * 100)}%</strong> {f.roofImageryQuality && `· imagery ${f.roofImageryQuality}`}</td></tr>
@@ -3138,6 +3211,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   {res.googleSolarEstimate && <tr><td>Configuración óptima Google</td><td>{res.googleSolarEstimate.bestConfigPanels} paneles · {res.googleSolarEstimate.bestConfigKwp} kWp · vida útil {res.googleSolarEstimate.panelLifetimeYears} años</td></tr>}
                 </tbody>
               </table>
+              {/* Tabla de segmentos del techo (cuando hay múltiples) */}
+              {f.roofSegments?.length >= 2 && (
+                <>
+                  <p className="al-pdf-lead" style={{ marginTop: 8 }}>
+                    <strong>{f.roofSegments.length} segmentos identificados</strong> — el sistema selecciona los de mejor producción solar.
+                  </p>
+                  <table className="al-pdf-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Área</th>
+                        <th>Azimuth</th>
+                        <th>Inclinación</th>
+                        <th>Horas sol/año</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {f.roofSegments.slice(0, 8).map((s, i) => (
+                        <tr key={i}>
+                          <td><strong>{i + 1}</strong></td>
+                          <td>{s.areaMeters2 != null ? `${Math.round(s.areaMeters2)} m²` : '—'}</td>
+                          <td>{s.azimuthDegrees != null ? `${Math.round(s.azimuthDegrees)}°` : '—'}</td>
+                          <td>{s.pitchDegrees != null ? `${Math.round(s.pitchDegrees)}°` : '—'}</td>
+                          <td>{s.sunshineHoursPerYear != null ? `${Math.round(s.sunshineHoursPerYear).toLocaleString('es-CO')} h` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {f.roofSegments.length > 8 && (
+                    <p className="al-pdf-info">+ {f.roofSegments.length - 8} segmento{f.roofSegments.length - 8 > 1 ? 's' : ''} adicional{f.roofSegments.length - 8 > 1 ? 'es' : ''} no listado{f.roofSegments.length - 8 > 1 ? 's' : ''}.</p>
+                  )}
+                </>
+              )}
             </section>
           )}
 
