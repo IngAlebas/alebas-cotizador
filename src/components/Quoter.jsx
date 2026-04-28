@@ -52,7 +52,12 @@ const Q0 = {
   roofImageryQuality: null, // 'HIGH' | 'MEDIUM' | 'LOW'
   roofMaterial: null,    // 'zinc' | 'eternit' | 'barro' | 'losa' | 'termoacustica' | 'lamina' | 'otro'
   roofStaticMapRoadUrl: null,    // Vista de mapa con calles para contexto
+  roofStaticMapHDUrl: null,      // Variante HD para lightbox
   roofLocationConfirmed: false,  // Cliente confirma que la ubicación mostrada es la de la instalación
+  roofWholeAreaM2: null,         // Área total del techo (incluye zonas no aprovechables)
+  roofGroundAreaM2: null,        // Footprint del edificio (proyección al suelo)
+  roofPanelsDetected: null,      // Paneles individuales detectados por Google (hint de precisión)
+  roofPrecisionHint: null,       // 'high' | 'medium' | 'low'
   // Cuadro de cargas — usado en off-grid (no hay factura)
   loadItems: [],
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
@@ -405,6 +410,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (r.imagery) u('roofImagery', r.imagery);
     if (r.staticMapUrl) u('roofStaticMapUrl', r.staticMapUrl);
     if (r.staticMapRoadUrl) u('roofStaticMapRoadUrl', r.staticMapRoadUrl);
+    if (r.staticMapHDUrl) u('roofStaticMapHDUrl', r.staticMapHDUrl);
+    if (r.wholeRoofAreaM2 != null) u('roofWholeAreaM2', r.wholeRoofAreaM2);
+    if (r.groundAreaM2 != null) u('roofGroundAreaM2', r.groundAreaM2);
+    if (r.panelsDetected != null) u('roofPanelsDetected', r.panelsDetected);
+    if (r.coordinatesPrecisionHint) u('roofPrecisionHint', r.coordinatesPrecisionHint);
     // Resetear confirmación al re-buscar — el cliente debe re-confirmar la nueva ubicación.
     u('roofLocationConfirmed', false);
   };
@@ -1034,6 +1044,28 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ marginTop: 3 }}>
                   Horas sol/año: <strong style={{ color: C.yellow }}>{Math.round(f.sunshineHoursYear).toLocaleString('es-CO')}</strong>
                   {f.googleMaxPanels != null && <> · capacidad máx. Google: <strong style={{ color: C.teal }}>{f.googleMaxPanels} paneles</strong></>}
+                </div>
+              )}
+              {(f.roofWholeAreaM2 != null || f.roofGroundAreaM2 != null) && (
+                <div style={{ marginTop: 6, padding: '6px 10px', background: `${C.teal}08`, borderRadius: 6, fontSize: 9, lineHeight: 1.5 }}>
+                  <div style={{ color: C.teal, fontWeight: 600, marginBottom: 2 }}>📐 Métricas del edificio analizado</div>
+                  {f.roofGroundAreaM2 != null && <div>• Footprint (huella en suelo): <strong style={{ color: '#fff' }}>{Math.round(f.roofGroundAreaM2)} m²</strong></div>}
+                  {f.roofWholeAreaM2 != null && <div>• Techo total (con pendiente): <strong style={{ color: '#fff' }}>{Math.round(f.roofWholeAreaM2)} m²</strong></div>}
+                  {f.googleAreaM2 != null && <div>• Aprovechable para paneles: <strong style={{ color: C.yellow }}>{Math.round(f.googleAreaM2)} m²</strong> <span style={{ color: C.muted }}>(excluye obstáculos, bordes, pendientes inviables)</span></div>}
+                </div>
+              )}
+              {f.roofPrecisionHint === 'low' && f.roofPanelsDetected != null && (
+                <div style={{ marginTop: 6, padding: '8px 10px', background: `${C.orange}10`, border: `1px solid ${C.orange}55`, borderRadius: 6, fontSize: 10, lineHeight: 1.5 }}>
+                  <div style={{ color: C.orange, fontWeight: 700, marginBottom: 3 }}>⚠ Precisión baja del análisis</div>
+                  Google solo detectó <strong style={{ color: '#fff' }}>{f.roofPanelsDetected} {f.roofPanelsDetected === 1 ? 'panel' : 'paneles'}</strong> en este punto. Posibles razones:
+                  <ul style={{ margin: '4px 0 0 18px', padding: 0, color: C.muted }}>
+                    <li>Las coordenadas cayeron en una construcción pequeña vecina (no la tuya).</li>
+                    <li>El edificio tiene muchos obstáculos (claraboyas, antenas, ductos AC).</li>
+                    <li>Calidad de imagen LOW — Google no tiene HIGH para esta zona.</li>
+                  </ul>
+                  <div style={{ marginTop: 4, color: C.text }}>
+                    💡 Verifica el marker en el satélite de arriba. Si está en el edificio incorrecto, usa el botón <strong>🛰 GPS</strong> o pega coordenadas exactas (formato <code style={{ color: C.teal }}>lat, lon</code>).
+                  </div>
                 </div>
               )}
               {f.roofSegments?.length > 0 && (
