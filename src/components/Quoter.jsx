@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS, CARRIERS, ZONA_LABEL,
@@ -13,6 +13,7 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
+import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
@@ -44,7 +45,8 @@ const Q0 = {
   shadeIndex: null, shadeSource: null,
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
-  googleMaxPanels: null, roofSegments: [], roofImagery: null,
+  googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
+  googleAreaM2: null,    // área detectada por Google Solar (independiente del input del cliente)
   // Cuadro de cargas — usado en off-grid (no hay factura)
   loadItems: [],
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
@@ -212,6 +214,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [roofQuery, setRoofQuery] = useState('');
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
+  // Autocomplete de direcciones (Google Places via n8n)
+  const [addrSuggestions, setAddrSuggestions] = useState([]);
+  const [addrSuggestOpen, setAddrSuggestOpen] = useState(false);
+  const [addrLoading, setAddrLoading] = useState(false);
+  const placesSessionRef = React.useRef(null);
+  const addrDebounceRef = React.useRef(null);
   // Recomendación IA post-cálculo
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
@@ -337,7 +345,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     setRoofError(null); setRoofLoading(true);
     try {
       const r = await lookupRoof({ address: q });
-      if (r.areaM2 != null && !Number.isNaN(r.areaM2)) u('availableArea', String(Math.round(r.areaM2)));
+      // Reconciliación cliente vs Google: NO sobreescribir si el usuario ya tenía
+      // un área declarada — el cliente sabe qué porción usar (descuenta ductos AC,
+      // antenas, áreas no aprovechables que satélite no ve). Solo rellenar si el
+      // campo está vacío. La discrepancia se muestra en el bloque de preview.
+      if (r.areaM2 != null && !Number.isNaN(r.areaM2)) {
+        const userArea = parseFloat(f.availableArea);
+        if (!userArea || userArea <= 0) u('availableArea', String(Math.round(r.areaM2)));
+        u('googleAreaM2', r.areaM2);  // siempre guardar el valor de Google para mostrar comparación
+      }
       if (r.lat != null) u('lat', r.lat);
       if (r.lon != null) u('lon', r.lon);
       u('roofLookupSource', r.source);
@@ -351,6 +367,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
       if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
       if (r.imagery) u('roofImagery', r.imagery);
+      if (r.staticMapUrl) u('roofStaticMapUrl', r.staticMapUrl);
     } catch (e) {
       const raw = e?.message || 'Error consultando techo';
       const friendly = /Failed to fetch|NetworkError/i.test(raw)
@@ -851,23 +868,67 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
           <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
           {solarConfigured() && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
-                placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
-                value={roofQuery}
-                onChange={e => setRoofQuery(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onLookupRoof(); } }}
-              />
-              <button
-                type="button"
-                onClick={onLookupRoof}
-                disabled={roofLoading}
-                style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
-              >
-                {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
-              </button>
+            <div style={{ marginTop: 8, position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
+                  placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
+                  value={roofQuery}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setRoofQuery(v);
+                    setAddrSuggestOpen(true);
+                    if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current);
+                    if (!placesSessionRef.current) placesSessionRef.current = newPlacesSessionToken();
+                    addrDebounceRef.current = setTimeout(async () => {
+                      if (v.trim().length < 3) { setAddrSuggestions([]); return; }
+                      setAddrLoading(true);
+                      const r = await autocompleteAddress(v.trim(), placesSessionRef.current);
+                      setAddrLoading(false);
+                      if (r.ok) setAddrSuggestions(r.suggestions || []);
+                    }, 350);
+                  }}
+                  onFocus={() => setAddrSuggestOpen(true)}
+                  onBlur={() => setTimeout(() => setAddrSuggestOpen(false), 200)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setAddrSuggestOpen(false); onLookupRoof(); } }}
+                />
+                <button
+                  type="button"
+                  onClick={onLookupRoof}
+                  disabled={roofLoading}
+                  style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
+                >
+                  {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
+                </button>
+              </div>
+              {addrSuggestOpen && addrSuggestions.length > 0 && (
+                <ul style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                  background: C.card, border: `1px solid ${C.teal}55`, borderRadius: 8,
+                  listStyle: 'none', padding: 4, zIndex: 50, maxHeight: 280, overflowY: 'auto',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                }}>
+                  {addrSuggestions.map(s => (
+                    <li
+                      key={s.placeId}
+                      onMouseDown={(e) => { e.preventDefault(); }}
+                      onClick={() => {
+                        setRoofQuery(s.description);
+                        setAddrSuggestions([]);
+                        setAddrSuggestOpen(false);
+                      }}
+                      style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 6, fontSize: 12, lineHeight: 1.3 }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = `${C.teal}18`}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{ color: '#fff', fontWeight: 600 }}>{s.main}</div>
+                      {s.secondary && <div style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>{s.secondary}</div>}
+                    </li>
+                  ))}
+                  {addrLoading && <li style={{ padding: '6px 10px', fontSize: 10, color: C.muted }}>Buscando…</li>}
+                </ul>
+              )}
             </div>
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
@@ -933,6 +994,49 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             </div>
           )}
+
+          {f.roofStaticMapUrl && (
+            <div style={{ marginTop: 10, background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: `${C.teal}10`, fontSize: 10, color: C.muted, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <span>🛰 Vista satelital del sitio</span>
+                <a href={`https://www.google.com/maps/@${f.lat},${f.lon},20z`} target="_blank" rel="noreferrer" style={{ color: C.teal, fontSize: 10, textDecoration: 'none' }}>Abrir en Maps ↗</a>
+              </div>
+              <img
+                src={f.roofStaticMapUrl}
+                alt="Vista satelital del techo"
+                style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 280, objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            </div>
+          )}
+
+          {(() => {
+            const userArea = parseFloat(f.availableArea);
+            const googleArea = Number(f.googleAreaM2);
+            if (!userArea || !googleArea || userArea <= 0 || googleArea <= 0) return null;
+            const diffPct = ((userArea - googleArea) / googleArea) * 100;
+            const significant = Math.abs(diffPct) >= 30;
+            if (!significant) return null;
+            const userBigger = diffPct > 0;
+            return (
+              <div style={{ marginTop: 8, padding: '10px 12px', background: `${C.yellow}10`, border: `1px solid ${C.yellow}55`, borderRadius: 8, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>⚠ Discrepancia área declarada vs Google Solar</div>
+                <div style={{ fontSize: 10, color: C.muted }}>
+                  Tu declaración: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
+                  Google detectó: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
+                  Diferencia: <strong style={{ color: userBigger ? C.orange : C.teal }}>{userBigger ? '+' : ''}{diffPct.toFixed(0)}%</strong>
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                  {userBigger
+                    ? `Tu área supera lo detectado por Google. Verifica si estás incluyendo patios cubiertos, anexos no contiguos, o áreas con obstáculos (ductos AC, antenas, claraboyas) que satélite no descuenta.`
+                    : `Google detecta más techo del que declaraste. Puede haber área aprovechable adicional — confirma si la limitación es voluntaria (paneles existentes, vista preservada, arrendamiento).`}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                  El cotizador usa <strong style={{ color: '#fff' }}>tu declaración</strong> ({userArea} m²) — el cliente sabe qué porción del techo va a usar.
+                </div>
+              </div>
+            );
+          })()}
           {!solarConfigured() && (
             <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Si la conoces, validamos cuánto de tu consumo puede cubrir tu techo</div>
           )}

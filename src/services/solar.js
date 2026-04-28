@@ -134,6 +134,7 @@ export async function lookupRoof({ address, lat, lon } = {}) {
         shadeSource: data.shadeSource || null,
         roofSegments: Array.isArray(data.roofSegments) ? data.roofSegments : [],
         imagery: data.imagery || null,
+        staticMapUrl: data.staticMapUrl || null,
         source: data.source || 'unknown',
         confidence: data.confidence != null ? Number(data.confidence) : null,
         notes: data.notes || '',
