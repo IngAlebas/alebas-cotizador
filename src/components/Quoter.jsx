@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS, CARRIERS, ZONA_LABEL,
   calcSystem, calcTransport, calcBudget, pickBestTransport, selectCompatibleInverter,
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
   tariffCU, excedentePriceFor, splitCU,
-  panelRoofAreaM2, DEFAULT_PACKING_FACTOR
+  panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
+  ROOF_MATERIALS,
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchPVWatts } from '../services/pvwatts';
@@ -13,6 +14,7 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
+import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
@@ -44,7 +46,18 @@ const Q0 = {
   shadeIndex: null, shadeSource: null,
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
-  googleMaxPanels: null, roofSegments: [], roofImagery: null,
+  googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
+  googleAreaM2: null,    // área detectada por Google Solar (independiente del input del cliente)
+  roofConfidence: null,  // 0..1 — confidence del análisis de techo
+  roofImageryQuality: null, // 'HIGH' | 'MEDIUM' | 'LOW'
+  roofMaterial: null,    // 'zinc' | 'eternit' | 'barro' | 'losa' | 'termoacustica' | 'lamina' | 'otro'
+  roofStaticMapRoadUrl: null,    // Vista de mapa con calles para contexto
+  roofStaticMapHDUrl: null,      // Variante HD para lightbox
+  roofLocationConfirmed: false,  // Cliente confirma que la ubicación mostrada es la de la instalación
+  roofWholeAreaM2: null,         // Área total del techo (incluye zonas no aprovechables)
+  roofGroundAreaM2: null,        // Footprint del edificio (proyección al suelo)
+  roofPanelsDetected: null,      // Paneles individuales detectados por Google (hint de precisión)
+  roofPrecisionHint: null,       // 'high' | 'medium' | 'low'
   // Cuadro de cargas — usado en off-grid (no hay factura)
   loadItems: [],
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
@@ -212,6 +225,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [roofQuery, setRoofQuery] = useState('');
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
+  // Autocomplete de direcciones (Google Places via n8n)
+  const [addrSuggestions, setAddrSuggestions] = useState([]);
+  const [addrSuggestOpen, setAddrSuggestOpen] = useState(false);
+  const [addrLoading, setAddrLoading] = useState(false);
+  const placesSessionRef = React.useRef(null);
+  const addrDebounceRef = React.useRef(null);
   // Recomendación IA post-cálculo
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
@@ -331,26 +350,97 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   };
 
+  // Geolocaliza al usuario por GPS del navegador (más preciso que Geocoding por texto).
+  // Solo prompea si el usuario hace clic — no es invasivo.
+  const onUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      setRoofError('Tu navegador no soporta geolocalización. Ingresa la dirección manualmente.');
+      return;
+    }
+    setRoofError(null); setRoofLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude, lon = pos.coords.longitude;
+        const accM = pos.coords.accuracy;
+        try {
+          const r = await lookupRoof({ lat, lon });
+          applyRoofLookup(r);
+          setRoofQuery(r.address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+          if (accM > 50) {
+            setRoofError(`GPS con precisión baja (±${Math.round(accM)}m). Si estás en interiores, sal a área abierta o usa la dirección.`);
+          }
+        } catch (e) {
+          setRoofError(e?.message || 'Error consultando techo con coords GPS');
+        } finally {
+          setRoofLoading(false);
+        }
+      },
+      (err) => {
+        setRoofLoading(false);
+        const msg = err.code === err.PERMISSION_DENIED ? 'Permiso de ubicación denegado.' :
+                    err.code === err.POSITION_UNAVAILABLE ? 'Ubicación no disponible.' :
+                    err.code === err.TIMEOUT ? 'Tiempo agotado obteniendo ubicación.' :
+                    'No se pudo obtener tu ubicación.';
+        setRoofError(msg + ' Ingresa la dirección manualmente.');
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  };
+
+  const applyRoofLookup = (r) => {
+    if (r.areaM2 != null && !Number.isNaN(r.areaM2)) {
+      const userArea = parseFloat(f.availableArea);
+      if (!userArea || userArea <= 0) u('availableArea', String(Math.round(r.areaM2)));
+      u('googleAreaM2', r.areaM2);
+    }
+    if (r.lat != null) u('lat', r.lat);
+    if (r.lon != null) u('lon', r.lon);
+    u('roofLookupSource', r.source);
+    u('roofLookupNotes', r.notes || '');
+    u('roofLookupAt', new Date().toISOString());
+    u('roofConfidence', r.confidence || null);
+    u('roofImageryQuality', r.imageryQuality || null);
+    if (r.shadeIndex != null && !Number.isNaN(r.shadeIndex)) u('shadeIndex', r.shadeIndex);
+    if (r.shadeSource) u('shadeSource', r.shadeSource);
+    if (r.tiltDeg != null) u('roofTiltDeg', r.tiltDeg);
+    if (r.azimuthDeg != null) u('roofAzimuthDeg', r.azimuthDeg);
+    if (r.sunshineHoursYear != null) u('sunshineHoursYear', r.sunshineHoursYear);
+    if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
+    if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
+    if (r.imagery) u('roofImagery', r.imagery);
+    if (r.staticMapUrl) u('roofStaticMapUrl', r.staticMapUrl);
+    if (r.staticMapRoadUrl) u('roofStaticMapRoadUrl', r.staticMapRoadUrl);
+    if (r.staticMapHDUrl) u('roofStaticMapHDUrl', r.staticMapHDUrl);
+    if (r.wholeRoofAreaM2 != null) u('roofWholeAreaM2', r.wholeRoofAreaM2);
+    if (r.groundAreaM2 != null) u('roofGroundAreaM2', r.groundAreaM2);
+    if (r.panelsDetected != null) u('roofPanelsDetected', r.panelsDetected);
+    if (r.coordinatesPrecisionHint) u('roofPrecisionHint', r.coordinatesPrecisionHint);
+    // Resetear confirmación al re-buscar — el cliente debe re-confirmar la nueva ubicación.
+    u('roofLocationConfirmed', false);
+  };
+
   const onLookupRoof = async () => {
     const q = (roofQuery || '').trim();
+    // Soportar input "lat, lon" directo además de dirección textual.
+    const gpsMatch = q.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    if (gpsMatch) {
+      const gpsLat = parseFloat(gpsMatch[1]), gpsLon = parseFloat(gpsMatch[2]);
+      if (Math.abs(gpsLat) <= 90 && Math.abs(gpsLon) <= 180) {
+        setRoofError(null); setRoofLoading(true);
+        try {
+          const r = await lookupRoof({ lat: gpsLat, lon: gpsLon });
+          applyRoofLookup(r);
+        } catch (e) {
+          setRoofError(e?.message || 'Error consultando techo');
+        } finally { setRoofLoading(false); }
+        return;
+      }
+    }
     if (!q) { setRoofError('Ingresa una dirección o ciudad'); return; }
     setRoofError(null); setRoofLoading(true);
     try {
       const r = await lookupRoof({ address: q });
-      if (r.areaM2 != null && !Number.isNaN(r.areaM2)) u('availableArea', String(Math.round(r.areaM2)));
-      if (r.lat != null) u('lat', r.lat);
-      if (r.lon != null) u('lon', r.lon);
-      u('roofLookupSource', r.source);
-      u('roofLookupNotes', r.notes || '');
-      u('roofLookupAt', new Date().toISOString());
-      if (r.shadeIndex != null && !Number.isNaN(r.shadeIndex)) u('shadeIndex', r.shadeIndex);
-      if (r.shadeSource) u('shadeSource', r.shadeSource);
-      if (r.tiltDeg != null) u('roofTiltDeg', r.tiltDeg);
-      if (r.azimuthDeg != null) u('roofAzimuthDeg', r.azimuthDeg);
-      if (r.sunshineHoursYear != null) u('sunshineHoursYear', r.sunshineHoursYear);
-      if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
-      if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
-      if (r.imagery) u('roofImagery', r.imagery);
+      applyRoofLookup(r);
     } catch (e) {
       const raw = e?.message || 'Error consultando techo';
       const friendly = /Failed to fetch|NetworkError/i.test(raw)
@@ -851,23 +941,79 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
           <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
           {solarConfigured() && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
-                placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
-                value={roofQuery}
-                onChange={e => setRoofQuery(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onLookupRoof(); } }}
-              />
-              <button
-                type="button"
-                onClick={onLookupRoof}
-                disabled={roofLoading}
-                style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
-              >
-                {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
-              </button>
+            <div style={{ marginTop: 8, position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
+                  placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
+                  value={roofQuery}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setRoofQuery(v);
+                    setAddrSuggestOpen(true);
+                    if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current);
+                    if (!placesSessionRef.current) placesSessionRef.current = newPlacesSessionToken();
+                    addrDebounceRef.current = setTimeout(async () => {
+                      if (v.trim().length < 3) { setAddrSuggestions([]); return; }
+                      setAddrLoading(true);
+                      const r = await autocompleteAddress(v.trim(), placesSessionRef.current);
+                      setAddrLoading(false);
+                      if (r.ok) setAddrSuggestions(r.suggestions || []);
+                    }, 350);
+                  }}
+                  onFocus={() => setAddrSuggestOpen(true)}
+                  onBlur={() => setTimeout(() => setAddrSuggestOpen(false), 200)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setAddrSuggestOpen(false); onLookupRoof(); } }}
+                />
+                <button
+                  type="button"
+                  onClick={onLookupRoof}
+                  disabled={roofLoading}
+                  style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
+                >
+                  {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onUseMyLocation}
+                  disabled={roofLoading}
+                  title="Usar la ubicación GPS de tu dispositivo (mayor precisión)"
+                  style={{ background: 'transparent', border: `1px solid ${C.teal}66`, color: C.teal, padding: '8px 12px', borderRadius: 7, fontSize: 11, cursor: 'pointer', opacity: roofLoading ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                >
+                  🛰 GPS
+                </button>
+              </div>
+              <div style={{ fontSize: 9, color: C.muted, marginTop: 4 }}>
+                Tip: también puedes pegar coordenadas directas en el formato <code style={{ color: C.teal }}>lat, lon</code> (ej: <code>4.1383, -73.6335</code>) para máxima precisión.
+              </div>
+              {addrSuggestOpen && addrSuggestions.length > 0 && (
+                <ul style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                  background: C.card, border: `1px solid ${C.teal}55`, borderRadius: 8,
+                  listStyle: 'none', padding: 4, zIndex: 50, maxHeight: 280, overflowY: 'auto',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                }}>
+                  {addrSuggestions.map(s => (
+                    <li
+                      key={s.placeId}
+                      onMouseDown={(e) => { e.preventDefault(); }}
+                      onClick={() => {
+                        setRoofQuery(s.description);
+                        setAddrSuggestions([]);
+                        setAddrSuggestOpen(false);
+                      }}
+                      style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 6, fontSize: 12, lineHeight: 1.3 }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = `${C.teal}18`}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{ color: '#fff', fontWeight: 600 }}>{s.main}</div>
+                      {s.secondary && <div style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>{s.secondary}</div>}
+                    </li>
+                  ))}
+                  {addrLoading && <li style={{ padding: '6px 10px', fontSize: 10, color: C.muted }}>Buscando…</li>}
+                </ul>
+              )}
             </div>
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
@@ -900,6 +1046,28 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   {f.googleMaxPanels != null && <> · capacidad máx. Google: <strong style={{ color: C.teal }}>{f.googleMaxPanels} paneles</strong></>}
                 </div>
               )}
+              {(f.roofWholeAreaM2 != null || f.roofGroundAreaM2 != null) && (
+                <div style={{ marginTop: 6, padding: '6px 10px', background: `${C.teal}08`, borderRadius: 6, fontSize: 9, lineHeight: 1.5 }}>
+                  <div style={{ color: C.teal, fontWeight: 600, marginBottom: 2 }}>📐 Métricas del edificio analizado</div>
+                  {f.roofGroundAreaM2 != null && <div>• Footprint (huella en suelo): <strong style={{ color: '#fff' }}>{Math.round(f.roofGroundAreaM2)} m²</strong></div>}
+                  {f.roofWholeAreaM2 != null && <div>• Techo total (con pendiente): <strong style={{ color: '#fff' }}>{Math.round(f.roofWholeAreaM2)} m²</strong></div>}
+                  {f.googleAreaM2 != null && <div>• Aprovechable para paneles: <strong style={{ color: C.yellow }}>{Math.round(f.googleAreaM2)} m²</strong> <span style={{ color: C.muted }}>(excluye obstáculos, bordes, pendientes inviables)</span></div>}
+                </div>
+              )}
+              {f.roofPrecisionHint === 'low' && f.roofPanelsDetected != null && (
+                <div style={{ marginTop: 6, padding: '8px 10px', background: `${C.orange}10`, border: `1px solid ${C.orange}55`, borderRadius: 6, fontSize: 10, lineHeight: 1.5 }}>
+                  <div style={{ color: C.orange, fontWeight: 700, marginBottom: 3 }}>⚠ Precisión baja del análisis</div>
+                  Google solo detectó <strong style={{ color: '#fff' }}>{f.roofPanelsDetected} {f.roofPanelsDetected === 1 ? 'panel' : 'paneles'}</strong> en este punto. Posibles razones:
+                  <ul style={{ margin: '4px 0 0 18px', padding: 0, color: C.muted }}>
+                    <li>Las coordenadas cayeron en una construcción pequeña vecina (no la tuya).</li>
+                    <li>El edificio tiene muchos obstáculos (claraboyas, antenas, ductos AC).</li>
+                    <li>Calidad de imagen LOW — Google no tiene HIGH para esta zona.</li>
+                  </ul>
+                  <div style={{ marginTop: 4, color: C.text }}>
+                    💡 Verifica el marker en el satélite de arriba. Si está en el edificio incorrecto, usa el botón <strong>🛰 GPS</strong> o pega coordenadas exactas (formato <code style={{ color: C.teal }}>lat, lon</code>).
+                  </div>
+                </div>
+              )}
               {f.roofSegments?.length > 0 && (
                 <div style={{ marginTop: 4 }}>
                   <div style={{ color: C.teal, marginBottom: 2 }}>Segmentos de techo ({f.roofSegments.length}):</div>
@@ -923,9 +1091,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </span>
                   )}
                   {f.roofImagery.imageryQuality && <> · <span style={{ color: C.teal }}>{f.roofImagery.imageryQuality}</span></>}
-                  {f.roofImagery.annualFluxUrl && <> · <a href={`${f.roofImagery.annualFluxUrl}`} target="_blank" rel="noreferrer" style={{ color: C.teal }}>flujo solar↗</a></>}
-                  {f.roofImagery.rgbUrl && <> · <a href={`${f.roofImagery.rgbUrl}`} target="_blank" rel="noreferrer" style={{ color: C.teal }}>foto↗</a></>}
-                  {f.roofImagery.hourlyShadeUrls?.length > 0 && <> · {f.roofImagery.hourlyShadeUrls.length} capas sombra</>}
+                </div>
+              )}
+              {f.roofImagery && (f.roofImagery.rgbUrl || f.roofImagery.annualFluxUrl || f.roofImagery.dsmUrl) && (
+                <div style={{ marginTop: 4, fontSize: 9, color: C.muted, lineHeight: 1.5 }}>
+                  <div style={{ color: C.muted, marginBottom: 2 }}>📦 Archivos técnicos (.tif para análisis GIS — el preview visible es la imagen satelital de arriba):</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingLeft: 6 }}>
+                    {f.roofImagery.rgbUrl && <a href={f.roofImagery.rgbUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>RGB.tif ↓</a>}
+                    {f.roofImagery.dsmUrl && <a href={f.roofImagery.dsmUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>DSM.tif ↓</a>}
+                    {f.roofImagery.maskUrl && <a href={f.roofImagery.maskUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>máscara.tif ↓</a>}
+                    {f.roofImagery.annualFluxUrl && <a href={f.roofImagery.annualFluxUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>flujo anual.tif ↓</a>}
+                    {f.roofImagery.monthlyFluxUrl && <a href={f.roofImagery.monthlyFluxUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>flujo mensual.tif ↓</a>}
+                    {f.roofImagery.hourlyShadeUrls?.length > 0 && <span>{f.roofImagery.hourlyShadeUrls.length} capas sombra horaria</span>}
+                  </div>
                 </div>
               )}
               <div style={{ marginTop: 3 }}>
@@ -933,6 +1111,131 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             </div>
           )}
+
+          {f.roofStaticMapUrl && (() => {
+            const conf = Number(f.roofConfidence || 0);
+            const confPct = Math.round(conf * 100);
+            const confColor = conf >= 0.9 ? C.green : conf >= 0.8 ? C.teal : conf >= 0.7 ? C.yellow : C.orange;
+            return (
+              <div style={{ marginTop: 10, background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9, overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px', background: `${C.teal}10`, fontSize: 10, color: C.muted, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                  <span>🛰 Vista del sitio</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {f.roofImageryQuality && (
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: f.roofImageryQuality === 'HIGH' ? `${C.green}30` : f.roofImageryQuality === 'MEDIUM' ? `${C.yellow}30` : `${C.orange}30`, color: f.roofImageryQuality === 'HIGH' ? C.green : f.roofImageryQuality === 'MEDIUM' ? C.yellow : C.orange, fontWeight: 700 }}>
+                        Calidad {f.roofImageryQuality}
+                      </span>
+                    )}
+                    {confPct > 0 && (
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: `${confColor}30`, color: confColor, fontWeight: 700 }}>
+                        Confiabilidad {confPct}%
+                      </span>
+                    )}
+                    <a href={`https://www.google.com/maps/@${f.lat},${f.lon},20z`} target="_blank" rel="noreferrer" style={{ color: C.teal, fontSize: 10, textDecoration: 'none' }}>
+                      Abrir Maps ↗
+                    </a>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
+                  <div>
+                    <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark }}>Satelital · zoom 20 (techo)</div>
+                    <img src={f.roofStaticMapUrl} alt="Vista satelital del techo"
+                      style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  </div>
+                  {f.roofStaticMapRoadUrl && (
+                    <div>
+                      <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark }}>Calles · zoom 16 (contexto)</div>
+                      <img src={f.roofStaticMapRoadUrl} alt="Vista de calles"
+                        style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    </div>
+                  )}
+                </div>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: f.roofLocationConfirmed ? `${C.green}10` : `${C.yellow}08`, borderTop: `1px solid ${C.border}`, cursor: 'pointer', fontSize: 11 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!f.roofLocationConfirmed}
+                    onChange={(e) => u('roofLocationConfirmed', e.target.checked)}
+                    style={{ marginTop: 2, accentColor: C.teal, flexShrink: 0 }}
+                  />
+                  <span style={{ color: f.roofLocationConfirmed ? C.green : C.text, lineHeight: 1.5 }}>
+                    {f.roofLocationConfirmed ? '✓ ' : ''}<strong>Confirmo que esta es la ubicación de la instalación.</strong>
+                    <span style={{ display: 'block', color: C.muted, fontSize: 10, marginTop: 2 }}>
+                      Verifica en las imágenes que el techo donde irán los paneles corresponde con esta dirección. Si no es correcta, vuelve a buscar arriba.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            );
+          })()}
+
+          {(f.lat != null || f.availableArea) && (
+            <div style={{ marginTop: 10 }}>
+              <label style={ss.lbl}>Material del techo (RETIE NTC 2050)</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {Object.entries(ROOF_MATERIALS).map(([key, m]) => {
+                  const selected = f.roofMaterial === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => u('roofMaterial', selected ? null : key)}
+                      style={{
+                        padding: '6px 12px', borderRadius: 18, fontSize: 11, cursor: 'pointer',
+                        border: `1.5px solid ${selected ? (m.structuralRisk ? C.orange : C.teal) : C.border}`,
+                        background: selected ? `${m.structuralRisk ? C.orange : C.teal}20` : 'transparent',
+                        color: selected ? (m.structuralRisk ? C.orange : C.teal) : C.muted,
+                        fontWeight: selected ? 600 : 400,
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}
+                    >
+                      <span style={{ fontSize: 13 }}>{m.icon}</span>
+                      {m.label}
+                      {m.structuralRisk && <span title="Requiere cálculo estructural">⚠</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {f.roofMaterial && ROOF_MATERIALS[f.roofMaterial] && (
+                <div style={{ marginTop: 6, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+                  Sistema de montaje sugerido: <strong style={{ color: C.teal }}>{ROOF_MATERIALS[f.roofMaterial].mountingType}</strong>
+                  {ROOF_MATERIALS[f.roofMaterial].weightKgM2 != null && (
+                    <> · Peso material existente: <strong style={{ color: '#fff' }}>{ROOF_MATERIALS[f.roofMaterial].weightKgM2} kg/m²</strong></>
+                  )}
+                  <div style={{ marginTop: 3 }}>{ROOF_MATERIALS[f.roofMaterial].notes}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(() => {
+            const userArea = parseFloat(f.availableArea);
+            const googleArea = Number(f.googleAreaM2);
+            if (!userArea || !googleArea || userArea <= 0 || googleArea <= 0) return null;
+            const diffPct = ((userArea - googleArea) / googleArea) * 100;
+            const significant = Math.abs(diffPct) >= 30;
+            if (!significant) return null;
+            const userBigger = diffPct > 0;
+            return (
+              <div style={{ marginTop: 8, padding: '10px 12px', background: `${C.yellow}10`, border: `1px solid ${C.yellow}55`, borderRadius: 8, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>⚠ Discrepancia área declarada vs Google Solar</div>
+                <div style={{ fontSize: 10, color: C.muted }}>
+                  Tu declaración: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
+                  Google detectó: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
+                  Diferencia: <strong style={{ color: userBigger ? C.orange : C.teal }}>{userBigger ? '+' : ''}{diffPct.toFixed(0)}%</strong>
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                  {userBigger
+                    ? `Tu área supera lo detectado por Google. Verifica si estás incluyendo patios cubiertos, anexos no contiguos, o áreas con obstáculos (ductos AC, antenas, claraboyas) que satélite no descuenta.`
+                    : `Google detecta más techo del que declaraste. Puede haber área aprovechable adicional — confirma si la limitación es voluntaria (paneles existentes, vista preservada, arrendamiento).`}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                  El cotizador usa <strong style={{ color: '#fff' }}>tu declaración</strong> ({userArea} m²) — el cliente sabe qué porción del techo va a usar.
+                </div>
+              </div>
+            );
+          })()}
           {!solarConfigured() && (
             <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Si la conoces, validamos cuánto de tu consumo puede cubrir tu techo</div>
           )}
