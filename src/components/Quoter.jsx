@@ -1448,6 +1448,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {surplus && onGrid && (
                 <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
                   Con AGPE (CREG 174/2021) los excedentes pueden venderse al operador de red ({operator.name}). El valor se descuenta en la factura o se paga si supera el consumo del periodo.
+                  {' '}<a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer" style={{ color: C.amber, fontWeight: 600, textDecoration: 'none' }}>FluxAI</a> concilia automáticamente los excedentes facturados contra la producción real medida.
                 </div>
               )}
               {surplus && f.systemType === 'off-grid' && (
@@ -1463,6 +1464,30 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           );
         })()}
+
+        {showResumen && (
+          <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}44`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                <span style={{ color: C.amber }}>📡</span> Monitoreo recomendado · FluxAI
+              </div>
+              <a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer"
+                 style={{ fontSize: 11, padding: '6px 14px', background: C.amber, color: C.dark, borderRadius: 7, fontWeight: 700, textDecoration: 'none' }}>
+                Conocer FluxAI →
+              </a>
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
+              <strong style={{ color: '#fff' }}>FluxAI</strong> es la plataforma de monitoreo solar de ALEBAS Ingeniería (marca hermana de SolarHub). Te permite:
+              <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 18 }}>
+                <li>Ver producción y consumo en tiempo real desde el celular.</li>
+                <li>Recibir alertas si el sistema rinde por debajo de lo cotizado.</li>
+                {f.systemType !== 'on-grid' && <li>Vigilar SoC del banco de baterías y autonomía real disponible.</li>}
+                {f.wantsExcedentes && <li>Conciliar excedentes facturados por {operator.name} con la generación medida.</li>}
+                <li>Histórico mensual y anual para validar el ROI estimado de la cotización.</li>
+              </ul>
+            </div>
+          </div>
+        )}
 
         {showResumen && aiConfigured() && !aiUnavailable && (
           <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>

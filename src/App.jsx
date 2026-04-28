@@ -275,11 +275,17 @@ export default function App() {
             </div>
 
             <div className="al-mayoristas" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>Mayoristas</span>
+              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>Ecosistema</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.teal}18`, border: `1px solid ${C.teal}44`, borderRadius: 5, padding: '3px 8px' }}>
                 <span style={{ fontSize: 11 }}>⚡</span>
                 <span style={{ fontSize: 9, fontWeight: 700, color: C.teal }}>ALEBAS</span>
               </div>
+              <a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer"
+                 title="FluxAI · Monitoreo solar inteligente de ALEBAS"
+                 style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.amber}18`, border: `1px solid ${C.amber}44`, borderRadius: 5, padding: '3px 8px', textDecoration: 'none' }}>
+                <span style={{ fontSize: 11 }}>📡</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: C.amber }}>FluxAI</span>
+              </a>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.yellow}18`, border: `1px solid ${C.yellow}44`, borderRadius: 5, padding: '3px 8px' }}>
                 <span style={{ fontSize: 11 }}>🔋</span>
                 <span style={{ fontSize: 9, fontWeight: 700, color: C.yellow }}>Must Energy</span>

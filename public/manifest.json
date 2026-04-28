@@ -43,6 +43,13 @@
       "description": "Únete a la red de instaladores",
       "url": "/?view=instalador",
       "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "FluxAI · Monitoreo",
+      "short_name": "FluxAI",
+      "description": "Monitoreo solar inteligente de ALEBAS",
+      "url": "https://app.fluxai.solutions",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
     }
   ]
 }
