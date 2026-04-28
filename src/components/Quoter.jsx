@@ -249,7 +249,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         const n = Math.round(Number(value));
         return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
       }
-      case 'monthlyKwh':
       case 'availableArea': {
         const n = Number(value);
         return Number.isFinite(n) && n > 0 ? String(n) : undefined;
@@ -1449,6 +1448,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {surplus && onGrid && (
                 <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
                   Con AGPE (CREG 174/2021) los excedentes pueden venderse al operador de red ({operator.name}). El valor se descuenta en la factura o se paga si supera el consumo del periodo.
+                  {' '}<a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer" style={{ color: C.amber, fontWeight: 600, textDecoration: 'none' }}>FluxAI</a> concilia automáticamente los excedentes facturados contra la producción real medida.
                 </div>
               )}
               {surplus && f.systemType === 'off-grid' && (
@@ -1464,6 +1464,30 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           );
         })()}
+
+        {showResumen && (
+          <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}44`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                <span style={{ color: C.amber }}>📡</span> Monitoreo recomendado · FluxAI
+              </div>
+              <a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer"
+                 style={{ fontSize: 11, padding: '6px 14px', background: C.amber, color: C.dark, borderRadius: 7, fontWeight: 700, textDecoration: 'none' }}>
+                Conocer FluxAI →
+              </a>
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
+              <strong style={{ color: '#fff' }}>FluxAI</strong> es la plataforma de monitoreo solar de ALEBAS Ingeniería (marca hermana de SolarHub). Te permite:
+              <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 18 }}>
+                <li>Ver producción y consumo en tiempo real desde el celular.</li>
+                <li>Recibir alertas si el sistema rinde por debajo de lo cotizado.</li>
+                {f.systemType !== 'on-grid' && <li>Vigilar SoC del banco de baterías y autonomía real disponible.</li>}
+                {f.wantsExcedentes && <li>Conciliar excedentes facturados por {operator.name} con la generación medida.</li>}
+                <li>Histórico mensual y anual para validar el ROI estimado de la cotización.</li>
+              </ul>
+            </div>
+          </div>
+        )}
 
         {showResumen && aiConfigured() && !aiUnavailable && (
           <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>
@@ -1545,6 +1569,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       },
                       budget: { total: bgt.tot, roi: bgt.roi },
                       roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
+                      // Beneficio AGPE pre-calculado (autoconsumo + excedentes con precio bolsa XM)
+                      // — habilita a la IA reforzar la decisión cuantificando ahorro/ingresos en COP
+                      // en vez de re-sugerir AGPE cuando wantsExcedentes ya está marcado.
+                      agpeBenefit: agpe ? {
+                        gridExport: !!agpe.gridExport,
+                        category: agpe.agpeCategory,
+                        autoConsumedKwhYear: agpe.autoConsumed,
+                        excedentesKwhYear: agpe.excedentes,
+                        ahorroAutoconsumoCopYear: agpe.ahorroAutoconsumo,
+                        ingresoExcedentesCopYear: agpe.ingresoExcedentes,
+                        totalAnualCop: agpe.totalAnual,
+                        tariffCuCopPerKwh: agpe.tariffCU,
+                        priceExcedentesCopPerKwh: agpe.priceExcedentes,
+                        xmSpotCopPerKwh: agpe.spotSource?.cop_per_kwh || null,
+                        xmSpotPeriodDays: agpe.spotSource?.periodDays || null,
+                      } : null,
                     });
                     setAiData(out);
                   } catch (e) {
@@ -1617,15 +1657,21 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 )}
                 {(() => {
-                  const pending = (aiData.actions || [])
+                  const allActions = aiData.actions || [];
+                  const pending = allActions
                     .map(a => ({ ...a, coerced: coerceActionValue(a.field, a.value) }))
                     .filter(a => a.coerced !== undefined && f[a.field] !== a.coerced);
-                  if (!pending.length && !aiApplied) return null;
+                  // Siempre rendereamos el bloque cuando hay aiData para que el usuario
+                  // sepa explícitamente si la IA propuso cambios o si la config ya es
+                  // coherente (caso pending=[] y aiApplied=null).
+                  const headerLabel = pending.length > 0
+                    ? `Mejoras automáticas (${pending.length})`
+                    : aiApplied ? 'Mejoras aplicadas' : 'Mejoras automáticas';
                   return (
                     <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.teal}44` }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                         <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase' }}>
-                          {pending.length > 0 ? `Mejoras automáticas (${pending.length})` : 'Mejoras aplicadas'}
+                          {headerLabel}
                         </div>
                         {pending.length > 0 && (
                           <button
@@ -1653,6 +1699,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           ✓ Cambios aplicados ({aiApplied.fields.join(', ')}). El sistema fue recalculado.
                         </div>
                       )}
+                      {!aiApplied && pending.length === 0 && (() => {
+                        const hasWarnings = (aiData.warnings || []).length > 0;
+                        // Sistema estable: la IA revisó dimensionamiento, layout y normativa
+                        // sin encontrar alertas críticas ni proponer ajustes aplicables.
+                        if (allActions.length === 0 && !hasWarnings) {
+                          return (
+                            <div style={{ fontSize: 11, color: '#4ade80' }}>
+                              ✓ Sistema estable — la IA revisó dimensionamiento, layout eléctrico y normativa sin encontrar ajustes necesarios.
+                            </div>
+                          );
+                        }
+                        // Hay warnings pero ninguna action aplicable (ej. cambios de hardware
+                        // como optimizadores DC que no son campos del cotizador).
+                        if (allActions.length === 0 && hasWarnings) {
+                          return (
+                            <div style={{ fontSize: 11, color: C.muted }}>
+                              La IA detectó alertas que requieren revisión manual (ver "Alertas" arriba). No hay ajustes aplicables automáticamente a los campos del cotizador.
+                            </div>
+                          );
+                        }
+                        // El modelo propuso actions pero todas coinciden con la config actual
+                        // o el coercer las descartó por dominio inválido.
+                        return (
+                          <div style={{ fontSize: 11, color: C.muted }}>
+                            Las propuestas de la IA coinciden con la configuración actual o no aplican a los campos editables. Revisa las sugerencias arriba.
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
