@@ -20,12 +20,24 @@ function CECImportModal({ type, onClose, onImport, ss }) {
 
   const doSearch = async () => {
     if (!q.trim()) return;
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setInfo(null);
     try {
       const fn = type === 'panel' ? searchCECPanels : searchCECInverters;
       const data = await fn(q, 25);
-      setResults(data.results || []);
-      setInfo({ total: data.total, count: data.count, cached: data.cached });
+      // El workflow puede devolver { ok:false, reason:'db_error' } cuando la
+      // credencial Postgres está rota o no hay conexión. Surface ese reason
+      // en lugar de mostrar "1 de NaN" + filas con campos undefined.
+      if (data?.ok === false) {
+        const detail = data.detail || data.reason || 'Error consultando la base CEC';
+        throw new Error(detail);
+      }
+      const results = Array.isArray(data?.results) ? data.results : [];
+      setResults(results);
+      setInfo({
+        total: Number.isFinite(data?.total) ? data.total : results.length,
+        count: results.length,
+        cached: !!data?.cached,
+      });
     } catch (e) {
       setError(e.message);
       setResults([]);
