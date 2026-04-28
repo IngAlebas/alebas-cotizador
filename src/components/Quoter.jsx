@@ -1520,7 +1520,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         brand: panel.brand, model: panel.model, wp: panel.wp,
                         voc: panel.voc, vmp: panel.vmp, imp: panel.imp,
                         tempCoeffVoc: panel.tempCoeffVoc, tempCoeffPmax: panel.tempCoeffPmax,
-                        cellType: panel.cellType, eff: panel.eff,
+                        cellType: panel.cellType,
+                        // eff derivado si el catálogo lo trae nulo (CEC SAM no siempre lo expone).
+                        // wp / (m² × 1000) × 100. El backend AI también deriva como red de seguridad.
+                        eff: panel.eff || (panel.wp && panel.length_m && panel.width_m
+                          ? +((panel.wp / (panel.length_m * panel.width_m * 1000)) * 100).toFixed(2)
+                          : null),
+                        length_m: panel.length_m, width_m: panel.width_m,
+                        technology: panel.technology,
                       },
                       inverter: res.inv ? {
                         brand: res.inv.brand, model: res.inv.model, kw: res.inv.kw,
