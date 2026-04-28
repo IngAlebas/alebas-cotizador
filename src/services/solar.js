@@ -139,8 +139,13 @@ export async function lookupRoof({ address, lat, lon } = {}) {
         notes: data.notes || '',
       };
     } catch (e) {
-      if (GOOGLE_KEY) norm = await fetchDirectGoogle({ address, lat, lon });
-      else throw e;
+      // n8n es la fuente de verdad — el workflow ya tiene su propio fallback Claude.
+      // El antiguo fallback fetchDirectGoogle usaba REACT_APP_GOOGLE_API_KEY desde el
+      // navegador, pero esa key DEBE tener restricción por referrer (seguridad), y
+      // Google Solar API NO acepta keys con restricciones de referrer → producía el
+      // confuso error "API keys with referer restrictions cannot be used with this API".
+      // Ahora propagamos el error real de n8n para que el usuario sepa qué pasó.
+      throw e;
     }
   } else {
     norm = await fetchDirectGoogle({ address, lat, lon });
