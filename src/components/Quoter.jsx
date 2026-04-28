@@ -48,6 +48,7 @@ const Q0 = {
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
+  googleSolarEstimate: null,  // {yearlyEnergyDcKwh, specificYieldKwhPerKwpYear, bestConfigPanels, ...}
   googleAreaM2: null,    // área detectada por Google Solar (independiente del input del cliente)
   roofConfidence: null,  // 0..1 — confidence del análisis de techo
   roofImageryQuality: null, // 'HIGH' | 'MEDIUM' | 'LOW'
@@ -409,6 +410,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
     if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
     if (r.imagery) u('roofImagery', r.imagery);
+    if (r.googleSolarEstimate) u('googleSolarEstimate', r.googleSolarEstimate);
     if (r.staticMapUrl) u('roofStaticMapUrl', r.staticMapUrl);
     if (r.staticMapRoadUrl) u('roofStaticMapRoadUrl', r.staticMapRoadUrl);
     if (r.staticMapHDUrl) u('roofStaticMapHDUrl', r.staticMapHDUrl);
@@ -556,12 +558,40 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
 
     // Fase 3 — recalcular con temperaturas reales (NASA POWER) y mejor estimación
-    // de producción: PVWatts (pérdidas reales) > PVGIS > PSH heurístico.
+    // de producción.
+    // Cascada (mejor de todas las fuentes que respondieron, nombrando cuáles ejecutaron):
+    //   Google Solar (yield real del techo, DSM + sombras hora a hora)
+    //   PVWatts (pérdidas reales, modelo NREL)
+    //   PVGIS (TMY satelital)
+    //   PSH heurístico (último recurso)
+    // Si dos o más fuentes responden, promediamos para reducir sesgo. Nombramos todas
+    // las que contribuyeron en `productionSources` (array) y `productionSource` (string).
     const temps = nasa
       ? { coldTempC: nasa.cellTempCold, hotTempC: nasa.cellTempHot }
       : {};
-    const bestAnnualKwh = pvwattsAnnualKwh || pvgisAnnualKwh || null;
-    const productionSource = pvwattsAnnualKwh ? 'PVWatts' : pvgisAnnualKwh ? 'PVGIS' : 'PSH';
+    // Escala la energía Google al panel real del usuario (Google asume ~250W default).
+    let googleAnnualKwh = null;
+    const gse = f.googleSolarEstimate;
+    if (gse?.specificYieldKwhPerKwpYear && sysBase.actKwp > 0) {
+      googleAnnualKwh = Math.round(gse.specificYieldKwhPerKwpYear * sysBase.actKwp);
+    }
+    const _sources = [];
+    if (googleAnnualKwh)  _sources.push({ name: 'Google Solar', kwh: googleAnnualKwh, weight: 1.0 });
+    if (pvwattsAnnualKwh) _sources.push({ name: 'PVWatts',      kwh: pvwattsAnnualKwh, weight: 1.0 });
+    if (pvgisAnnualKwh)   _sources.push({ name: 'PVGIS',        kwh: pvgisAnnualKwh,   weight: 1.0 });
+    const bestAnnualKwh = _sources.length
+      ? Math.round(_sources.reduce((a, s) => a + s.kwh * s.weight, 0) / _sources.reduce((a, s) => a + s.weight, 0))
+      : null;
+    const productionSource = _sources.length ? _sources.map(s => s.name).join(' + ') : 'PSH';
+    const productionSources = _sources.map(s => ({ name: s.name, kwh: s.kwh }));
+    // Detectar discrepancia >15% entre la fuente máx y mín — alerta para Observaciones.
+    let productionDispersion = null;
+    if (_sources.length >= 2) {
+      const kwhs = _sources.map(s => s.kwh);
+      const max = Math.max(...kwhs), min = Math.min(...kwhs);
+      const pct = ((max - min) / min) * 100;
+      if (pct > 15) productionDispersion = { pct: +pct.toFixed(1), max, min };
+    }
 
     const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
@@ -584,7 +614,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sizedFor = (f.wantsExcedentes && areaAllowsExcedentes) ? 'excedentes'
                    : areaLimitsSystem ? 'area'
                    : 'consumo';
-    setRes({ ...sys, inv: inv2, sizedFor, productionSource });
+    setRes({ ...sys, inv: inv2, sizedFor, productionSource, productionSources, productionDispersion, googleSolarEstimate: gse || null });
     setBgt({
       ...budget,
       sav: annualSav, roi,
@@ -1594,20 +1624,26 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
           <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {dest.city}, {dest.dept}</div>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            {/* Fuente de producción — preferencia: PVWatts > PVGIS > PSH */}
-            {res.productionSource === 'PVWatts' && (
-              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.green}22`, color: C.green, border: `1px solid ${C.green}55` }}>
-                ✓ NREL PVWatts v8 · {pvwData?.solradAnnual} kWh/m²/año
-              </span>
-            )}
-            {res.productionSource === 'PVGIS' && (
-              <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.teal}22`, color: C.teal, border: `1px solid ${C.teal}55` }}>
-                ✓ PVGIS · {dest.city}
-              </span>
-            )}
+            {/* Badges por fuente que ejecutó cálculo real (Google Solar + PVWatts + PVGIS).
+                Si dos o más respondieron, el bestAnnualKwh es el promedio de las fuentes. */}
+            {(res.productionSources || []).map(s => {
+              const isGoogle  = s.name === 'Google Solar';
+              const isPVWatts = s.name === 'PVWatts';
+              const isPVGIS   = s.name === 'PVGIS';
+              const color = isGoogle ? C.yellow : isPVWatts ? C.green : C.teal;
+              const label = isGoogle  ? `✓ Google Solar · ${s.kwh.toLocaleString('es-CO')} kWh/año`
+                          : isPVWatts ? `✓ NREL PVWatts v8${pvwData?.solradAnnual ? ` · ${pvwData.solradAnnual} kWh/m²/año` : ''}`
+                          : isPVGIS   ? `✓ PVGIS · ${dest.city}`
+                          : `✓ ${s.name}`;
+              return (
+                <span key={s.name} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${color}22`, color, border: `1px solid ${color}55` }}>
+                  {label}
+                </span>
+              );
+            })}
             {res.productionSource === 'PSH' && (
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.gray ?? '#555'}22`, color: C.muted, border: `1px solid #55555555` }}>
-                Estimación PSH regional
+                Estimación PSH regional (sin fuentes externas)
               </span>
             )}
             {nasaData && (
@@ -2104,6 +2140,53 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             {!aiData && !aiError && !aiLoading && (
               <div style={{ fontSize: 11, color: C.muted }}>
                 Revisión técnica interna del sistema: voltaje del bus, cobertura de baterías, dimensionamiento vs consumo, normativa AGPE/RETIE y recomendaciones específicas.
+              </div>
+            )}
+          </div>
+        )}
+
+        {showTecnico && res.productionSources?.length > 0 && (
+          <div style={ss.card}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 12 }}>⚡ Estimación de generación</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
+              Energía anual calculada con {res.productionSources.length === 1 ? 'la siguiente fuente' : `${res.productionSources.length} fuentes externas`}
+              {res.productionSources.length > 1 ? ' (promedio ponderado para reducir sesgo de un solo modelo).' : '.'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
+              {res.productionSources.map(s => {
+                const isGoogle = s.name === 'Google Solar';
+                const isPV = s.name === 'PVWatts';
+                const color = isGoogle ? C.yellow : isPV ? '#4ade80' : C.teal;
+                return (
+                  <div key={s.name} style={{ background: C.dark, border: `1px solid ${color}44`, borderRadius: 8, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color, textTransform: 'uppercase', marginBottom: 4 }}>{s.name}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{s.kwh.toLocaleString('es-CO')} <span style={{ fontSize: 10, color: C.muted, fontWeight: 500 }}>kWh/año</span></div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
+                      {isGoogle && res.googleSolarEstimate?.specificYieldKwhPerKwpYear && `${res.googleSolarEstimate.specificYieldKwhPerKwpYear} kWh/kWp · DSM + sombras hora a hora`}
+                      {isPV && 'NREL · pérdidas reales · TMY3'}
+                      {s.name === 'PVGIS' && 'JRC · TMY satelital'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, padding: '10px 12px', background: C.dark, borderRadius: 7, border: `1px solid ${C.border}` }}>
+              <strong style={{ color: C.text }}>Promedio aplicado al pre-dimensionamiento:</strong>{' '}
+              <span style={{ color: C.yellow, fontWeight: 700 }}>{(res.productionSources.reduce((a, s) => a + s.kwh, 0) / res.productionSources.length).toLocaleString('es-CO', { maximumFractionDigits: 0 })} kWh/año</span>
+              {res.productionDispersion && (
+                <div style={{ color: C.orange, marginTop: 6 }}>
+                  ⚠ Discrepancia entre fuentes: {res.productionDispersion.pct}% (rango {res.productionDispersion.min.toLocaleString('es-CO')}–{res.productionDispersion.max.toLocaleString('es-CO')} kWh).
+                  Para diseño detallado, validar con instalador.
+                </div>
+              )}
+            </div>
+            {res.googleSolarEstimate && (
+              <div style={{ marginTop: 10, fontSize: 10, color: C.muted }}>
+                <strong>Configuración óptima Google Solar:</strong>{' '}
+                {res.googleSolarEstimate.bestConfigPanels} paneles de {res.googleSolarEstimate.panelCapacityWatts} W
+                ({res.googleSolarEstimate.bestConfigKwp} kWp) ·
+                vida útil estimada {res.googleSolarEstimate.panelLifetimeYears} años ·
+                metodología {res.googleSolarEstimate.methodology}
               </div>
             )}
           </div>
