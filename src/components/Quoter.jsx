@@ -1544,6 +1544,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       },
                       budget: { total: bgt.tot, roi: bgt.roi },
                       roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
+                      // Beneficio AGPE pre-calculado (autoconsumo + excedentes con precio bolsa XM)
+                      // — habilita a la IA reforzar la decisión cuantificando ahorro/ingresos en COP
+                      // en vez de re-sugerir AGPE cuando wantsExcedentes ya está marcado.
+                      agpeBenefit: agpe ? {
+                        gridExport: !!agpe.gridExport,
+                        category: agpe.agpeCategory,
+                        autoConsumedKwhYear: agpe.autoConsumed,
+                        excedentesKwhYear: agpe.excedentes,
+                        ahorroAutoconsumoCopYear: agpe.ahorroAutoconsumo,
+                        ingresoExcedentesCopYear: agpe.ingresoExcedentes,
+                        totalAnualCop: agpe.totalAnual,
+                        tariffCuCopPerKwh: agpe.tariffCU,
+                        priceExcedentesCopPerKwh: agpe.priceExcedentes,
+                        xmSpotCopPerKwh: agpe.spotSource?.cop_per_kwh || null,
+                        xmSpotPeriodDays: agpe.spotSource?.periodDays || null,
+                      } : null,
                     });
                     setAiData(out);
                   } catch (e) {
