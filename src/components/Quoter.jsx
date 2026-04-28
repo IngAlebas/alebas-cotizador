@@ -982,7 +982,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div style={{ marginBottom: 8 }}>
           <label style={ss.lbl}>Panel solar</label>
           <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.panelId || panels[0]?.id} onChange={e => u('panelId', e.target.value)}>
-            {panels.map(p => <option key={p.id} value={p.id}>{p.brand} {p.model} — {p.wp} Wp — {fmtCOP(p.price)}</option>)}
+            {panels.map(p => {
+              const dim = (p.lengthMm && p.widthMm) ? `${(p.lengthMm/1000).toFixed(2)}×${(p.widthMm/1000).toFixed(2)} m` : '';
+              const area = (p.lengthMm && p.widthMm) ? ((p.lengthMm * p.widthMm) / 1e6).toFixed(2) : null;
+              return (
+                <option key={p.id} value={p.id}>
+                  {p.brand} {p.model} — {p.wp} Wp{dim ? ` — ${dim}` : ''}{area ? ` (${area} m²)` : ''}{p.kg ? ` — ${p.kg} kg` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div style={{ marginBottom: 8 }}>
@@ -1413,7 +1421,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ marginBottom: 10 }}>
               <label style={ss.lbl}>Batería (filtradas por tensión {f.busVoltage}V)</label>
               <select style={{ ...ss.inp, cursor: 'pointer' }} value={f.battId || batt?.id || ''} onChange={e => { u('battId', e.target.value); u('battManual', false); }}>
-                {battPool.map(b => <option key={b.id} value={b.id}>{b.brand} {b.model} — {b.kwh} kWh — {b.voltage}V — {fmtCOP(b.price)}</option>)}
+                {battPool.map(b => {
+                  // Capacidad en Ah = kWh × 1000 / V (estándar de datasheet de batería)
+                  const ah = b.voltage > 0 ? Math.round(b.kwh * 1000 / b.voltage) : null;
+                  const ampInfo = b.maxDischargeA ? ` · ${b.maxDischargeA}A descarga` : '';
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {b.brand} {b.model} — {b.voltage}V{ah ? ` · ${ah}Ah` : ''} · {b.kwh} kWh{ampInfo}{b.chemistry ? ` · ${b.chemistry}` : ''}
+                    </option>
+                  );
+                })}
               </select>
               {!battsForBus.length && (
                 <div style={{ fontSize: 10, color: C.orange, marginTop: 4 }}>⚠ No hay baterías en {f.busVoltage}V en el catálogo — mostrando todas.</div>
@@ -2776,16 +2793,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           if (areaLimited) {
             obs.push({ type: 'warn', title: `Cobertura parcial (${res.cov}%) por área disponible`, text: `El techo declarado (${area} m²) no alcanza para el 100% de tu consumo. Se requerirían ~${idealArea} m² para cubrir ${f.monthlyKwh} kWh/mes. Alternativas: ampliar área, usar paneles de mayor eficiencia o complementar con un segundo sistema.` });
           }
-          // Análisis del área disponible vs. la medición real de Google Solar.
+          // Análisis del techo Google Solar — siempre informar al cliente cuando hay datos del techo.
+          if (f.roofConfidence != null && f.googleAreaM2 != null) {
+            const conf = Math.round(f.roofConfidence * 100);
+            const gArea = Math.round(f.googleAreaM2);
+            const orientationOk = f.roofAzimuthDeg != null && f.roofAzimuthDeg >= 120 && f.roofAzimuthDeg <= 240;
+            const tiltOk = f.roofTiltDeg != null && f.roofTiltDeg >= 0 && f.roofTiltDeg <= 30;
+            const orientationNote = orientationOk
+              ? `Orientación favorable hacia el sur (azimuth ${f.roofAzimuthDeg}°, inclinación ${f.roofTiltDeg}°)`
+              : `Orientación ${f.roofAzimuthDeg}°/${f.roofTiltDeg}° — fuera del rango óptimo (sur ±60°, 0-30°), evaluar reorientación o estructura inclinada`;
+            const shadeNote = f.shadeIndex != null
+              ? `sombra ${Math.round((1 - f.shadeIndex) * 100)}% calculada hora a hora sobre el modelo 3D`
+              : 'sombra no disponible';
+            obs.push({
+              type: orientationOk && tiltOk ? 'info' : 'warn',
+              title: `Análisis del techo (Google Solar) — confianza ${conf}%${f.roofImageryQuality ? `, imagery ${f.roofImageryQuality}` : ''}`,
+              text: `~${gArea} m² aprovechables identificados (excluye obstáculos, bordes, pendientes >35°). ${orientationNote}. ${shadeNote}.${f.sunshineHoursYear ? ` Horas de sol/año: ${Math.round(f.sunshineHoursYear).toLocaleString('es-CO')}.` : ''}${f.roofSegments?.length > 1 ? ` ${f.roofSegments.length} segmentos detectados — el sistema selecciona los de mejor producción.` : ''}`
+            });
+          }
+          // Override manual: si el usuario edita el área después del auto-update, alertar.
           if (f.googleAreaM2 != null && area > 0) {
             const gArea = Math.round(f.googleAreaM2);
             const diff = area - gArea;
             const pctDiff = Math.abs(diff) / gArea * 100;
             if (pctDiff > 10) {
               if (diff < 0) {
-                obs.push({ type: 'info', title: `Área declarada (${area} m²) menor que el aprovechable detectado (${gArea} m²)`, text: `Google Solar identifica ~${gArea} m² aprovechables para paneles en este techo (excluye obstáculos, bordes, pendientes inviables). Tu valor declarado de ${area} m² implica una limitación voluntaria — paneles existentes, vista preservada, arrendamiento parcial, etc. Puedes recuperar hasta ${Math.abs(diff)} m² adicionales si la limitación es ajustable.` });
+                obs.push({ type: 'info', title: `Área declarada (${area} m²) menor que el aprovechable detectado (${gArea} m²)`, text: `Limitación voluntaria detectada — paneles existentes, vista preservada, arrendamiento parcial, etc. Puedes recuperar hasta ${Math.abs(diff)} m² adicionales si la limitación es ajustable.` });
               } else {
-                obs.push({ type: 'warn', title: `Área declarada (${area} m²) mayor que el aprovechable detectado (${gArea} m²)`, text: `Google Solar reporta solo ~${gArea} m² aprovechables. Tu valor declarado de ${area} m² podría estar sobrestimando si incluye obstáculos, bordes, pendientes >35° o zonas con sombra crítica. Validar en sitio con instalador antes del diseño detallado.` });
+                obs.push({ type: 'warn', title: `Área declarada (${area} m²) mayor que el aprovechable detectado (${gArea} m²)`, text: `Google Solar reporta solo ~${gArea} m² aprovechables. Validar en sitio con instalador antes del diseño detallado.` });
               }
             }
           }
