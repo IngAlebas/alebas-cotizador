@@ -185,10 +185,50 @@ button:active { transform: scale(0.97); }
   .al-mayoristas { display: none !important; }
 }
 
-/* ── SAFE AREA (notch/home bar) ── */
-@supports (padding: env(safe-area-inset-bottom)) {
-  body { padding-bottom: env(safe-area-inset-bottom); }
+/* ── SAFE AREA (notch/home bar) — iOS 11+, Android cutout ── */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
   .al-footer { padding-bottom: max(8px, env(safe-area-inset-bottom)) !important; }
+  .al-topnav {
+    padding-left: max(12px, env(safe-area-inset-left)) !important;
+    padding-right: max(12px, env(safe-area-inset-right)) !important;
+  }
+  .al-bottomnav {
+    padding-bottom: env(safe-area-inset-bottom) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    padding-right: env(safe-area-inset-right) !important;
+  }
+}
+
+/* ── PWA standalone (instalada en homescreen) — sin URL bar de Safari ── */
+@media (display-mode: standalone) {
+  html, body { overscroll-behavior-y: none; }
+  body { -webkit-user-select: none; user-select: none; }
+  /* Permitir selección en inputs, textareas y áreas de texto donde el usuario debe poder copiar */
+  input, textarea, [contenteditable], pre, code, .al-selectable {
+    -webkit-user-select: text; user-select: text;
+  }
+}
+
+/* ── iOS — calidad de tap y prevenir zoom indeseado ── */
+@supports (-webkit-touch-callout: none) {
+  /* Elimina el highlight gris translúcido al tap */
+  a, button, [role="button"], input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* iOS hace zoom automático cuando el font-size de un input es <16px. */
+  input, select, textarea {
+    font-size: max(16px, 1em);
+  }
+  /* Touch target mínimo iOS HIG = 44×44 */
+  button, .al-topnav-btns button, .al-bottomnav a, .al-roof-actions button {
+    min-height: 44px;
+  }
 }
 
 /* ── ANIMATIONS ── */
@@ -259,4 +299,48 @@ button:active { transform: scale(0.97); }
 /* Extra small phones */
 @media (max-width: 375px) {
   .al-topnav { padding: 0 10px !important; }
+}
+
+/* ══════════════════════════════════════
+   COMPONENTES NUEVOS — RESPONSIVE
+══════════════════════════════════════ */
+
+/* Diagrama del sistema (paneles → inversor → batería → casa → red) */
+@media (max-width: 600px) {
+  /* Stack vertical en pantallas chicas: cada equipo en su línea con flecha hacia abajo */
+  .al-system-diagram {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 4px !important;
+  }
+  .al-system-diagram > div {
+    min-width: 0 !important;
+  }
+  /* Las flechas (→) se rotan 90° en mobile para indicar dirección vertical */
+  .al-system-diagram > div > div:first-child {
+    /* No rotar el contenido de las cajas, sólo flechas que son flex-column de 30px min */
+  }
+  .al-system-diagram > div[style*="min-width: 30px"] > div:first-child,
+  .al-system-diagram > div:not([style*="min-width: 88px"]):not([style*="min-width: 92px"]):not([style*="min-width: 96px"]):not([style*="min-width: 100px"]) > div:first-child {
+    transform: rotate(90deg);
+  }
+}
+
+/* Preview del techo (mapa interactivo + mapa de calles) */
+@media (max-width: 720px) {
+  .al-roof-preview-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Inputs con padding cómodo en touch */
+@media (hover: none) and (pointer: coarse) {
+  input[type="text"], input[type="number"], input[type="email"], input[type="tel"], select, textarea {
+    padding: 12px 14px !important;
+  }
+}
+
+/* Modo standalone PWA: ocultar elementos que no aplican (ej. botón "Instalar app") */
+@media (display-mode: standalone) {
+  .al-only-browser { display: none !important; }
 }
