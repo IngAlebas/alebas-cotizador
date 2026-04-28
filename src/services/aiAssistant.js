@@ -31,7 +31,10 @@ export const APPLYABLE_FIELDS = [
 export function aiConfigured() { return n8nConfigured(); }
 
 export async function aiRecommend(context, payload) {
-  const data = await n8nPost('ai-recommend', { context, payload });
+  // Timeout 120s: cascada Groq → Gemini → Mistral → Claude puede tardar hasta
+  // ~100s en el peor caso (rate-limit en los gratuitos + Mistral/Claude con
+  // max_tokens=4096 + per-provider 25s timeout en backend = 4×25 = 100s).
+  const data = await n8nPost('ai-recommend', { context, payload }, { timeoutMs: 120000 });
   if (!data || typeof data !== 'object') throw new Error('Respuesta inválida de n8n (ai-recommend)');
   const allowed = new Set(APPLYABLE_FIELDS);
   const rawActions = Array.isArray(data.actions) ? data.actions : [];

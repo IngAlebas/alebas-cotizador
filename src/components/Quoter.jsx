@@ -1995,12 +1995,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     });
                     setAiData(out);
                   } catch (e) {
-                    const msg = e?.message || 'Error IA';
-                    if (/Failed to fetch|NetworkError|aborted/i.test(msg)) {
-                      setAiUnavailable(true);
-                    } else {
-                      setAiError(msg);
+                    // No exponemos errores técnicos en el frontend — el cliente final no
+                    // necesita saber 'Failed to fetch' o 'Tiempo de espera agotado'. Si la
+                    // IA falla por cualquier motivo (timeout, network, 5xx, all_providers),
+                    // simplemente ocultamos el bloque entero y dejamos que la cotización
+                    // siga sin asistente. La consola del browser conserva el error real
+                    // para diagnóstico interno.
+                    if (typeof console !== 'undefined') {
+                      console.warn('[ai-recommend] no disponible:', e?.message || e);
                     }
+                    setAiUnavailable(true);
                   }
                   finally { setAiStep(AI_STEPS.length); setAiLoading(false); }
                 }}

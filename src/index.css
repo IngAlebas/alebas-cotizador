@@ -357,24 +357,33 @@ button:active { transform: scale(0.97); }
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  /* Ocultar todo lo que no sea el PDF executive */
-  body > *:not(.al-pdf-only-wrapper) { display: none !important; }
-  .al-nav, .al-topnav, .al-bottomnav, .al-footer, noscript {
-    display: none !important;
+  /* Técnica visibility: hidden todo, visible solo el PDF y sus descendientes.
+     `body > *:not(...)` no funciona porque .al-pdf-summary está anidada en
+     React (#root → App → ... → .al-pdf-summary), no es hijo directo de body. */
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  body * { visibility: hidden !important; }
+  .al-pdf-summary,
+  .al-pdf-summary *,
+  .al-pdf-summary *::before,
+  .al-pdf-summary *::after {
+    visibility: visible !important;
   }
-  /* Mostrar solo el PDF summary */
+  /* Posicionar el PDF en la esquina superior izquierda — cubre toda la página
+     impresa sin importar dónde estaba en el flujo del DOM. */
   .al-pdf-summary {
     display: block !important;
-    background: #fff;
-    color: #07090F;
-    font-family: 'Outfit', system-ui, sans-serif;
-    font-size: 10pt;
-    line-height: 1.4;
-    max-width: 100%;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    background: #fff !important;
+    color: #07090F !important;
+    font-family: 'Outfit', system-ui, sans-serif !important;
+    font-size: 10pt !important;
+    line-height: 1.4 !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
-  /* Ocultar el resto del Quoter en print */
-  body { background: #fff !important; }
-  .al-pdf-summary ~ *, .al-pdf-summary + * { display: none !important; }
 
   /* PDF — Cabecera */
   .al-pdf-header {
