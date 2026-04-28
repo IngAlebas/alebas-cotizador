@@ -1059,9 +1059,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </span>
                   )}
                   {f.roofImagery.imageryQuality && <> · <span style={{ color: C.teal }}>{f.roofImagery.imageryQuality}</span></>}
-                  {f.roofImagery.annualFluxUrl && <> · <a href={`${f.roofImagery.annualFluxUrl}`} target="_blank" rel="noreferrer" style={{ color: C.teal }}>flujo solar↗</a></>}
-                  {f.roofImagery.rgbUrl && <> · <a href={`${f.roofImagery.rgbUrl}`} target="_blank" rel="noreferrer" style={{ color: C.teal }}>foto↗</a></>}
-                  {f.roofImagery.hourlyShadeUrls?.length > 0 && <> · {f.roofImagery.hourlyShadeUrls.length} capas sombra</>}
+                </div>
+              )}
+              {f.roofImagery && (f.roofImagery.rgbUrl || f.roofImagery.annualFluxUrl || f.roofImagery.dsmUrl) && (
+                <div style={{ marginTop: 4, fontSize: 9, color: C.muted, lineHeight: 1.5 }}>
+                  <div style={{ color: C.muted, marginBottom: 2 }}>📦 Archivos técnicos (.tif para análisis GIS — el preview visible es la imagen satelital de arriba):</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingLeft: 6 }}>
+                    {f.roofImagery.rgbUrl && <a href={f.roofImagery.rgbUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>RGB.tif ↓</a>}
+                    {f.roofImagery.dsmUrl && <a href={f.roofImagery.dsmUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>DSM.tif ↓</a>}
+                    {f.roofImagery.maskUrl && <a href={f.roofImagery.maskUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>máscara.tif ↓</a>}
+                    {f.roofImagery.annualFluxUrl && <a href={f.roofImagery.annualFluxUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>flujo anual.tif ↓</a>}
+                    {f.roofImagery.monthlyFluxUrl && <a href={f.roofImagery.monthlyFluxUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>flujo mensual.tif ↓</a>}
+                    {f.roofImagery.hourlyShadeUrls?.length > 0 && <span>{f.roofImagery.hourlyShadeUrls.length} capas sombra horaria</span>}
+                  </div>
                 </div>
               )}
               <div style={{ marginTop: 3 }}>
