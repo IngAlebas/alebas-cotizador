@@ -16,6 +16,7 @@ import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
+import InteractiveRoofMap from './InteractiveRoofMap';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
@@ -1136,12 +1137,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </a>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
+                <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
                   <div>
-                    <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark }}>Satelital · zoom 20 (techo)</div>
-                    <img src={f.roofStaticMapUrl} alt="Vista satelital del techo"
-                      style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Satelital · zoom 20 · arrastra el pin</span>
+                      <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
+                    </div>
+                    <InteractiveRoofMap
+                      lat={f.lat} lon={f.lon}
+                      areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
+                      busy={roofLoading}
+                      onPinMove={async (newLat, newLon) => {
+                        setRoofError(null); setRoofLoading(true);
+                        try {
+                          const r = await lookupRoof({ lat: newLat, lon: newLon });
+                          applyRoofLookup(r);
+                        } catch (e) {
+                          // Fallback: si lookupRoof falla, al menos persistir las coords nuevas
+                          // para que el usuario vea reflejado el ajuste.
+                          u('lat', newLat); u('lon', newLon);
+                          setRoofError(e?.message || 'No se pudo recalcular con la nueva ubicación');
+                        } finally {
+                          setRoofLoading(false);
+                        }
+                      }}
+                    />
                   </div>
                   {f.roofStaticMapRoadUrl && (
                     <div>
