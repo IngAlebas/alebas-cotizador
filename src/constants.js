@@ -622,7 +622,12 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   mp = Math.round(ap / 12);
   dp = parseFloat((ap / 365).toFixed(1));
 
-  const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
+  // Cobertura real (sin cap): producción / consumo × 100. Antes estaba capada en 120%
+  // pero eso falseaba el dato cuando el sistema se dimensiona para excedentes (puede
+  // llegar a 200-300% en sistemas comerciales). El cap escondía la realidad y la IA
+  // reportaba "120%" mientras el usuario veía 263% en otras secciones — desalineación
+  // interna que daba sensación de que la IA inventaba datos.
+  const cov = Math.round((mp / monthlyKwh) * 100);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
   // Área real de techo ocupada, usando footprint real + packing factor
