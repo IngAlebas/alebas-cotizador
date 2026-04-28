@@ -249,7 +249,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         const n = Math.round(Number(value));
         return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
       }
-      case 'monthlyKwh':
       case 'availableArea': {
         const n = Number(value);
         return Number.isFinite(n) && n > 0 ? String(n) : undefined;
@@ -1617,15 +1616,21 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 )}
                 {(() => {
-                  const pending = (aiData.actions || [])
+                  const allActions = aiData.actions || [];
+                  const pending = allActions
                     .map(a => ({ ...a, coerced: coerceActionValue(a.field, a.value) }))
                     .filter(a => a.coerced !== undefined && f[a.field] !== a.coerced);
-                  if (!pending.length && !aiApplied) return null;
+                  // Siempre rendereamos el bloque cuando hay aiData para que el usuario
+                  // sepa explícitamente si la IA propuso cambios o si la config ya es
+                  // coherente (caso pending=[] y aiApplied=null).
+                  const headerLabel = pending.length > 0
+                    ? `Mejoras automáticas (${pending.length})`
+                    : aiApplied ? 'Mejoras aplicadas' : 'Mejoras automáticas';
                   return (
                     <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.teal}44` }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                         <div style={{ fontSize: 10, color: C.teal, letterSpacing: 1, textTransform: 'uppercase' }}>
-                          {pending.length > 0 ? `Mejoras automáticas (${pending.length})` : 'Mejoras aplicadas'}
+                          {headerLabel}
                         </div>
                         {pending.length > 0 && (
                           <button
@@ -1651,6 +1656,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       {aiApplied && pending.length === 0 && (
                         <div style={{ fontSize: 11, color: C.teal }}>
                           ✓ Cambios aplicados ({aiApplied.fields.join(', ')}). El sistema fue recalculado.
+                        </div>
+                      )}
+                      {!aiApplied && pending.length === 0 && (
+                        <div style={{ fontSize: 11, color: C.muted }}>
+                          {allActions.length === 0
+                            ? 'La IA no propuso cambios aplicables en los campos del cotizador. Revisa las sugerencias arriba para evaluación manual.'
+                            : 'Las propuestas de la IA coinciden con la configuración actual o no aplican a los campos editables. Revisa las sugerencias arriba.'}
                         </div>
                       )}
                     </div>

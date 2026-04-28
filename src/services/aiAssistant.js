@@ -19,8 +19,11 @@ import { n8nPost, n8nConfigured } from './n8n';
 
 // Campos del estado del cotizador que pueden mutarse desde una `action` IA.
 // Mantener sincronizado con la whitelist del workflow `n8n/ai-recommend.json`.
+// monthlyKwh queda fuera intencionalmente: el consumo viene de la factura del
+// usuario, RD-8 del prompt prohíbe proponerlo y el sanitizer del servidor lo
+// descarta. Mantenerlo aquí solo añadía capacidad muerta al filtro cliente.
 export const APPLYABLE_FIELDS = [
-  'systemType', 'monthlyKwh', 'battQty', 'busVoltage',
+  'systemType', 'battQty', 'busVoltage',
   'backupHours', 'autonomyDays', 'criticalPct',
   'acometida', 'availableArea', 'wantsExcedentes',
 ];
