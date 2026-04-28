@@ -391,8 +391,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
   const applyRoofLookup = (r) => {
     if (r.areaM2 != null && !Number.isNaN(r.areaM2)) {
-      const userArea = parseFloat(f.availableArea);
-      if (!userArea || userArea <= 0) u('availableArea', String(Math.round(r.areaM2)));
+      // Siempre sobrescribimos con la última medición de Google: el usuario puede
+      // arrastrar el pin varias veces antes de confirmar, y el área debe reflejar
+      // la posición actual del pin (no la primera estimación). Si quiere ajustar
+      // a un valor más conservador, puede editar el input después de confirmar.
+      u('availableArea', String(Math.round(r.areaM2)));
       u('googleAreaM2', r.areaM2);
     }
     if (r.lat != null) u('lat', r.lat);
