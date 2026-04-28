@@ -343,6 +343,138 @@ button:active { transform: scale(0.97); }
 /* Modo standalone PWA: ocultar elementos que no aplican (ej. botón "Instalar app") */
 @media (display-mode: standalone) {
   .al-only-browser { display: none !important; }
+
+  /* Reforzar safe-area en modo nativo (PWA instalada en homescreen). Sin esto,
+     el contenido se mete bajo la Dynamic Island/notch o el home indicator de iOS. */
+  body {
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
+  }
+  .al-topnav {
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    height: calc(52px + env(safe-area-inset-top, 0px)) !important;
+  }
+  .al-bottomnav {
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
+  }
+  .al-content {
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
+  }
+  /* Cards no se pegan a los bordes en mobile standalone */
+  main, [class*="al-card"] {
+    margin-left: max(8px, env(safe-area-inset-left, 0px)) !important;
+    margin-right: max(8px, env(safe-area-inset-right, 0px)) !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   INSTALL PROMPT — banner sugerencia de instalar la PWA
+   Visible solo en mobile no instalada, dismissible.
+══════════════════════════════════════════════════════════════════ */
+.al-install-prompt {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 9999;
+  animation: slideUpFade 0.4s ease-out;
+  pointer-events: auto;
+}
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.al-install-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: linear-gradient(135deg, var(--card2), var(--card));
+  border: 1px solid var(--oBorder);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 140, 0, 0.1);
+  position: relative;
+  max-width: 540px;
+  margin: 0 auto;
+}
+.al-install-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+.al-install-close:hover { color: var(--text); }
+.al-install-icon {
+  flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  background: rgba(255, 140, 0, 0.12);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.al-install-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 22px;
+}
+.al-install-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.al-install-text {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.al-install-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.al-install-btn {
+  background: linear-gradient(135deg, var(--sun), var(--amber));
+  color: #07090F;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(255, 140, 0, 0.3);
+}
+.al-install-btn:hover { transform: translateY(-1px); }
+.al-install-btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 /* ══════════════════════════════════════════════════════════════════

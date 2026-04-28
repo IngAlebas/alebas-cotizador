@@ -7,6 +7,7 @@ import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
+import InstallPrompt from './components/InstallPrompt';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import logo from './logo.svg';
 
@@ -292,6 +293,7 @@ export default function App() {
             </div>
         </div>
       </footer>
+      <InstallPrompt />
     </div>
   );
 }
