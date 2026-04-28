@@ -1477,6 +1477,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 onClick={async () => {
                   setAiError(null); setAiLoading(true); setAiApplied(null); setAiStep(0);
                   try {
+                    // Layout eléctrico — Voc en frío, Vmp en caliente, corriente por MPPT.
+                    // Se calcula localmente para que la IA tenga métricas exactas y pueda
+                    // hacer análisis técnico real, no genérico.
+                    const layout = res.inv ? validateLayout(panel, res.inv, res.ppss, res.ns) : null;
+                    const dcAcRatio = res.inv?.kw ? +(res.actKwp / res.inv.kw).toFixed(2) : null;
                     const out = await aiRecommend('review', {
                       systemType: f.systemType,
                       monthlyKwh: Number(f.monthlyKwh),
@@ -1487,12 +1492,57 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       wantsExcedentes: !!f.wantsExcedentes,
                       operator: operator.name, psh,
                       location: { dept: dest.dept, city: dest.city, lat: f.lat, lon: f.lon, address: f.address || roofQuery || '' },
-                      panel: { brand: panel.brand, model: panel.model, wp: panel.wp },
-                      inverter: res.inv ? { brand: res.inv.brand, model: res.inv.model, kw: res.inv.kw, type: res.inv.type } : null,
+                      panel: {
+                        brand: panel.brand, model: panel.model, wp: panel.wp,
+                        voc: panel.voc, vmp: panel.vmp, imp: panel.imp,
+                        tempCoeffVoc: panel.tempCoeffVoc, tempCoeffPmax: panel.tempCoeffPmax,
+                        cellType: panel.cellType, eff: panel.eff,
+                      },
+                      inverter: res.inv ? {
+                        brand: res.inv.brand, model: res.inv.model, kw: res.inv.kw,
+                        type: res.inv.type, phase: res.inv.phase, offGridCapable: !!res.inv.offGridCapable,
+                        vocMax: res.inv.vocMax, mpptVmin: res.inv.mpptVmin, mpptVmax: res.inv.mpptVmax,
+                        mpptCount: res.inv.mpptCount, idcMax: res.inv.idcMax,
+                      } : null,
                       battery: needsB ? { brand: batt.brand, model: batt.model, kwh: batt.kwh, voltage: batt.voltage, qty: f.battQty, totalKwh: +(batt.kwh * f.battQty).toFixed(2) } : null,
                       storageReqKwh: +requiredBankKwh.toFixed(2),
                       backup: f.systemType === 'off-grid' ? { autonomyDays: f.autonomyDays } : { hours: f.backupHours, criticalPct: f.criticalPct },
-                      result: { kwp: res.actKwp, numPanels: res.numPanels, monthlyProdKwh: res.mp, coverage: res.cov, annualProdKwh: res.ap, roofM2: res.roof, strings: res.ns, panelsPerString: res.ppss },
+                      result: {
+                        kwp: res.actKwp, numPanels: res.numPanels, monthlyProdKwh: res.mp,
+                        coverage: res.cov, annualProdKwh: res.ap, roofM2: res.roof,
+                        strings: res.ns, panelsPerString: res.ppss,
+                        dcAcRatio,
+                        currentLimited: !!res.currentLimited,
+                        cappedByRegulation: !!res.cappedByRegulation,
+                        noInverter: !!res.noInverter,
+                      },
+                      // Layout eléctrico calculado por validateLayout — la IA debe
+                      // observar márgenes Voc/Vmp/Idc y reportar findings/warnings sin
+                      // proponer cambios de catálogo (panel/inversor) que no son aplicables.
+                      layout: layout ? {
+                        ok: layout.ok,
+                        errors: layout.errors,
+                        warnings: layout.warnings,
+                        stringVocCold: layout.metrics?.stringVocCold,
+                        stringVmpStc: layout.metrics?.stringVmpStc,
+                        stringVmpHot: layout.metrics?.stringVmpHot,
+                        currentPerMppt: layout.metrics?.currentPerMppt,
+                        stringsPerMppt: layout.metrics?.stringsPerMppt,
+                        vocMax: layout.metrics?.vocMax,
+                        mpptMin: layout.metrics?.mpptMin,
+                        mpptMax: layout.metrics?.mpptMax,
+                        idcMax: layout.metrics?.idcMax,
+                        mpptCount: layout.metrics?.mpptCount,
+                        vocMargin: layout.metrics?.vocMax ? +((1 - layout.metrics.stringVocCold / layout.metrics.vocMax) * 100).toFixed(1) : null,
+                      } : null,
+                      // Sombreado y orientación (Google Solar API si está disponible)
+                      siteFactors: {
+                        shadeIndex: f.shadeIndex,
+                        shadeSource: f.shadeSource,
+                        roofTiltDeg: f.roofTiltDeg,
+                        roofAzimuthDeg: f.roofAzimuthDeg,
+                        sunshineHoursYear: f.sunshineHoursYear,
+                      },
                       budget: { total: bgt.tot, roi: bgt.roi },
                       roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
                     });
