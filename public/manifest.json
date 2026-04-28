@@ -49,7 +49,7 @@
       "short_name": "FluxAI",
       "description": "Monitoreo solar inteligente de ALEBAS",
       "url": "https://app.fluxai.solutions",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/fluxai-logo.svg", "sizes": "163x92", "type": "image/svg+xml" }]
     }
   ]
 }

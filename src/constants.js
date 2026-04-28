@@ -12,6 +12,12 @@ export const C = {
   oBorder: '#FF8C0030',                               // border naranja
   text:   '#e8f4f7', muted: '#7a9eaa',
   green:  '#4ade80', red: '#f87171',
+
+  // FluxAI brand (marca hermana ALEBAS — monitoreo solar). Colores oficiales
+  // tomados del logo SVG. Usar para chips/CTAs/blocks que referencien FluxAI.
+  fluxBlue:  '#0044A4',
+  fluxGreen: '#00C781',
+  fluxAccent:'#0C62DC',
 };
 
 // ==================== OPERATORS DE RED (OR) ====================

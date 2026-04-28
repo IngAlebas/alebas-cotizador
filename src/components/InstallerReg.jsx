@@ -49,13 +49,15 @@ export default function InstallerReg({ addInstaller }) {
       </div>
       <div style={{ display: 'flex', gap: 9, marginBottom: 12, flexWrap: 'wrap' }}>
         {[
-          ['🌍', 'Cobertura nacional', 'Proyectos en todas las regiones', C.teal],
-          ['💰', 'Ingresos adicionales', 'Comisiones por proyecto cerrado', C.teal],
-          ['📋', 'Proyectos calificados', 'Solo solicitudes de tu región', C.teal],
-          ['📡', 'FluxAI Pro · 12 meses', 'Acceso al monitoreo de ALEBAS para tus instalaciones', C.amber],
-        ].map(([ic, t, d, col]) => (
+          { ic: '🌍', t: 'Cobertura nacional', d: 'Proyectos en todas las regiones', col: C.teal },
+          { ic: '💰', t: 'Ingresos adicionales', d: 'Comisiones por proyecto cerrado', col: C.teal },
+          { ic: '📋', t: 'Proyectos calificados', d: 'Solo solicitudes de tu región', col: C.teal },
+          { logo: '/fluxai-logo.svg', t: 'FluxAI Pro · 12 meses', d: 'Acceso al monitoreo de ALEBAS para tus instalaciones', col: C.fluxBlue },
+        ].map(({ ic, logo, t, d, col }) => (
           <div key={t} style={{ ...ss.card, flex: '1 1 140px', textAlign: 'center', padding: '14px 10px', borderColor: `${col}44` }}>
-            <div style={{ fontSize: 20, marginBottom: 5 }}>{ic}</div>
+            {logo
+              ? <img src={logo} alt="" style={{ height: 22, marginBottom: 6, display: 'block', margin: '0 auto 6px' }} />
+              : <div style={{ fontSize: 20, marginBottom: 5 }}>{ic}</div>}
             <div style={{ fontWeight: 600, color: col, fontSize: 11, marginBottom: 3 }}>{t}</div>
             <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.4 }}>{d}</div>
           </div>

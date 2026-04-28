@@ -1448,7 +1448,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {surplus && onGrid && (
                 <div style={{ marginTop: 10, fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
                   Con AGPE (CREG 174/2021) los excedentes pueden venderse al operador de red ({operator.name}). El valor se descuenta en la factura o se paga si supera el consumo del periodo.
-                  {' '}<a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer" style={{ color: C.amber, fontWeight: 600, textDecoration: 'none' }}>FluxAI</a> concilia automáticamente los excedentes facturados contra la producción real medida.
+                  {' '}<a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer" style={{ color: C.fluxGreen, fontWeight: 700, textDecoration: 'none' }}>FluxAI</a> concilia automáticamente los excedentes facturados contra la producción real medida.
                 </div>
               )}
               {surplus && f.systemType === 'off-grid' && (
@@ -1466,18 +1466,25 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         })()}
 
         {showResumen && (
-          <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}44`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
-                <span style={{ color: C.amber }}>📡</span> Monitoreo recomendado · FluxAI
+          <div style={{
+            background: `linear-gradient(135deg, ${C.fluxBlue}10, ${C.fluxGreen}10)`,
+            border: `1px solid ${C.fluxBlue}55`, borderRadius: 9, padding: '14px 16px', marginBottom: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <img src="/fluxai-logo.svg" alt="FluxAI" style={{ height: 28, display: 'block' }} />
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
+                  Monitoreo recomendado
+                  <div style={{ fontSize: 9, color: C.muted, fontWeight: 500, marginTop: 2 }}>by ALEBAS Ingeniería</div>
+                </div>
               </div>
               <a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer"
-                 style={{ fontSize: 11, padding: '6px 14px', background: C.amber, color: C.dark, borderRadius: 7, fontWeight: 700, textDecoration: 'none' }}>
+                 style={{ fontSize: 11, padding: '7px 16px', background: `linear-gradient(90deg, ${C.fluxGreen}, ${C.fluxBlue})`, color: '#fff', borderRadius: 7, fontWeight: 700, textDecoration: 'none' }}>
                 Conocer FluxAI →
               </a>
             </div>
             <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
-              <strong style={{ color: '#fff' }}>FluxAI</strong> es la plataforma de monitoreo solar de ALEBAS Ingeniería (marca hermana de SolarHub). Te permite:
+              <strong style={{ color: C.fluxGreen }}>FluxAI</strong> es la plataforma de monitoreo solar de ALEBAS Ingeniería (marca hermana de SolarHub). Te permite:
               <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 18 }}>
                 <li>Ver producción y consumo en tiempo real desde el celular.</li>
                 <li>Recibir alertas si el sistema rinde por debajo de lo cotizado.</li>
@@ -1520,7 +1527,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         brand: panel.brand, model: panel.model, wp: panel.wp,
                         voc: panel.voc, vmp: panel.vmp, imp: panel.imp,
                         tempCoeffVoc: panel.tempCoeffVoc, tempCoeffPmax: panel.tempCoeffPmax,
-                        cellType: panel.cellType, eff: panel.eff,
+                        cellType: panel.cellType,
+                        // eff derivado si el catálogo lo trae nulo (CEC SAM no siempre lo expone).
+                        // wp / (m² × 1000) × 100. El backend AI también deriva como red de seguridad.
+                        eff: panel.eff || (panel.wp && panel.length_m && panel.width_m
+                          ? +((panel.wp / (panel.length_m * panel.width_m * 1000)) * 100).toFixed(2)
+                          : null),
+                        length_m: panel.length_m, width_m: panel.width_m,
+                        technology: panel.technology,
                       },
                       inverter: res.inv ? {
                         brand: res.inv.brand, model: res.inv.model, kw: res.inv.kw,
