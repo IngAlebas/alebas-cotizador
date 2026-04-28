@@ -16,6 +16,7 @@ import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
+import InteractiveRoofMap from './InteractiveRoofMap';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
@@ -1136,12 +1137,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </a>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
+                <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
                   <div>
-                    <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark }}>Satelital · zoom 20 (techo)</div>
-                    <img src={f.roofStaticMapUrl} alt="Vista satelital del techo"
-                      style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Satelital · zoom 20 · arrastra el pin</span>
+                      <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
+                    </div>
+                    <InteractiveRoofMap
+                      lat={f.lat} lon={f.lon}
+                      areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
+                      busy={roofLoading}
+                      onPinMove={async (newLat, newLon) => {
+                        setRoofError(null); setRoofLoading(true);
+                        try {
+                          const r = await lookupRoof({ lat: newLat, lon: newLon });
+                          applyRoofLookup(r);
+                        } catch (e) {
+                          // Fallback: si lookupRoof falla, al menos persistir las coords nuevas
+                          // para que el usuario vea reflejado el ajuste.
+                          u('lat', newLat); u('lon', newLon);
+                          setRoofError(e?.message || 'No se pudo recalcular con la nueva ubicación');
+                        } finally {
+                          setRoofLoading(false);
+                        }
+                      }}
+                    />
                   </div>
                   {f.roofStaticMapRoadUrl && (
                     <div>
@@ -1946,7 +1966,36 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             )}
             {aiError && <div style={{ fontSize: 11, color: C.orange }}>⚠ {aiError}</div>}
-            {aiData && (
+            {aiData && aiData.ok === false && (
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.55, background: `${C.orange}10`, border: `1px solid ${C.orange}55`, borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 6 }}>
+                  ⚠ IA no disponible temporalmente
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                  {aiData.reason === 'all_providers_failed'
+                    ? 'Los proveedores de IA están saturados o devolvieron respuestas inválidas. Esto suele resolverse en unos minutos.'
+                    : aiData.reason === 'missing_env'
+                      ? 'No hay claves de IA configuradas en el backend.'
+                      : `Razón: ${aiData.reason || 'desconocida'}`}
+                </div>
+                {Array.isArray(aiData.attempts) && aiData.attempts.length > 0 && (
+                  <details style={{ fontSize: 10, color: C.muted }}>
+                    <summary style={{ cursor: 'pointer', color: C.teal }}>Detalle técnico de los intentos</summary>
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                      {aiData.attempts.map((a, i) => (
+                        <li key={i} style={{ marginBottom: 3 }}>
+                          <strong style={{ color: '#fff' }}>{a.provider}</strong>: {a.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
+                  El cotizador funciona sin IA — los cálculos eléctricos y de dimensionamiento no dependen de ella. Vuelve a intentar el análisis en unos minutos con el botón de arriba.
+                </div>
+              </div>
+            )}
+            {aiData && aiData.ok !== false && (
               <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.55 }}>
                 {aiData.summary && <div style={{ marginBottom: 8 }}>{aiData.summary}</div>}
                 {aiData.findings?.length > 0 && (
@@ -2124,30 +2173,136 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             </>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap', padding: '6px 0 14px' }}>
-            <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>DC</div>
-            <div style={{ fontSize: 18, color: C.teal }}>→</div>
-            <div style={{ background: res.inv ? `${C.teal}22` : `${C.orange}22`, border: `1px solid ${res.inv ? C.teal : C.orange}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
-              <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Inversor</div>
-              {res.inv ? (
-                <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{res.inv.brand} {res.inv.kw} kW</div>
-              ) : (
-                <div style={{ fontSize: 11, color: C.orange, fontWeight: 700, marginTop: 2 }}>⚠ Consultar stock</div>
-              )}
-            </div>
-            <div style={{ fontSize: 18, color: C.teal }}>→</div>
-            {needsB && (
-              <>
-                <div style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}`, borderRadius: 7, padding: '9px 14px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Baterías</div>
-                  <div style={{ fontSize: 14, color: '#fff', fontWeight: 700, marginTop: 2 }}>{f.battQty} × {batt.kwh} kWh</div>
-                  <div style={{ fontSize: 10, color: C.yellow, marginTop: 3 }}>{bankSeries}S × {bankParallel}P · {bankSeries * batt.voltage}V bus</div>
+          {(() => {
+            // Diagrama gráfico del sistema. Se ajusta al systemType:
+            //  - on-grid:  Sol → Inversor → Casa  (+ Red si hay excedentes/AGPE)
+            //  - hybrid:   Sol → Inversor → Torre baterías → Casa  + Red
+            //  - off-grid: Sol → Inversor → Torre baterías → Casa  (sin red)
+            const showBatteryTower = needsB && batt && f.battQty > 0;
+            const showGrid = f.systemType !== 'off-grid';
+            const gridExports = f.systemType === 'on-grid' && !!f.wantsExcedentes;
+            const arrow = (label) => (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 30 }}>
+                <div style={{ fontSize: 18, color: C.teal, lineHeight: 1 }}>→</div>
+                {label && <div style={{ fontSize: 8, color: C.muted, letterSpacing: 0.5 }}>{label}</div>}
+              </div>
+            );
+            return (
+              <div className="al-system-diagram" style={{ display: 'flex', alignItems: 'stretch', gap: 6, justifyContent: 'center', flexWrap: 'wrap', padding: '6px 0 14px' }}>
+                {/* Paneles solares */}
+                <div style={{ background: `${C.yellow}10`, border: `1px solid ${C.yellow}55`, borderRadius: 8, padding: '10px 12px', textAlign: 'center', minWidth: 92 }}>
+                  <svg viewBox="0 0 48 36" width="40" height="30" aria-hidden="true" style={{ display: 'block', margin: '0 auto 4px' }}>
+                    <circle cx="36" cy="6" r="4" fill={C.yellow} />
+                    <g stroke={C.yellow} strokeWidth="1.2" strokeLinecap="round">
+                      <line x1="36" y1="0" x2="36" y2="2" />
+                      <line x1="42" y1="6" x2="44" y2="6" />
+                      <line x1="32" y1="2" x2="33" y2="3" />
+                      <line x1="40" y1="2" x2="39" y2="3" />
+                    </g>
+                    <g fill={C.teal} stroke="#0a1428" strokeWidth="0.6">
+                      <rect x="2"  y="14" width="13" height="9" />
+                      <rect x="17" y="14" width="13" height="9" />
+                      <rect x="32" y="14" width="13" height="9" />
+                      <rect x="2"  y="25" width="13" height="9" />
+                      <rect x="17" y="25" width="13" height="9" />
+                      <rect x="32" y="25" width="13" height="9" />
+                    </g>
+                  </svg>
+                  <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Paneles</div>
+                  <div style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{res.numPanels} × {panel.wp}W</div>
+                  <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>{res.actKwp} kWp DC</div>
                 </div>
-                <div style={{ fontSize: 18, color: C.teal }}>→</div>
-              </>
-            )}
-            <div style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>AC · Carga</div>
-          </div>
+                {arrow('DC')}
+                {/* Inversor */}
+                <div style={{ background: res.inv ? `${C.teal}18` : `${C.orange}18`, border: `1px solid ${res.inv ? C.teal : C.orange}`, borderRadius: 8, padding: '10px 12px', textAlign: 'center', minWidth: 100 }}>
+                  <svg viewBox="0 0 36 36" width="34" height="34" aria-hidden="true" style={{ display: 'block', margin: '0 auto 4px' }}>
+                    <rect x="3" y="6" width="30" height="24" rx="3" fill={`${C.teal}30`} stroke={C.teal} strokeWidth="1.5" />
+                    <path d="M10 18 L13 18 L13 14 L20 22 L17 22 L17 26 Z" fill={C.yellow} />
+                    <circle cx="26" cy="13" r="1.4" fill={C.teal} />
+                    <circle cx="29" cy="13" r="1.4" fill={C.teal} />
+                  </svg>
+                  <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Inversor</div>
+                  {res.inv ? (
+                    <>
+                      <div style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{res.inv.brand}</div>
+                      <div style={{ fontSize: 9, color: C.teal, marginTop: 2 }}>{res.inv.kw} kW · {res.inv.phase === 3 ? 'trifásico' : res.inv.phase === 2 ? 'bifásico' : 'monofásico'}</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 10, color: C.orange, fontWeight: 700, marginTop: 2 }}>⚠ Consultar stock</div>
+                  )}
+                </div>
+                {arrow('AC')}
+                {/* Torre de baterías (hybrid u off-grid) */}
+                {showBatteryTower && (() => {
+                  const totalKwh = +(batt.kwh * f.battQty).toFixed(2);
+                  const tiers = Math.min(f.battQty, 5);
+                  const cellH = 14;
+                  const W = 50;
+                  const totalH = tiers * (cellH + 2) + 12;
+                  return (
+                    <>
+                      <div style={{ background: `${C.yellow}10`, border: `1px solid ${C.yellow}55`, borderRadius: 8, padding: '10px 12px', textAlign: 'center', minWidth: 96 }}>
+                        <svg viewBox={`0 0 ${W} ${totalH}`} width="48" height={totalH} aria-hidden="true" style={{ display: 'block', margin: '0 auto 4px' }}>
+                          {/* Tapa */}
+                          <rect x={W/2 - 6} y="0" width="12" height="3" fill={C.yellow} rx="1" />
+                          {/* Stack vertical: cada tier representa una "fila" del banco */}
+                          {Array.from({ length: tiers }).map((_, i) => {
+                            const y = 4 + i * (cellH + 2);
+                            return (
+                              <g key={i}>
+                                <rect x="6" y={y} width={W - 12} height={cellH} rx="2"
+                                  fill={`${C.yellow}33`} stroke={C.yellow} strokeWidth="1" />
+                                {/* Indicador de carga: una franja interna */}
+                                <rect x="9" y={y + 3} width={(W - 18) * 0.85} height={cellH - 6} rx="1" fill={`${C.yellow}90`} />
+                              </g>
+                            );
+                          })}
+                        </svg>
+                        <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Banco DC</div>
+                        <div style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{totalKwh} kWh</div>
+                        <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>{bankSeries}S × {bankParallel}P · {bankSeries * batt.voltage}V</div>
+                        {f.battQty > tiers && (
+                          <div style={{ fontSize: 8, color: C.muted, marginTop: 1 }}>(+{f.battQty - tiers} más)</div>
+                        )}
+                      </div>
+                      {arrow(f.systemType === 'off-grid' ? 'AC isla' : 'AC')}
+                    </>
+                  );
+                })()}
+                {/* Casa */}
+                <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: '10px 12px', textAlign: 'center', minWidth: 92 }}>
+                  <svg viewBox="0 0 40 36" width="36" height="32" aria-hidden="true" style={{ display: 'block', margin: '0 auto 4px' }}>
+                    <path d="M20 4 L4 18 L8 18 L8 32 L32 32 L32 18 L36 18 Z" fill={`${C.teal}40`} stroke={C.teal} strokeWidth="1.4" strokeLinejoin="round" />
+                    <rect x="17" y="22" width="6" height="10" fill={C.dark} stroke={C.teal} strokeWidth="0.8" />
+                    <rect x="11" y="20" width="4" height="4" fill={C.yellow} opacity="0.9" />
+                    <rect x="25" y="20" width="4" height="4" fill={C.yellow} opacity="0.9" />
+                  </svg>
+                  <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Carga</div>
+                  <div style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{f.monthlyKwh} kWh/mes</div>
+                  <div style={{ fontSize: 9, color: C.teal, marginTop: 2 }}>{f.systemType === 'off-grid' ? 'isla' : 'autoconsumo'}</div>
+                </div>
+                {/* Red — solo si hay conexión a operador */}
+                {showGrid && (
+                  <>
+                    {arrow(gridExports ? 'export' : 'red')}
+                    <div style={{ background: gridExports ? `${C.green}10` : `${C.muted}10`, border: `1px solid ${gridExports ? C.green : C.muted}55`, borderRadius: 8, padding: '10px 12px', textAlign: 'center', minWidth: 88 }}>
+                      <svg viewBox="0 0 32 36" width="32" height="34" aria-hidden="true" style={{ display: 'block', margin: '0 auto 4px' }}>
+                        <path d="M16 4 L8 14 L24 14 Z" fill="none" stroke={gridExports ? C.green : C.muted} strokeWidth="1.4" />
+                        <line x1="16" y1="4" x2="16" y2="32" stroke={gridExports ? C.green : C.muted} strokeWidth="1.6" />
+                        <line x1="6" y1="20" x2="26" y2="20" stroke={gridExports ? C.green : C.muted} strokeWidth="1" />
+                        <line x1="8" y1="26" x2="24" y2="26" stroke={gridExports ? C.green : C.muted} strokeWidth="1" />
+                      </svg>
+                      <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>Red</div>
+                      <div style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{operator.name?.split(' ')[0] || 'Operador'}</div>
+                      <div style={{ fontSize: 9, color: gridExports ? C.green : C.muted, marginTop: 2 }}>
+                        {gridExports ? '↔ AGPE' : f.systemType === 'hybrid' ? 'respaldo' : 'consumo'}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
             {[
               ['Strings', `${res.ns} × ${res.ppss}`],

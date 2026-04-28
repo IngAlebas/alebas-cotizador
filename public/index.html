@@ -22,8 +22,15 @@
     <link rel="shortcut icon" href="/icons/icon-32.png" />
 
     <!-- Mobile -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Tema oscuro: Safari/Chrome adoptan el color de fondo durante carga inicial -->
+    <meta name="color-scheme" content="dark" />
+    <!-- Evita que iOS auto-detecte y linkee números/correos en texto plano (rompe diseño) -->
+    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+    <!-- HandheldFriendly antiguo (legacy iOS/Android) -->
+    <meta name="HandheldFriendly" content="true" />
+    <meta name="MobileOptimized" content="320" />
 
     <!-- SEO -->
     <meta name="description" content="El ecosistema solar de Colombia. Cotiza tu sistema fotovoltaico, conecta con instaladores certificados RETIE y proveedores mayoristas." />
