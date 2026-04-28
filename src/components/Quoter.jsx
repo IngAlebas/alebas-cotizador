@@ -1658,13 +1658,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           ✓ Cambios aplicados ({aiApplied.fields.join(', ')}). El sistema fue recalculado.
                         </div>
                       )}
-                      {!aiApplied && pending.length === 0 && (
-                        <div style={{ fontSize: 11, color: C.muted }}>
-                          {allActions.length === 0
-                            ? 'La IA no propuso cambios aplicables en los campos del cotizador. Revisa las sugerencias arriba para evaluación manual.'
-                            : 'Las propuestas de la IA coinciden con la configuración actual o no aplican a los campos editables. Revisa las sugerencias arriba.'}
-                        </div>
-                      )}
+                      {!aiApplied && pending.length === 0 && (() => {
+                        const hasWarnings = (aiData.warnings || []).length > 0;
+                        // Sistema estable: la IA revisó dimensionamiento, layout y normativa
+                        // sin encontrar alertas críticas ni proponer ajustes aplicables.
+                        if (allActions.length === 0 && !hasWarnings) {
+                          return (
+                            <div style={{ fontSize: 11, color: '#4ade80' }}>
+                              ✓ Sistema estable — la IA revisó dimensionamiento, layout eléctrico y normativa sin encontrar ajustes necesarios.
+                            </div>
+                          );
+                        }
+                        // Hay warnings pero ninguna action aplicable (ej. cambios de hardware
+                        // como optimizadores DC que no son campos del cotizador).
+                        if (allActions.length === 0 && hasWarnings) {
+                          return (
+                            <div style={{ fontSize: 11, color: C.muted }}>
+                              La IA detectó alertas que requieren revisión manual (ver "Alertas" arriba). No hay ajustes aplicables automáticamente a los campos del cotizador.
+                            </div>
+                          );
+                        }
+                        // El modelo propuso actions pero todas coinciden con la config actual
+                        // o el coercer las descartó por dominio inválido.
+                        return (
+                          <div style={{ fontSize: 11, color: C.muted }}>
+                            Las propuestas de la IA coinciden con la configuración actual o no aplican a los campos editables. Revisa las sugerencias arriba.
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
