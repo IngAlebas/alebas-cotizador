@@ -319,6 +319,103 @@ button:active { transform: scale(0.97); }
   .al-topnav { padding: 0 10px !important; }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   ANDROID / MOBILE — ajustes de densidad y manipulación
+   Optimizado para pantallas 320-414px (95% de Android)
+══════════════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  /* Cards principales: padding reducido y margen lateral consistente */
+  body main, body .al-card,
+  div[style*="maxWidth: 860px"],
+  div[style*="max-width: 860"] {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* Cards internas: pantalla pequeña, padding razonable */
+  div[style*="padding: '26px 30px'"],
+  div[style*="padding:'26px 30px'"] {
+    padding: 16px 14px !important;
+  }
+
+  /* Inputs: tap-target suficiente y full-width */
+  input, select, textarea {
+    width: 100% !important;
+    font-size: 16px !important;  /* >=16px en iOS evita zoom auto */
+    padding: 10px 12px !important;
+  }
+
+  /* Botones primarios: full-width en mobile, touch fácil */
+  button:not(.al-nav-btn):not(.al-bottomnav button):not(.al-topnav-btns button):not(.al-no-mobile-stretch):not([class*="al-pdf"]):not([class*="al-install"]) {
+    min-height: 42px;
+  }
+
+  /* Grids 3 columnas → 1 col vertical en pantallas <380px (Android compactos) */
+  .al-type-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+  /* Tipo de sistema en pantallas chicas: 2 cols en fila + segundo abajo */
+  .al-type-grid > div:nth-child(3) {
+    grid-column: span 2;
+  }
+
+  /* KPI grids en resumen ejecutivo */
+  div[style*="repeat(3, 1fr)"][style*="gap: 8"]:not(.al-pdf-kpi-grid):not([style*="auto-fit"]) {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Stack vertical para preview techo (satellite + streets en columna) */
+  .al-roof-preview-grid { grid-template-columns: 1fr !important; }
+
+  /* Tabs nav del resultado: scroll horizontal si no caben */
+  div[style*="resultTab"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* AI assistant card: padding controlado */
+  div[class*="al-card"][style*="borderColor"] {
+    padding: 14px 12px !important;
+  }
+
+  /* Form de cubierta custom: 2 cols en mobile */
+  div[style*="repeat(auto-fit, minmax(140px, 1fr))"],
+  div[style*="repeat(auto-fit, minmax(110px, 1fr))"] {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+}
+
+/* Pantallas muy chicas (<360px = Galaxy Fold cerrado, viejos Android) */
+@media (max-width: 360px) {
+  .al-type-grid {
+    grid-template-columns: 1fr !important;  /* todo en columna */
+  }
+  .al-type-grid > div:nth-child(3) {
+    grid-column: auto;
+  }
+  /* KPI grids: 1 col */
+  div[style*="repeat(3, 1fr)"][style*="gap: 8"]:not(.al-pdf-kpi-grid):not([style*="auto-fit"]) {
+    grid-template-columns: 1fr !important;
+  }
+  /* Form custom: 1 col */
+  div[style*="repeat(auto-fit, minmax(140px, 1fr))"],
+  div[style*="repeat(auto-fit, minmax(110px, 1fr))"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* Reducir font del header del paso */
+  h1 { font-size: 1.3rem !important; }
+  h2 { font-size: 1rem !important; }
+}
+
+/* Landscape mobile (altura corta): reducir hero y márgenes verticales */
+@media (max-height: 500px) and (orientation: landscape) {
+  .al-mini-hero { padding: 10px 14px !important; }
+  .al-mini-hero img { height: 40px !important; }
+  .al-card { padding: 14px 16px !important; margin-bottom: 10px !important; }
+}
+
 /* ══════════════════════════════════════
    COMPONENTES NUEVOS — RESPONSIVE
 ══════════════════════════════════════ */
