@@ -1518,7 +1518,20 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
-                      segments={f.roofSegments ? f.roofSegments.map((s, i) => ({ ...s, selected: selectedSegmentIdx.has(i) })) : null}
+                      segments={(() => {
+                        // Combinar Google + custom; usar el mismo _idx que selectedSegmentIdx
+                        // para que el toggle desde el mapa actualice el set correctamente.
+                        const allSegs = [
+                          ...(f.roofSegments || []).map((s, i) => ({ ...s, _idx: i })),
+                          ...(f.customSegments || []).map((s, i) => ({
+                            ...s, _idx: (f.roofSegments?.length || 0) + i, _custom: true,
+                          })),
+                        ];
+                        return allSegs.length > 0
+                          ? allSegs.map(s => ({ ...s, selected: selectedSegmentIdx.has(s._idx) }))
+                          : null;
+                      })()}
+                      onSegmentToggle={toggleSegment}
                       showSunPath={true}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {

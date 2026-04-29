@@ -8,8 +8,9 @@ import { loadGoogleMaps } from '../services/gmapsLoader';
 
 export default function InteractiveRoofMap({
   lat, lon, areaM2, onPinMove, height = 240, busy = false,
-  segments = null,        // [{ azimuthDegrees, areaMeters2, center, boundingBox, ... }]
+  segments = null,        // [{ azimuthDegrees, areaMeters2, center, boundingBox, selected, ... }]
   showSunPath = true,     // arco azimutal del sol (oriente → cenit → poniente)
+  onSegmentToggle = null, // (idx) => void — tap en círculo o label toggle inclusión
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -140,6 +141,7 @@ export default function InteractiveRoofMap({
       const areaM2 = s.areaMeters2 || 0;
       // Radio = √(área/π) en metros; min 1.5m, max 8m para no dominar el mapa.
       const radius = Math.max(1.5, Math.min(8, Math.sqrt(areaM2 / Math.PI)));
+      const isClickable = !!onSegmentToggle && s._idx != null;
       const circle = new maps.Circle({
         map: mapRef.current,
         center,
@@ -149,19 +151,40 @@ export default function InteractiveRoofMap({
         strokeWeight: isActive ? 2.5 : 1.5,
         fillColor: col,
         fillOpacity: isActive ? 0.35 : 0.12,
-        clickable: false,
+        clickable: isClickable,
         zIndex: isActive ? 6 : 5,
       });
+      if (isClickable) {
+        circle.addListener('click', () => onSegmentToggle(s._idx));
+      }
       polygonsRef.current.push(circle);
-      // Label flotante con número + área.
+      // Label flotante con número + área. Clickable si hay toggle.
       const labelEl = document.createElement('div');
       labelEl.style.cssText = `
-        background: ${col}; color: #fff; padding: 2px 7px; border-radius: 11px;
-        font-size: 10px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-        white-space: nowrap; transform: translate(-50%, -50%); pointer-events: none;
-        opacity: ${isActive ? '1' : '0.7'};
+        background: ${col}; color: #fff; padding: 3px 9px; border-radius: 14px;
+        font-size: 11px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        white-space: nowrap; transform: translate(-50%, -50%);
+        pointer-events: ${isClickable ? 'auto' : 'none'};
+        cursor: ${isClickable ? 'pointer' : 'default'};
+        user-select: none;
+        opacity: ${isActive ? '1' : '0.75'};
+        border: 1.5px solid ${isActive ? '#16a34a' : 'transparent'};
+        transition: transform 0.12s, opacity 0.12s;
       `;
-      labelEl.textContent = `${isActive ? '✓ ' : ''}${i + 1} · ${areaM2.toFixed(0)} m²`;
+      labelEl.textContent = `${isActive ? '✓ ' : '○ '}${i + 1} · ${areaM2.toFixed(0)} m²`;
+      if (isClickable) {
+        labelEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onSegmentToggle(s._idx);
+        });
+        labelEl.addEventListener('touchend', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onSegmentToggle(s._idx);
+        });
+        labelEl.addEventListener('mouseenter', () => { labelEl.style.transform = 'translate(-50%, -50%) scale(1.1)'; });
+        labelEl.addEventListener('mouseleave', () => { labelEl.style.transform = 'translate(-50%, -50%) scale(1)'; });
+      }
       const label = new maps.OverlayView();
       label.onAdd = function () { this.getPanes().overlayLayer.appendChild(labelEl); };
       label.draw = function () {
@@ -204,6 +227,7 @@ export default function InteractiveRoofMap({
     if (sunPathRef.current) {
       try { sunPathRef.current.line && sunPathRef.current.line.setMap(null); } catch (_) {}
       try { sunPathRef.current.east && sunPathRef.current.east.setMap(null); } catch (_) {}
+      try { sunPathRef.current.zenith && sunPathRef.current.zenith.setMap(null); } catch (_) {}
       try { sunPathRef.current.west && sunPathRef.current.west.setMap(null); } catch (_) {}
       sunPathRef.current = null;
     }
@@ -213,7 +237,7 @@ export default function InteractiveRoofMap({
     const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.6 : 15;
     const dLat = r / 111000;
     const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
-    // Arco E→cenit→O proyectado: 7 puntos suficientes para curva suave.
+    // Arco E→cenit→O proyectado: 11 puntos para curva suave + flecha al final.
     const points = [];
     for (let h = -90; h <= 90; h += 18) {
       const rad = h * Math.PI / 180;
@@ -221,36 +245,57 @@ export default function InteractiveRoofMap({
       const y = -Math.cos(rad) * 0.18;
       points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
     }
+    // Línea con FLECHA al final (oeste) indicando dirección del sol E→O.
     const line = new maps.Polyline({
       map: mapRef.current,
       path: points,
       geodesic: false,
       strokeColor: '#FFD93D',
-      strokeOpacity: 0.7,
-      strokeWeight: 1.5,
+      strokeOpacity: 0.85,
+      strokeWeight: 1.8,
       clickable: false,
       zIndex: 4,
+      icons: [{
+        icon: {
+          path: maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 3,
+          fillColor: '#FF8C00',
+          fillOpacity: 1,
+          strokeColor: '#FF8C00',
+          strokeWeight: 1,
+        },
+        offset: '100%',
+      }],
     });
-    // Marcadores E/O — sun emoji para identificación clara.
-    const sunMarker = (pos, title) => new maps.Marker({
-      map: mapRef.current,
-      position: pos,
-      icon: {
-        path: maps.SymbolPath.CIRCLE,
-        scale: 5,
-        fillColor: '#FFD93D',
-        fillOpacity: 1,
-        strokeColor: '#FF8C00',
-        strokeWeight: 1,
-      },
-      title,
-      clickable: false,
-      zIndex: 4,
-    });
+    // Sun emoji ☀ HTML overlay en 3 posiciones: E (amanecer), cenit (medio
+    // día), O (atardecer). Más reconocible que un círculo plano.
+    const makeSunOverlay = (pos, size, title) => {
+      const el = document.createElement('div');
+      el.style.cssText = `
+        font-size: ${size}px; line-height: 1; pointer-events: none;
+        transform: translate(-50%, -50%); user-select: none;
+        filter: drop-shadow(0 0 4px rgba(255,140,0,0.8));
+        text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+      `;
+      el.textContent = '☀';
+      el.title = title;
+      const ov = new maps.OverlayView();
+      ov.onAdd = function () { this.getPanes().overlayMouseTarget.appendChild(el); };
+      ov.draw = function () {
+        const proj = this.getProjection();
+        if (!proj) return;
+        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(pos.lat, pos.lng));
+        if (pt) { el.style.position = 'absolute'; el.style.left = pt.x + 'px'; el.style.top = pt.y + 'px'; }
+      };
+      ov.onRemove = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+      ov.setMap(mapRef.current);
+      return ov;
+    };
     sunPathRef.current = {
       line,
-      east: sunMarker(points[0], '☀ Salida del sol (Este)'),
-      west: sunMarker(points[points.length - 1], '☀ Puesta del sol (Oeste)'),
+      east:   makeSunOverlay(points[0], 14, '☀ Salida del sol (Este, ~6 AM)'),
+      zenith: makeSunOverlay(points[Math.floor(points.length / 2)], 22, '☀ Cenit (mediodía)'),
+      west:   makeSunOverlay(points[points.length - 1], 14, '☀ Puesta del sol (Oeste, ~6 PM)'),
     };
   }, [showSunPath, lat, lon, areaM2, ready]);
 
