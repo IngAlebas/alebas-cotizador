@@ -137,13 +137,10 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: C.dark, color: C.text, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--footer-h, 64px)' }}>
       <nav className="al-topnav" style={{
-        background: 'linear-gradient(180deg, #0A1018 0%, #08131f 100%)',
-        borderBottom: '1px solid rgba(1,112,139,0.3)',
         padding: '0 16px',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
         height: 56, position: 'sticky', top: 0, zIndex: 99,
-        boxShadow: '0 2px 24px rgba(0,0,0,0.5)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
       }}>
@@ -176,24 +173,20 @@ export default function App() {
             <circle cx="20" cy="20" r="2.2" fill="#FFD93D"/>
           </svg>
 
-          {/* Wordmark */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-              <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: '#fff', lineHeight: 1 }}>Solar</span>
-              <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: C.yellow, lineHeight: 1 }}>Hub</span>
+          {/* Wordmark — usa CSS vars para auto-adaptar al theme */}
+          <div className="al-brand-wordmark">
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+              <span className="al-brand-solar">Solar</span>
+              <span className="al-brand-hub">Hub</span>
             </div>
-            <div className="al-logo-sub" style={{ fontSize: 8, color: C.teal, letterSpacing: '2px', fontWeight: 500, marginTop: 1, textTransform: 'uppercase' }}>
+            <div className="al-logo-sub al-brand-tagline">
               El centro de tu energía solar
             </div>
           </div>
         </div>
 
-        {/* CENTER: tagline (solo desktop — oculto en mobile) */}
-        <div className="al-tagline-desktop" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none' }}>
-          {['Dimensiona','Cotiza','Conecta','Instala'].map((t,i) => (
-            <span key={t} style={{ fontSize: 11, color: i===1 ? C.yellow : C.teal, fontWeight: i===1 ? 700 : 400, letterSpacing: '0.5px' }}>{t}</span>
-          ))}
-        </div>
+        {/* Tagline removido del navbar (se muestra ya en el hero del home).
+            Causaba overlap recurrente con logo + nav buttons en widths 1280-1920px. */}
 
         {/* RIGHT: nav buttons — desktop only */}
         <div className="al-topnav-btns" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
