@@ -411,8 +411,12 @@ button:active { transform: scale(0.97); }
 ══════════════════════════════════════ */
 
 /* Tablet: hide nav labels, keep icons */
-@media (max-width: 768px) {
+@media (max-width: 1100px) {
+  /* Hide tagline center antes — antes era 768px pero a 1280px ya se solapa
+     con logo y nav buttons (la tagline es position:absolute en center). */
   .al-tagline-desktop { display: none !important; }
+}
+@media (max-width: 768px) {
   .al-nav-label { display: none !important; }
   .al-topnav-btns button { padding: 7px 10px !important; }
   .al-logo-sub { display: none !important; }
