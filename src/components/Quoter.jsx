@@ -589,6 +589,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   };
   const resetManualSelection = () => setManualSegmentSelection(null);
 
+  // Sincroniza availableArea con la SUMA de cubiertas seleccionadas. Antes el
+  // sistema usaba la totalidad del área Google (143 m²) para dimensionar y
+  // calcular excedentes, ignorando que el usuario podía haber excluido cubiertas.
+  // Ahora cada toggle/cambio recalcula el área a usar.
+  useEffect(() => {
+    if (!selectedSegmentIdx || selectedSegmentIdx.size === 0) return;
+    const allSegs = [
+      ...(f.roofSegments || []),
+      ...(f.customSegments || []),
+    ];
+    if (allSegs.length === 0) return;
+    const selectedArea = allSegs
+      .filter((_, i) => selectedSegmentIdx.has(i))
+      .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
+    if (selectedArea > 0) {
+      const rounded = String(Math.round(selectedArea));
+      // Solo actualizar si difiere — evita loops y respeta valor manual igual.
+      if (rounded !== f.availableArea) u('availableArea', rounded);
+    }
+  }, [selectedSegmentIdx, f.roofSegments, f.customSegments]); // eslint-disable-line
+
   // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
   // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
   // applyAiActions; este efecto corre tras el commit con el `f` ya actualizado.
@@ -3957,6 +3978,109 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <p className="al-pdf-info">El presupuesto refleja precios mayoristas vigentes. Aplicación de incentivos tributarios Ley 1715/2014 (deducción renta + exclusión IVA + arancel) se evalúan en propuesta detallada según el alcance final del proyecto.</p>
             </section>
           )}
+
+          {/* Memoria de cálculo — resumen técnico de las ecuaciones aplicadas */}
+          <section className="al-pdf-section">
+            <h2>Memoria de cálculo</h2>
+            <p className="al-pdf-lead">Resumen de las ecuaciones aplicadas y valores intermedios usados en el pre-dimensionamiento.</p>
+            <table className="al-pdf-table">
+              <tbody>
+                <tr>
+                  <td><strong>1. Consumo</strong></td>
+                  <td>
+                    Mensual declarado: <strong>{Number(f.monthlyKwh || 0).toLocaleString('es-CO')} kWh/mes</strong> · Diario: <strong>{(Number(f.monthlyKwh || 0) / 30).toFixed(1)} kWh/día</strong> · Anual: <strong>{(Number(f.monthlyKwh || 0) * 12).toLocaleString('es-CO')} kWh/año</strong>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>2. Recurso solar</strong></td>
+                  <td>
+                    PSH (Peak Sun Hours) sitio: <strong>{psh} h/día</strong> · Performance Ratio (PR): <strong>0.78</strong> (pérdidas térmicas + cableado + inversor)
+                    {f.googleSolarEstimate?.specificYieldKwhPerKwpYear && <> · Yield real Google: <strong>{f.googleSolarEstimate.specificYieldKwhPerKwpYear} kWh/kWp·año</strong></>}
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>3. Cálculo kWp</strong></td>
+                  <td>
+                    kWp = consumo_diario / (PSH × PR) = {(Number(f.monthlyKwh || 0) / 30).toFixed(1)} / ({psh} × 0.78) = <strong>{(Number(f.monthlyKwh || 0) / 30 / (psh * 0.78)).toFixed(2)} kWp</strong> teórico → ajustado a yield real: <strong>{res.actKwp} kWp</strong>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>4. Paneles</strong></td>
+                  <td>
+                    N = ⌈kWp × 1000 / Wp⌉ = ⌈{res.actKwp} × 1000 / {panel.wp}⌉ = <strong>{res.numPanels} paneles</strong> de {panel.wp} W
+                  </td>
+                </tr>
+                {res.inv && (
+                  <tr>
+                    <td><strong>5. Strings</strong></td>
+                    <td>
+                      <strong>{res.ns} string{res.ns > 1 ? 's' : ''}</strong> × <strong>{res.ppss} paneles/string</strong>
+                      {panel.voc && res.inv.vocMax && (
+                        <> · Voc serie ({(panel.voc * res.ppss).toFixed(1)} V) ≤ Vdc_max inversor ({res.inv.vocMax} V) ✓ RETIE NEC 690.7</>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                {res.productionSources?.length > 0 && (
+                  <tr>
+                    <td><strong>6. Producción</strong></td>
+                    <td>
+                      Promedio multi-fuente: <strong>{Math.round(res.productionSources.reduce((a, s) => a + s.kwh, 0) / res.productionSources.length).toLocaleString('es-CO')} kWh/año</strong>
+                      {' '}(de {res.productionSources.length} fuente{res.productionSources.length > 1 ? 's' : ''}: {res.productionSources.map(s => s.name).join(', ')})
+                      · Mensual estimado: <strong>{Math.round(res.mp).toLocaleString('es-CO')} kWh/mes</strong>
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <td><strong>7. Cobertura</strong></td>
+                  <td>
+                    cobertura = (producción / consumo) × 100 = ({Math.round(res.mp)} / {f.monthlyKwh}) × 100 = <strong>{res.cov}%</strong>
+                  </td>
+                </tr>
+                {needsB && batt && f.battQty > 0 && (
+                  <tr>
+                    <td><strong>8. Banco baterías</strong></td>
+                    <td>
+                      <strong>{f.battQty}</strong> × {batt.kwh} kWh = <strong>{(batt.kwh * f.battQty).toFixed(1)} kWh</strong> totales · Configuración <strong>{bankSeries}S × {bankParallel}P</strong> @ bus DC <strong>{bankSeries * batt.voltage} V</strong>
+                      {f.systemType === 'off-grid' && f.autonomyDays && (
+                        <> · Autonomía <strong>{f.autonomyDays} día{f.autonomyDays > 1 ? 's' : ''}</strong> sin sol</>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                {agpe?.excedentes > 0 && (
+                  <tr>
+                    <td><strong>9. Excedentes AGPE</strong></td>
+                    <td>
+                      Categoría <strong>{agpe.agpeCategory}</strong> · Excedente anual: <strong>{Math.round(agpe.excedentes).toLocaleString('es-CO')} kWh/año</strong>
+                      {agpe.priceExcedentes && <> · Tarifa: <strong>{Math.round(agpe.priceExcedentes)} COP/kWh</strong> ({agpe.agpeCategory === 'Menor' ? 'CU − G' : 'precio bolsa XM'})</>}
+                      {' '}· Ingreso anual: <strong>{fmtCOP(agpe.ingresoExcedentes || 0)}</strong>
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <td><strong>{agpe?.excedentes > 0 ? '10' : (needsB ? '9' : '8')}. CO₂ evitado</strong></td>
+                  <td>
+                    {Math.round(res.ap).toLocaleString('es-CO')} kWh/año × 0.126 kg CO₂/kWh (factor SIN Colombia) = <strong>{Math.round(res.co2).toLocaleString('es-CO')} kg CO₂/año</strong>
+                  </td>
+                </tr>
+                {bgt?.sav > 0 && bgt?.roi > 0 && (
+                  <tr>
+                    <td><strong>{agpe?.excedentes > 0 ? '11' : (needsB ? '10' : '9')}. Retorno</strong></td>
+                    <td>
+                      Inversión / ahorro_anual = {fmtCOP(bgt.tot)} / {fmtCOP(bgt.sav)} = <strong>{bgt.roi} años</strong> de payback
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <p className="al-pdf-info">
+              Esta memoria es un resumen ejecutivo. La memoria detallada con planos
+              eléctricos, cálculos térmicos por hora del día, configuración exacta de
+              protecciones (DPS, fusibles, breakers) y cumplimiento RETIE punto a punto
+              se entrega con la propuesta firmada del ingeniero electricista titulado.
+            </p>
+          </section>
 
           {/* Marco normativo */}
           <section className="al-pdf-section">
