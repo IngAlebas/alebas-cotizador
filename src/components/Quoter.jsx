@@ -863,32 +863,112 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   if (step === 1) return (
     <div style={ss.wrap}><Prog />
       <div style={ss.card}>
-        <div style={ss.h2}>Tipo de sistema</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
-          Elige la topología del sistema. Define si hay inyección a red, respaldo en baterías o autonomía total.
+        <div style={ss.h2}>¿Qué tipo de sistema solar quieres?</div>
+        <div style={{ fontSize: 12, color: C.text, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
+          Cada tipo resuelve un problema diferente. Elige según lo que más te importa: <strong style={{ color: C.yellow }}>ahorrar plata</strong>, <strong style={{ color: C.teal }}>tener luz cuando se va la energía</strong>, o <strong style={{ color: '#4ade80' }}>vivir sin red eléctrica</strong>.
         </div>
         <div className="al-type-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 18 }}>
           {[
-            ['on-grid', '☀', 'On-Grid', 'Red eléctrica', 'Reduce factura hasta 90%.'],
-            ['hybrid', '⚡', 'Híbrido', 'Con baterías', 'Producción continua.'],
-            ['off-grid', '🌿', 'Off-Grid', 'Autónomo', '100% aislado de red.'],
-          ].map(([id, ic, t, sub, desc]) => {
+            {
+              id: 'on-grid', ic: '☀', t: 'On-Grid', sub: 'Conectado a la red',
+              tagline: 'Reduce hasta 90-100% tu factura',
+              who: 'Tienes red eléctrica estable y quieres ahorrar plata cada mes.',
+              how: 'Los paneles producen de día, alimentan tu casa primero, y lo que sobra se vende a la red (excedentes AGPE).',
+              pros: ['💰 Máximo ahorro', '🏷 Inversión más baja', '🔌 Sin baterías'],
+              cons: ['⚠ Si se va la luz, el sistema se apaga (norma RETIE)'],
+            },
+            {
+              id: 'hybrid', ic: '🔋', t: 'Híbrido', sub: 'Con baterías + red',
+              tagline: 'Ahorra Y respalda contra cortes',
+              who: 'Tu zona tiene cortes frecuentes, picos de voltaje, o tienes equipos sensibles (clínica, oficina, server, refrigeración).',
+              how: 'Funciona como On-Grid + cuando se va la luz, las baterías toman el control sin parpadeo. Cargas críticas siempre activas.',
+              pros: ['🛡 Respaldo automático', '⚡ Estabilidad eléctrica', '💰 Ahorro alto'],
+              cons: ['💵 Inversión mayor (baterías)'],
+            },
+            {
+              id: 'off-grid', ic: '🌿', t: 'Off-Grid', sub: 'Aislado · sin red',
+              tagline: '100% independiente · 0 facturas',
+              who: 'Predio rural sin red, finca, parcela, o quieres autonomía total sin depender del operador.',
+              how: 'El sistema NO se conecta a la red. Genera + almacena + entrega autónomamente. Banco de baterías mayor para cubrir noches y días nublados.',
+              pros: ['🌎 Cero factura', '🔓 Independencia total', '🚫 Inmune a cortes'],
+              cons: ['💵 Inversión más alta', '📊 Requiere planificar consumo'],
+            },
+          ].map(({ id, ic, t, sub, tagline }) => {
             const active = f.systemType === id;
             return (
               <div key={id} onClick={() => u('systemType', id)} style={{
-                padding: '18px 12px', textAlign: 'center', borderRadius: 10, cursor: 'pointer',
+                padding: '16px 10px 14px', textAlign: 'center', borderRadius: 10, cursor: 'pointer',
                 border: `2px solid ${active ? C.teal : C.border}`,
                 background: active ? `${C.teal}18` : C.dark,
                 transition: 'all 0.15s ease', boxShadow: active ? `0 0 0 4px ${C.teal}18` : 'none',
               }}>
-                <div style={{ fontSize: 26, marginBottom: 7 }}>{ic}</div>
-                <div style={{ fontWeight: 800, color: active ? C.teal : '#fff', fontSize: 13, marginBottom: 3 }}>{t}</div>
-                <div style={{ fontSize: 10, color: active ? C.teal : C.muted, marginBottom: 5, fontWeight: 600 }}>{sub}</div>
-                <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.4 }}>{desc}</div>
+                <div style={{ fontSize: 30, marginBottom: 6 }}>{ic}</div>
+                <div style={{ fontWeight: 800, color: active ? C.teal : '#fff', fontSize: 14, marginBottom: 2 }}>{t}</div>
+                <div style={{ fontSize: 10, color: active ? C.teal : C.muted, marginBottom: 4, fontWeight: 600 }}>{sub}</div>
+                <div style={{ fontSize: 10, color: active ? C.yellow : C.muted, lineHeight: 1.35, fontWeight: 600 }}>{tagline}</div>
               </div>
             );
           })}
         </div>
+
+        {/* Detalle del tipo seleccionado — pedagógico */}
+        {(() => {
+          const detail = {
+            'on-grid': {
+              who: 'Tienes red eléctrica estable y quieres ahorrar plata cada mes.',
+              how: 'Los paneles producen de día, alimentan tu casa primero, y lo que sobra se vende a la red (excedentes AGPE).',
+              pros: ['💰 Máximo ahorro · hasta 90-100% de tu factura', '🏷 Inversión más baja (sin baterías)', '🔄 Excedentes monetizables vía AGPE/CREG 174-2021'],
+              cons: ['⚠ Si se va la luz, el sistema se apaga por norma RETIE (anti-isla)'],
+              color: C.yellow,
+            },
+            'hybrid': {
+              who: 'Zona con cortes frecuentes, picos de voltaje, equipos sensibles (clínica, oficina con servidor, refrigeración industrial), o quieres tranquilidad.',
+              how: 'Funciona como On-Grid + cuando se va la luz, las baterías toman el control sin parpadeo. Las cargas críticas siguen activas el tiempo de respaldo configurado (4-12 h típico).',
+              pros: ['🛡 Respaldo automático sin transferencia manual', '⚡ Estabilidad eléctrica · protege equipos', '💰 Ahorro alto + monetiza excedentes', '🔋 Banco de baterías escalable'],
+              cons: ['💵 Inversión 30-60% mayor por las baterías', '⏱ Vida útil baterías 8-12 años (LFP)'],
+              color: C.teal,
+            },
+            'off-grid': {
+              who: 'Predio rural sin red eléctrica, finca, parcela, sitio remoto, o filosofía de autonomía total.',
+              how: 'No se conecta a la red eléctrica. Los paneles cargan baterías + alimentan cargas. Banco mayor (1-3 días de autonomía) para cubrir noches y días nublados.',
+              pros: ['🌎 Cero factura · cero dependencia del operador', '🔓 Independencia total y permanente', '🚫 Inmune a cortes/picos/cobros injustos', '🛠 Sin trámites de conexión a red'],
+              cons: ['💵 Inversión más alta (banco grande)', '📊 Requiere planificar consumo (gestión de cargas en horarios)', '⛅ En semanas de mucha nube se debe complementar con generador o gestión'],
+              color: '#4ade80',
+            },
+          }[f.systemType];
+          if (!detail) return null;
+          return (
+            <div style={{
+              background: C.dark,
+              border: `1.5px solid ${detail.color}55`,
+              borderRadius: 9, padding: '14px 16px', marginBottom: 14,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: detail.color, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
+                ✓ Has elegido: {f.systemType === 'on-grid' ? 'On-Grid' : f.systemType === 'hybrid' ? 'Híbrido' : 'Off-Grid'}
+              </div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.55, marginBottom: 8 }}>
+                <strong style={{ color: detail.color }}>¿Para quién?</strong> {detail.who}
+              </div>
+              <div style={{ fontSize: 11, color: C.text, lineHeight: 1.55, marginBottom: 10 }}>
+                <strong style={{ color: C.teal }}>¿Cómo funciona?</strong> {detail.how}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <div style={{ background: `${detail.color}10`, border: `1px solid ${detail.color}33`, borderRadius: 7, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: detail.color, marginBottom: 4 }}>VENTAJAS</div>
+                  {detail.pros.map((p, i) => (
+                    <div key={i} style={{ fontSize: 11, color: C.text, marginBottom: 3, lineHeight: 1.4 }}>{p}</div>
+                  ))}
+                </div>
+                <div style={{ background: `${C.muted}10`, border: `1px solid ${C.muted}33`, borderRadius: 7, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 4 }}>A TENER EN CUENTA</div>
+                  {detail.cons.map((c, i) => (
+                    <div key={i} style={{ fontSize: 11, color: C.text, marginBottom: 3, lineHeight: 1.4 }}>{c}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {needsB && (
           <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 8, padding: '10px 12px', fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
             El dimensionamiento del banco de baterías requiere conocer tu consumo. Lo configuramos en el siguiente paso con tu autonomía, tensión del bus y batería compatible.
