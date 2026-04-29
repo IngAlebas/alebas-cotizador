@@ -338,11 +338,16 @@ button:active { transform: scale(0.97); }
     padding: 16px 14px !important;
   }
 
-  /* Inputs: tap-target suficiente y full-width */
-  input, select, textarea {
+  /* Inputs: tap-target suficiente y full-width — excepto checkboxes/radios. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select, textarea {
     width: 100% !important;
     font-size: 16px !important;  /* >=16px en iOS evita zoom auto */
     padding: 10px 12px !important;
+  }
+  input[type="checkbox"], input[type="radio"] {
+    width: auto !important;
+    flex-shrink: 0 !important;
   }
 
   /* Botones primarios: full-width en mobile, touch fácil */
