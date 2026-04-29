@@ -824,7 +824,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         padding: '20px 24px', marginBottom: 18,
         display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       }}>
-        <img src={logo} alt="SolarHub by ALEBAS" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+        <img src={logo} alt="SolarHub" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
         <div className="al-mini-hero-txt" style={{ flex: '1 1 260px', minWidth: 0 }}>
           <div style={{ fontSize: 11, letterSpacing: 2.6, fontWeight: 700, color: C.teal, marginBottom: 3 }}>SOLARHUB BY ALEBAS</div>
           <div className="al-mini-hero-title" style={{ fontSize: 19, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
@@ -860,7 +860,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     <div style={ss.wrap}>
       {/* Hero */}
       <div style={{ ...ss.card, textAlign: 'center', padding: '36px 20px', borderColor: C.teal }}>
-        <img src={logo} alt="SolarHub by ALEBAS Ingeniería" style={{ height: 72, maxWidth: '75%', marginBottom: 12, objectFit: 'contain' }} />
+        <img src={logo} alt="SolarHub" style={{ height: 72, maxWidth: '75%', marginBottom: 12, objectFit: 'contain' }} />
         <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 4, fontWeight: 700, color: C.teal }}>SOLARHUB BY ALEBAS</div>
         <h1 style={{ margin: '0 0 6px', fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
           El centro de tu <span style={{ color: C.yellow }}>energía solar</span>
@@ -2480,7 +2480,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <img src="/fluxai-logo.svg" alt="FluxAI" style={{ height: 28, display: 'block' }} />
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
                   Monitoreo recomendado
-                  <div style={{ fontSize: 9, color: C.muted, fontWeight: 500, marginTop: 2 }}>by ALEBAS Ingeniería</div>
+                  <div style={{ fontSize: 9, color: C.muted, fontWeight: 500, marginTop: 2 }}>plataforma FluxAI</div>
                 </div>
               </div>
               <a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer"
@@ -2489,7 +2489,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </a>
             </div>
             <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
-              <strong style={{ color: C.fluxGreen }}>FluxAI</strong> es la plataforma de monitoreo solar de ALEBAS Ingeniería (marca hermana de SolarHub). Te permite:
+              <strong style={{ color: C.fluxGreen }}>FluxAI</strong> es la plataforma de monitoreo solar integrada con SolarHub. Te permite:
               <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 18 }}>
                 <li>Ver producción y consumo en tiempo real desde el celular.</li>
                 <li>Recibir alertas si el sistema rinde por debajo de lo cotizado.</li>
@@ -3727,7 +3727,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div className="al-pdf-summary">
           {/* Cabecera con marca */}
           <div className="al-pdf-header">
-            <img src={logo} alt="SolarHub by ALEBAS" />
+            <img src={logo} alt="SolarHub" />
             <div>
               <h1>Cotización Solar Fotovoltaica</h1>
               <p>El ecosistema solar de Colombia</p>

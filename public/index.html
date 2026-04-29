@@ -116,7 +116,6 @@
         <circle cx="58" cy="32" r="3" fill="#FFB800" />
       </svg>
       <div class="sh-splash-text">SOLARHUB</div>
-      <div class="sh-splash-tag">by ALEBAS Ingeniería</div>
       <div class="sh-splash-loader"></div>
     </div>
     <div id="root"></div>
@@ -131,13 +130,17 @@
           }
         }
       } catch (_) {}
-      // Splash hide robusto. Tres triggers:
-      //   1. React monta (#root tiene hijos) → fade out + remove
-      //   2. Timeout máx 4s → force-hide pase lo que pase (caso de error JS,
-      //      red lenta o SW sirviendo bundle roto — el splash NO debe quedar
-      //      eterno bloqueando la pantalla y el scroll)
-      //   3. Tap del usuario en el splash → force-hide (escape hatch)
+      // Splash hide. Cuatro consideraciones:
+      //   1. MINIMUM display 1200ms — Android con bundle cacheado monta React
+      //      en <100ms, el splash desaparecía antes de mostrar la animación.
+      //      Garantizamos que la animación sea visible al menos 1.2s.
+      //   2. React monta (#root tiene hijos) → marca como ready, espera al MIN
+      //   3. Timeout máx 5s → force-hide (failsafe contra errores)
+      //   4. Tap del usuario → force-hide (escape hatch después del MIN)
       var splashRemoved = false;
+      var splashStartedAt = Date.now();
+      var MIN_DISPLAY_MS = 1200;
+      var reactReady = false;
       var splashRemove = function () {
         if (splashRemoved) return;
         splashRemoved = true;
@@ -147,19 +150,28 @@
           setTimeout(function () { try { s.parentNode && s.parentNode.removeChild(s); } catch (_) {} }, 500);
         }
       };
-      var splashCheck = function () {
-        if (splashRemoved) return;
-        var root = document.getElementById('root');
-        if (root && root.children.length > 0) splashRemove();
-        else setTimeout(splashCheck, 80);
+      var maybeRemove = function () {
+        if (splashRemoved || !reactReady) return;
+        var elapsed = Date.now() - splashStartedAt;
+        if (elapsed >= MIN_DISPLAY_MS) splashRemove();
+        else setTimeout(splashRemove, MIN_DISPLAY_MS - elapsed);
       };
-      // Comenzar el polling rápido
+      var splashCheck = function () {
+        if (splashRemoved || reactReady) return;
+        var root = document.getElementById('root');
+        if (root && root.children.length > 0) {
+          reactReady = true;
+          maybeRemove();
+        } else setTimeout(splashCheck, 80);
+      };
       setTimeout(splashCheck, 100);
-      // Force-hide a 4 segundos pase lo que pase (failsafe)
-      setTimeout(splashRemove, 4000);
-      // Tap en el splash lo cierra (escape para usuarios atascados)
+      // Failsafe a 5s
+      setTimeout(splashRemove, 5000);
+      // Tap escape (solo después del MIN para que pueda apreciar la animación)
       var splashEl = document.getElementById('splash');
-      if (splashEl) splashEl.addEventListener('click', splashRemove, { once: true });
+      if (splashEl) splashEl.addEventListener('click', function () {
+        if (Date.now() - splashStartedAt >= 600) splashRemove();
+      });
     </script>
 
     <!-- Service Worker Registration -->
