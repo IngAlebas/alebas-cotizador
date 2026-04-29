@@ -116,13 +116,15 @@ export default function InteractiveRoofMap({
     labelsRef.current.forEach(l => l.setMap(null));
     labelsRef.current = [];
     if (!Array.isArray(segments) || segments.length === 0) return;
-    const segColors = ['#01708B', '#FF8C00', '#4ade80', '#fb923c', '#a78bfa', '#f472b6', '#22d3ee', '#facc15'];
+    // Verde brand para activos (los que el sistema usa) y gris muted para los
+    // disponibles pero no usados. Border style varía: solid vs dashed.
+    const ACTIVE = '#4ade80';
+    const AVAILABLE = '#7A9EAA';
     segments.forEach((s, i) => {
       const bb = s.boundingBox;
       if (!bb || !bb.sw || !bb.ne) return;
-      const col = segColors[i % segColors.length];
-      // Polygon = rectángulo del bounding box (axis-aligned). El segmento real
-      // del techo puede ser oblicuo, pero el bbox da una referencia visual fiel.
+      const isActive = !!s.selected;
+      const col = isActive ? ACTIVE : AVAILABLE;
       const path = [
         { lat: bb.sw.lat, lng: bb.sw.lng },
         { lat: bb.ne.lat, lng: bb.sw.lng },
@@ -132,14 +134,16 @@ export default function InteractiveRoofMap({
       const poly = new maps.Polygon({
         map: mapRef.current,
         paths: path,
-        strokeColor: col, strokeOpacity: 0.95, strokeWeight: 2,
-        fillColor: col, fillOpacity: 0.16,
+        strokeColor: col,
+        strokeOpacity: isActive ? 0.98 : 0.55,
+        strokeWeight: isActive ? 2.5 : 1.5,
+        fillColor: col,
+        fillOpacity: isActive ? 0.22 : 0.06,
         clickable: false,
-        zIndex: 5,
+        zIndex: isActive ? 6 : 5,
       });
       polygonsRef.current.push(poly);
-      // Label con el área en el centro del segmento (usar center si Google lo dio,
-      // si no calcular el centroide del bbox).
+      // Label con el área (y prefijo ✓ si está activo).
       const labelPos = s.center && s.center.lat && s.center.lng
         ? { lat: s.center.lat, lng: s.center.lng }
         : { lat: (bb.sw.lat + bb.ne.lat) / 2, lng: (bb.sw.lng + bb.ne.lng) / 2 };
@@ -148,8 +152,9 @@ export default function InteractiveRoofMap({
         background: ${col}; color: #fff; padding: 2px 7px; border-radius: 11px;
         font-size: 10px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
         white-space: nowrap; transform: translate(-50%, -50%); pointer-events: none;
+        opacity: ${isActive ? '1' : '0.7'};
       `;
-      labelEl.textContent = `${i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m²`;
+      labelEl.textContent = `${isActive ? '✓ ' : ''}${i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m²`;
       const label = new maps.OverlayView();
       label.onAdd = function () { this.getPanes().overlayLayer.appendChild(labelEl); };
       label.draw = function () {

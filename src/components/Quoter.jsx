@@ -502,6 +502,35 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   }, [f.wantsExcedentes, gridExport, hasArea, areaAllowsExcedentes]);
 
+  // Segmentos seleccionados por el sistema:
+  // - Si el usuario quiere excedentes: usa TODOS los segmentos viables (sun ≥1300 h/año)
+  //   para maximizar producción y vender lo que sobre.
+  // - Si solo cubre consumo: ordena por horas-sol desc y toma cuantos necesite hasta
+  //   cubrir el área requerida por res.numPanels (los más productivos primero).
+  // - Si aún no hay cálculo: ninguno seleccionado todavía.
+  const selectedSegmentIdx = useMemo(() => {
+    const sel = new Set();
+    if (!f.roofSegments?.length) return sel;
+    const sorted = f.roofSegments
+      .map((s, idx) => ({ ...s, _idx: idx }))
+      .sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0));
+    if (f.wantsExcedentes) {
+      sorted.forEach(s => {
+        if ((s.sunshineHoursPerYear || 0) >= 1300) sel.add(s._idx);
+      });
+      if (sel.size === 0) sorted.slice(0, Math.min(3, sorted.length)).forEach(s => sel.add(s._idx));
+    } else if (res?.numPanels) {
+      const requiredArea = res.numPanels * m2PerPanel;
+      let cumArea = 0;
+      for (const s of sorted) {
+        if (cumArea >= requiredArea) break;
+        sel.add(s._idx);
+        cumArea += s.areaMeters2 || 0;
+      }
+    }
+    return sel;
+  }, [f.roofSegments, f.wantsExcedentes, res?.numPanels, m2PerPanel]);
+
   // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
   // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
   // applyAiActions; este efecto corre tras el commit con el `f` ya actualizado.
@@ -1126,16 +1155,45 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               )}
               {f.roofSegments?.length > 0 && (
                 <div style={{ marginTop: 4 }}>
-                  <div style={{ color: C.teal, marginBottom: 2 }}>Segmentos de techo ({f.roofSegments.length}):</div>
-                  {f.roofSegments.map((s, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 8, marginBottom: 1 }}>
-                      <span style={{ color: C.muted }}>{i + 1}.</span>
-                      {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
-                      {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
-                      {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
-                      {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
-                    </div>
-                  ))}
+                  <div style={{ color: C.teal, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span>Segmentos de techo ({f.roofSegments.length}):</span>
+                    {selectedSegmentIdx.size > 0 && (
+                      <span style={{ fontSize: 9, color: C.green, background: `${C.green}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
+                        ✓ {selectedSegmentIdx.size} activo{selectedSegmentIdx.size > 1 ? 's' : ''}
+                        {f.wantsExcedentes ? ' · maximiza excedentes' : ' · cubre consumo'}
+                      </span>
+                    )}
+                  </div>
+                  {f.roofSegments.map((s, i) => {
+                    const isActive = selectedSegmentIdx.has(i);
+                    return (
+                      <div key={i} style={{
+                        display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
+                        paddingLeft: 4, marginBottom: 2,
+                        opacity: isActive ? 1 : 0.45,
+                      }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 18, height: 18, borderRadius: '50%',
+                          background: isActive ? `${C.green}22` : 'transparent',
+                          border: `1.5px ${isActive ? 'solid' : 'dashed'} ${isActive ? C.green : C.muted}`,
+                          color: isActive ? C.green : C.muted, fontWeight: 800, fontSize: 10,
+                        }}>{i + 1}</span>
+                        {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
+                        {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
+                        {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
+                        {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                        {isActive
+                          ? <span style={{ fontSize: 9, color: C.green, fontWeight: 700, marginLeft: 4 }}>✓ activo</span>
+                          : <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>○ disponible</span>}
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 4, paddingLeft: 4 }}>
+                    {f.wantsExcedentes
+                      ? '⚡ Excedentes activado: el sistema usa todos los segmentos viables (h☀ ≥ 1300) para maximizar generación.'
+                      : 'El sistema selecciona los segmentos con más horas de sol hasta cubrir el consumo. Marca «vender excedentes» para usar más segmentos.'}
+                  </div>
                 </div>
               )}
               {f.roofImagery && (
@@ -1201,7 +1259,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
-                      segments={f.roofSegments || null}
+                      segments={f.roofSegments ? f.roofSegments.map((s, i) => ({ ...s, selected: selectedSegmentIdx.has(i) })) : null}
                       showSunPath={true}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
