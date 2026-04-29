@@ -4,7 +4,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ── DESIGN TOKENS ── */
-:root {
+:root, [data-theme="dark"] {
   --sun:     #FF8C00;
   --amber:   #FFB800;
   --gold:    #FFD93D;
@@ -19,6 +19,59 @@
   --radius:  10px;
   --shadow:  0 4px 24px rgba(0,0,0,0.35);
 }
+
+/* Light theme — fondo claro para uso en exterior con luz solar */
+[data-theme="light"] {
+  --sun:     #FF8C00;       /* brand intacto */
+  --amber:   #FFB800;
+  --gold:    #FFD93D;
+  --teal:    #01708B;
+  --dark:    #F5F7FA;       /* page bg */
+  --card:    #FFFFFF;        /* card bg */
+  --card2:   #F0F3F8;        /* secondary card */
+  --border:  rgba(1,112,139,0.22);
+  --oBorder: rgba(255,140,0,0.30);
+  --text:    #0F172A;        /* main text — dark navy */
+  --muted:   #5A6B7A;        /* secondary text */
+  --shadow:  0 4px 16px rgba(15,23,42,0.10);
+}
+
+/* Override de inline styles más comunes en el light theme.
+   React renderiza style={{ background: C.dark }} como inline style con el
+   valor RGB (#07090F → rgb(7, 9, 15)). Reemplazamos por bg light. */
+[data-theme="light"] [style*="rgb(7, 9, 15)"],
+[data-theme="light"] [style*="background:#07090F"],
+[data-theme="light"] [style*="background: #07090F"] {
+  background-color: var(--dark) !important;
+}
+[data-theme="light"] [style*="rgb(12, 20, 34)"],
+[data-theme="light"] [style*="background:#0C1422"],
+[data-theme="light"] [style*="background: #0C1422"] {
+  background-color: var(--card) !important;
+}
+[data-theme="light"] [style*="color: rgb(232, 240, 247)"],
+[data-theme="light"] [style*="color:#E8F0F7"],
+[data-theme="light"] [style*="color: #E8F0F7"] {
+  color: var(--text) !important;
+}
+[data-theme="light"] [style*="color: rgb(122, 158, 170)"],
+[data-theme="light"] [style*="color:#7A9EAA"],
+[data-theme="light"] [style*="color: #7A9EAA"] {
+  color: var(--muted) !important;
+}
+/* Texto blanco hardcoded → texto oscuro en light */
+[data-theme="light"] [style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] [style*="color: white"],
+[data-theme="light"] [style*="color:#fff"],
+[data-theme="light"] [style*="color: #fff"] {
+  color: var(--text) !important;
+}
+[data-theme="light"] .al-nav { background: rgba(255,255,255,0.92) !important; border-color: var(--border) !important; }
+[data-theme="light"] .al-bottomnav { background: rgba(255,255,255,0.97) !important; border-top: 1px solid var(--border) !important; }
+[data-theme="light"] .al-footer { background: rgba(245,247,250,0.96) !important; }
+[data-theme="light"] .al-card { background: var(--card) !important; border-color: var(--border) !important; box-shadow: var(--shadow); }
+[data-theme="light"] body { background: var(--dark); color: var(--text); }
+[data-theme="light"] noscript { color: var(--text); }
 
 /* ── BASE ── */
 html { scroll-behavior: smooth; }
