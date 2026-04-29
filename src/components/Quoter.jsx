@@ -1152,9 +1152,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         ) : (
           <div style={{ marginBottom: 13 }}>
-            <label style={ss.lbl}>Consumo mensual (kWh) — del recibo de energía</label>
-            <input type="number" style={ss.inp} placeholder="Ej: 450" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Busca "Energía activa" o "kWh consumidos" en tu factura</div>
+            <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>📄 Consumo promedio mensual (kWh)</span>
+              <span style={{ fontSize: 9, color: '#fff', background: C.orange, padding: '1px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4 }}>OBLIGATORIO</span>
+            </label>
+            <input type="number" style={{ ...ss.inp, fontSize: 16, fontWeight: 700 }} placeholder="Ej: 450 kWh/mes" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
+            <div style={{
+              fontSize: 11, lineHeight: 1.55, marginTop: 6, padding: '8px 11px',
+              background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 7, color: C.text,
+            }}>
+              <strong style={{ color: C.teal }}>💡 Cómo obtenerlo correctamente:</strong>{' '}
+              Toma el <strong>promedio de los últimos 6 meses</strong> de tu recibo de energía (sección "Histórico de consumo" o "kWh consumidos"). Este dato es <strong>la base de TODO el cálculo</strong> — si está mal, la cotización completa estará mal.
+            </div>
           </div>
         )}
         <div style={{ marginBottom: 13 }}>
@@ -1207,8 +1216,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </select>
         </div>
         <div style={{ marginBottom: 8 }}>
-          <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
-          <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
+          <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>🏠 Área de techo disponible (m²)</span>
+            <span style={{ fontSize: 9, color: '#fff', background: C.teal, padding: '1px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4 }}>CRÍTICO</span>
+            <span style={{ fontSize: 9, color: C.muted, fontStyle: 'italic' }}>se autocompleta abajo</span>
+          </label>
+          <input type="number" style={{ ...ss.inp, fontSize: 16, fontWeight: 700 }} placeholder="Se calcula automáticamente al ubicar el techo abajo" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+            <strong style={{ color: C.yellow }}>⚡ Importante:</strong> el área es <strong>fundamental</strong> para tener cotización aterrizada (&gt;90% precisión). Mejor estimación: usa <strong>📍 Estimar área</strong> o <strong>🛰 Usar mi GPS</strong> abajo — el sistema calcula con Google Solar y polígonos por cubierta.
+          </div>
           {solarConfigured() && (
             <div style={{ marginTop: 8, position: 'relative' }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
