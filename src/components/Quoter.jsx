@@ -1112,14 +1112,42 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   type="button"
                   onClick={onUseMyLocation}
                   disabled={roofLoading}
-                  title="Usar la ubicación GPS de tu dispositivo (mayor precisión)"
-                  style={{ background: 'transparent', border: `1px solid ${C.teal}66`, color: C.teal, padding: '8px 12px', borderRadius: 7, fontSize: 11, cursor: 'pointer', opacity: roofLoading ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                  title="Usar la ubicación GPS de tu dispositivo (máxima precisión, recomendado)"
+                  className="al-gps-btn"
+                  style={{
+                    background: `linear-gradient(135deg, ${C.teal}, ${C.teal}cc)`,
+                    border: `2px solid ${C.teal}`,
+                    color: '#fff',
+                    padding: '10px 16px',
+                    borderRadius: 9,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    opacity: roofLoading ? 0.6 : 1,
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    boxShadow: `0 0 0 2px ${C.teal}22, 0 4px 14px ${C.teal}55`,
+                    fontFamily: 'inherit',
+                    letterSpacing: 0.3,
+                  }}
                 >
-                  🛰 GPS
+                  <span style={{ fontSize: 16 }}>🛰</span>
+                  <span>Usar mi GPS</span>
                 </button>
               </div>
-              <div style={{ fontSize: 9, color: C.muted, marginTop: 4 }}>
-                Tip: también puedes pegar coordenadas directas en el formato <code style={{ color: C.teal }}>lat, lon</code> (ej: <code>4.1383, -73.6335</code>) para máxima precisión.
+              <div style={{
+                marginTop: 8, padding: '8px 12px',
+                background: `linear-gradient(90deg, ${C.teal}15, ${C.teal}05)`,
+                border: `1px solid ${C.teal}44`,
+                borderRadius: 7, fontSize: 11, lineHeight: 1.5, color: C.text,
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+              }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
+                <span>
+                  <strong style={{ color: C.teal }}>Recomendado:</strong> usa el botón <strong style={{ color: C.teal }}>🛰 Usar mi GPS</strong> si estás físicamente en el predio — es mucho más preciso que escribir la dirección. También puedes pegar coordenadas directas (<code style={{ color: C.teal }}>lat, lon</code> · ej: <code>4.1383, -73.6335</code>).
+                </span>
               </div>
               {addrSuggestOpen && addrSuggestions.length > 0 && (
                 <ul style={{
