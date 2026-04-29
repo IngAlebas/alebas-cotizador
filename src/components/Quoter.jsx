@@ -502,6 +502,35 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   }, [f.wantsExcedentes, gridExport, hasArea, areaAllowsExcedentes]);
 
+  // Segmentos seleccionados por el sistema:
+  // - Si el usuario quiere excedentes: usa TODOS los segmentos viables (sun ≥1300 h/año)
+  //   para maximizar producción y vender lo que sobre.
+  // - Si solo cubre consumo: ordena por horas-sol desc y toma cuantos necesite hasta
+  //   cubrir el área requerida por res.numPanels (los más productivos primero).
+  // - Si aún no hay cálculo: ninguno seleccionado todavía.
+  const selectedSegmentIdx = useMemo(() => {
+    const sel = new Set();
+    if (!f.roofSegments?.length) return sel;
+    const sorted = f.roofSegments
+      .map((s, idx) => ({ ...s, _idx: idx }))
+      .sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0));
+    if (f.wantsExcedentes) {
+      sorted.forEach(s => {
+        if ((s.sunshineHoursPerYear || 0) >= 1300) sel.add(s._idx);
+      });
+      if (sel.size === 0) sorted.slice(0, Math.min(3, sorted.length)).forEach(s => sel.add(s._idx));
+    } else if (res?.numPanels) {
+      const requiredArea = res.numPanels * m2PerPanel;
+      let cumArea = 0;
+      for (const s of sorted) {
+        if (cumArea >= requiredArea) break;
+        sel.add(s._idx);
+        cumArea += s.areaMeters2 || 0;
+      }
+    }
+    return sel;
+  }, [f.roofSegments, f.wantsExcedentes, res?.numPanels, m2PerPanel]);
+
   // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
   // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
   // applyAiActions; este efecto corre tras el commit con el `f` ya actualizado.
@@ -1150,63 +1179,80 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 </div>
               )}
               {f.roofSegments?.length > 0 && (() => {
-                // Colores por segmento — la ronda alterna entre teal y naranja brand
-                // para distinguir visualmente cada zona del techo en la lista. Repite
-                // tras 6 segmentos. Pin grande con número en la lista coincide con el
-                // mini-mapa rosa de los compases más abajo.
-                const segColors = ['#01708B', '#FF8C00', '#4ade80', '#fb923c', '#a78bfa', '#f472b6'];
-                // Compass rose: cada segmento es una flecha desde el centro apuntando
-                // a su azimuth, con longitud proporcional al área. Permite ver de
-                // un vistazo cuántos segmentos están bien orientados al sur.
+                // Combina dos visualizaciones:
+                // (1) Lista numerada con badge activo/disponible — los activos son los
+                //     que el sistema USA realmente; los demás están detectados pero
+                //     ociosos (a menos que el usuario quiera excedentes).
+                // (2) Compás rose abajo: flechas por azimuth, longitud ∝ área. Las
+                //     activas en verde brillante; las disponibles en gris muted.
+                const ACTIVE = '#4ade80';
+                const AVAILABLE = '#7A9EAA';
                 const maxArea = Math.max(...f.roofSegments.map(s => s.areaMeters2 || 0));
                 return (
                   <div style={{ marginTop: 4 }}>
-                    <div style={{ color: C.teal, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ color: C.teal, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span>Segmentos de techo ({f.roofSegments.length}):</span>
-                      <span style={{ color: C.muted, fontSize: 9, fontStyle: 'italic' }}>color = identifica cada zona en compás abajo</span>
+                      {selectedSegmentIdx.size > 0 && (
+                        <span style={{ fontSize: 9, color: ACTIVE, background: `${ACTIVE}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
+                          ✓ {selectedSegmentIdx.size} activo{selectedSegmentIdx.size > 1 ? 's' : ''}
+                          {f.wantsExcedentes ? ' · maximiza excedentes' : ' · cubre consumo'}
+                        </span>
+                      )}
                     </div>
                     {f.roofSegments.map((s, i) => {
-                      const col = segColors[i % segColors.length];
+                      const isActive = selectedSegmentIdx.has(i);
+                      const col = isActive ? ACTIVE : AVAILABLE;
                       return (
-                        <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 4, marginBottom: 2 }}>
+                        <div key={i} style={{
+                          display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
+                          paddingLeft: 4, marginBottom: 2,
+                          opacity: isActive ? 1 : 0.55,
+                        }}>
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             width: 18, height: 18, borderRadius: '50%',
-                            background: `${col}33`, border: `1.5px solid ${col}`,
+                            background: isActive ? `${col}22` : 'transparent',
+                            border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}`,
                             color: col, fontWeight: 800, fontSize: 10,
                           }}>{i + 1}</span>
                           {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
                           {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
                           {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
                           {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                          {isActive
+                            ? <span style={{ fontSize: 9, color: ACTIVE, fontWeight: 700, marginLeft: 4 }}>✓ activo</span>
+                            : <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>○ disponible</span>}
                         </div>
                       );
                     })}
-                    {/* Compass rose visual: orientación + tamaño relativo */}
+                    {/* Compás rose visual con activos en verde y disponibles en gris */}
                     <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
                       <svg viewBox="-120 -120 240 240" width="200" height="200" aria-label="Compás de segmentos">
-                        {/* Círculos guía */}
                         <circle cx="0" cy="0" r="100" fill="none" stroke={`${C.teal}22`} strokeWidth="1" />
                         <circle cx="0" cy="0" r="60"  fill="none" stroke={`${C.teal}15`} strokeWidth="0.7" />
-                        {/* Cardinales */}
                         <text x="0" y="-105" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">N</text>
                         <text x="0" y="115" textAnchor="middle" fill={C.yellow} fontSize="11" fontWeight="700">S</text>
                         <text x="105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">E</text>
                         <text x="-105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">O</text>
-                        {/* Flechas + nº por segmento */}
                         {f.roofSegments.map((s, i) => {
                           if (s.azimuthDegrees == null || maxArea <= 0) return null;
-                          const col = segColors[i % segColors.length];
-                          const ratio = (s.areaMeters2 || 0) / maxArea; // 0..1
-                          const len = 35 + ratio * 65; // 35-100px
-                          // Azimuth: 0=N, 90=E, 180=S, 270=O. SVG: x=cos(az-90), y=sin(az-90).
+                          const isActive = selectedSegmentIdx.has(i);
+                          const col = isActive ? ACTIVE : AVAILABLE;
+                          const ratio = (s.areaMeters2 || 0) / maxArea;
+                          const len = 35 + ratio * 65;
                           const az = (s.azimuthDegrees - 90) * Math.PI / 180;
                           const x2 = Math.cos(az) * len;
                           const y2 = Math.sin(az) * len;
                           return (
-                            <g key={i}>
-                              <line x1="0" y1="0" x2={x2} y2={y2} stroke={col} strokeWidth="2" strokeLinecap="round" />
-                              <circle cx={x2} cy={y2} r="9" fill={`${col}cc`} stroke={col} strokeWidth="1.5" />
+                            <g key={i} opacity={isActive ? 1 : 0.5}>
+                              <line x1="0" y1="0" x2={x2} y2={y2}
+                                stroke={col}
+                                strokeWidth={isActive ? 2.5 : 1.5}
+                                strokeDasharray={isActive ? '' : '3 2'}
+                                strokeLinecap="round" />
+                              <circle cx={x2} cy={y2} r="9"
+                                fill={isActive ? `${col}cc` : `${col}88`}
+                                stroke={col} strokeWidth="1.5" />
                               <text x={x2} y={y2 + 3.5} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="800">{i + 1}</text>
                             </g>
                           );
@@ -1215,7 +1261,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       </svg>
                     </div>
                     <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontStyle: 'italic', marginTop: -4 }}>
-                      Cada flecha apunta a la orientación del segmento · longitud ∝ área · los apuntando al <strong style={{ color: C.yellow }}>Sur</strong> son los más productivos en Colombia
+                      <strong style={{ color: ACTIVE }}>Verde</strong> = segmento usado por el sistema · <strong style={{ color: AVAILABLE }}>gris</strong> = disponible (no usado)
+                      <br />Flecha apunta al azimuth · longitud ∝ área · los del <strong style={{ color: C.yellow }}>Sur</strong> son los más productivos en Colombia
+                    </div>
+                    <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 4, paddingLeft: 4 }}>
+                      {f.wantsExcedentes
+                        ? '⚡ Excedentes activado: el sistema usa todos los segmentos viables (h☀ ≥ 1300) para maximizar generación.'
+                        : 'El sistema selecciona los segmentos con más horas de sol hasta cubrir el consumo. Marca «vender excedentes» para usar más segmentos.'}
                     </div>
                   </div>
                 );
@@ -1284,6 +1336,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
+                      segments={f.roofSegments ? f.roofSegments.map((s, i) => ({ ...s, selected: selectedSegmentIdx.has(i) })) : null}
+                      showSunPath={true}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
                         setRoofError(null); setRoofLoading(true);
