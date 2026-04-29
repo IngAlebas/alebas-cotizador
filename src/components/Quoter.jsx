@@ -589,6 +589,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   };
   const resetManualSelection = () => setManualSegmentSelection(null);
 
+  // Sincroniza availableArea con la SUMA de cubiertas seleccionadas. Antes el
+  // sistema usaba la totalidad del área Google (143 m²) para dimensionar y
+  // calcular excedentes, ignorando que el usuario podía haber excluido cubiertas.
+  // Ahora cada toggle/cambio recalcula el área a usar.
+  useEffect(() => {
+    if (!selectedSegmentIdx || selectedSegmentIdx.size === 0) return;
+    const allSegs = [
+      ...(f.roofSegments || []),
+      ...(f.customSegments || []),
+    ];
+    if (allSegs.length === 0) return;
+    const selectedArea = allSegs
+      .filter((_, i) => selectedSegmentIdx.has(i))
+      .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
+    if (selectedArea > 0) {
+      const rounded = String(Math.round(selectedArea));
+      // Solo actualizar si difiere — evita loops y respeta valor manual igual.
+      if (rounded !== f.availableArea) u('availableArea', rounded);
+    }
+  }, [selectedSegmentIdx, f.roofSegments, f.customSegments]); // eslint-disable-line
+
   // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
   // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
   // applyAiActions; este efecto corre tras el commit con el `f` ya actualizado.
