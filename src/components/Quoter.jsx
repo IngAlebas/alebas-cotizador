@@ -612,12 +612,37 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
-    const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
-      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
+
+    // Re-sizing por yield real:
+    // El sysBase se dimensiona con la heurística PSH × PR (~1500 kWh/kWp/año) pero las
+    // APIs reales (PVGIS/PVWatts/Google Solar) reportan yields que pueden ser 20-30%
+    // menores en zonas nubladas/sombreadas. Sin compensación, el sistema queda
+    // sub-dimensionado: 100% target → 80% real. Si el área del techo lo permite,
+    // boosteamos los paneles para alcanzar 100% real.
+    let adjustedTargetKwp = targetKwp;
+    if (bestAnnualKwh && sysBase.actKwp > 0 && !f.wantsExcedentes && !areaLimitsSystem) {
+      const realYield = bestAnnualKwh / sysBase.actKwp; // kWh/kWp/año real
+      const realRequiredKwp = (kwh * 12) / realYield;
+      if (realRequiredKwp > sysBase.actKwp * 1.05) {
+        const cap = hasArea ? areaMaxKwp : MAX_KWP_AGPE;
+        adjustedTargetKwp = Math.min(realRequiredKwp, cap, MAX_KWP_AGPE);
+      }
+    }
+    // Re-seleccionar inversor compatible con el target ajustado.
+    const inv3 = adjustedTargetKwp !== targetKwp
+      ? selectCompatibleInverter(panel, adjustedTargetKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) })
+      : inv2;
+    // Escalar bestAnnualKwh proporcionalmente al kWp ajustado (mismo yield, más paneles).
+    const scaledAnnualKwh = bestAnnualKwh && adjustedTargetKwp !== targetKwp && sysBase.actKwp > 0
+      ? Math.round(bestAnnualKwh * (adjustedTargetKwp / sysBase.actKwp))
+      : bestAnnualKwh;
+
+    const sys = calcSystem(kwh, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, psh,
+      { pvgisAnnualKwh: scaledAnnualKwh, targetKwp: adjustedTargetKwp, shadeIndex, ...temps });
 
     const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
-    const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
+    const budget = calcBudget(sys, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const cuFull = tariffCU(operator);
     const cuMinusG = excedentePriceFor(operator);
     const cuSplit = splitCU(operator);
@@ -631,7 +656,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sizedFor = (f.wantsExcedentes && areaAllowsExcedentes) ? 'excedentes'
                    : areaLimitsSystem ? 'area'
                    : 'consumo';
-    setRes({ ...sys, inv: inv2, sizedFor, productionSource, productionSources, productionDispersion, googleSolarEstimate: gse || null });
+    setRes({ ...sys, inv: inv3, sizedFor, productionSource, productionSources, productionDispersion, googleSolarEstimate: gse || null });
     setBgt({
       ...budget,
       sav: annualSav, roi,
@@ -1124,19 +1149,77 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 </div>
               )}
-              {f.roofSegments?.length > 0 && (
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ color: C.teal, marginBottom: 2 }}>Segmentos de techo ({f.roofSegments.length}):</div>
-                  {f.roofSegments.map((s, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 8, marginBottom: 1 }}>
-                      <span style={{ color: C.muted }}>{i + 1}.</span>
-                      {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
-                      {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
-                      {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
-                      {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+              {f.roofSegments?.length > 0 && (() => {
+                // Colores por segmento — la ronda alterna entre teal y naranja brand
+                // para distinguir visualmente cada zona del techo en la lista. Repite
+                // tras 6 segmentos. Pin grande con número en la lista coincide con el
+                // mini-mapa rosa de los compases más abajo.
+                const segColors = ['#01708B', '#FF8C00', '#4ade80', '#fb923c', '#a78bfa', '#f472b6'];
+                // Compass rose: cada segmento es una flecha desde el centro apuntando
+                // a su azimuth, con longitud proporcional al área. Permite ver de
+                // un vistazo cuántos segmentos están bien orientados al sur.
+                const maxArea = Math.max(...f.roofSegments.map(s => s.areaMeters2 || 0));
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ color: C.teal, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span>Segmentos de techo ({f.roofSegments.length}):</span>
+                      <span style={{ color: C.muted, fontSize: 9, fontStyle: 'italic' }}>color = identifica cada zona en compás abajo</span>
                     </div>
-                  ))}
-                </div>
+                    {f.roofSegments.map((s, i) => {
+                      const col = segColors[i % segColors.length];
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', paddingLeft: 4, marginBottom: 2 }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 18, height: 18, borderRadius: '50%',
+                            background: `${col}33`, border: `1.5px solid ${col}`,
+                            color: col, fontWeight: 800, fontSize: 10,
+                          }}>{i + 1}</span>
+                          {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
+                          {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
+                          {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
+                          {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                        </div>
+                      );
+                    })}
+                    {/* Compass rose visual: orientación + tamaño relativo */}
+                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+                      <svg viewBox="-120 -120 240 240" width="200" height="200" aria-label="Compás de segmentos">
+                        {/* Círculos guía */}
+                        <circle cx="0" cy="0" r="100" fill="none" stroke={`${C.teal}22`} strokeWidth="1" />
+                        <circle cx="0" cy="0" r="60"  fill="none" stroke={`${C.teal}15`} strokeWidth="0.7" />
+                        {/* Cardinales */}
+                        <text x="0" y="-105" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">N</text>
+                        <text x="0" y="115" textAnchor="middle" fill={C.yellow} fontSize="11" fontWeight="700">S</text>
+                        <text x="105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">E</text>
+                        <text x="-105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">O</text>
+                        {/* Flechas + nº por segmento */}
+                        {f.roofSegments.map((s, i) => {
+                          if (s.azimuthDegrees == null || maxArea <= 0) return null;
+                          const col = segColors[i % segColors.length];
+                          const ratio = (s.areaMeters2 || 0) / maxArea; // 0..1
+                          const len = 35 + ratio * 65; // 35-100px
+                          // Azimuth: 0=N, 90=E, 180=S, 270=O. SVG: x=cos(az-90), y=sin(az-90).
+                          const az = (s.azimuthDegrees - 90) * Math.PI / 180;
+                          const x2 = Math.cos(az) * len;
+                          const y2 = Math.sin(az) * len;
+                          return (
+                            <g key={i}>
+                              <line x1="0" y1="0" x2={x2} y2={y2} stroke={col} strokeWidth="2" strokeLinecap="round" />
+                              <circle cx={x2} cy={y2} r="9" fill={`${col}cc`} stroke={col} strokeWidth="1.5" />
+                              <text x={x2} y={y2 + 3.5} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="800">{i + 1}</text>
+                            </g>
+                          );
+                        })}
+                        <circle cx="0" cy="0" r="4" fill={C.text} />
+                      </svg>
+                    </div>
+                    <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontStyle: 'italic', marginTop: -4 }}>
+                      Cada flecha apunta a la orientación del segmento · longitud ∝ área · los apuntando al <strong style={{ color: C.yellow }}>Sur</strong> son los más productivos en Colombia
+                    </div>
+                  </div>
+                );
+              })()}
               )}
               {f.roofImagery && (
                 <div style={{ marginTop: 3 }}>
