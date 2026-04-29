@@ -1519,6 +1519,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </div>
                   )}
                 </div>
+                {/* Quick-access a cubiertas: shortcut visible para ir a la lista
+                    de toggle. La lista completa está más abajo pero el cliente
+                    puede saltarse el confirmation y los demás campos para
+                    ajustarla rápido tras ver el mapa. */}
+                {(f.roofSegments?.length > 0 || (f.customSegments?.length > 0)) && (
+                  <div style={{
+                    padding: '10px 12px', background: `${C.teal}08`,
+                    borderTop: `1px solid ${C.border}`, fontSize: 11,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+                  }}>
+                    <span style={{ color: C.muted }}>
+                      <strong style={{ color: '#4ade80' }}>✓ {selectedSegmentIdx.size}</strong> de {(f.roofSegments?.length || 0) + (f.customSegments?.length || 0)} cubiertas activas
+                      <span style={{ color: C.muted, fontStyle: 'italic' }}> · tap directo en el mapa para ajustar</span>
+                    </span>
+                    <button type="button"
+                      onClick={() => {
+                        const el = document.getElementById('cubiertas-selector-card');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      style={{
+                        padding: '5px 12px', borderRadius: 14, border: `1px solid ${C.teal}66`,
+                        background: 'transparent', color: C.teal, cursor: 'pointer',
+                        fontSize: 11, fontWeight: 700, fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}>
+                      Ver lista ↓
+                    </button>
+                  </div>
+                )}
                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: f.roofLocationConfirmed ? `${C.green}10` : `${C.yellow}08`, borderTop: `1px solid ${C.border}`, cursor: 'pointer', fontSize: 11 }}>
                   <input
                     type="checkbox"
@@ -1579,7 +1607,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             const coveragePct = estRequiredArea > 0 ? Math.round((totalActiveArea / estRequiredArea) * 100) : 0;
             const enoughForConsumption = coveragePct >= 95;
             return (
-              <div style={{ marginTop: 12, padding: '12px 14px', background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 9, boxShadow: `0 0 0 1px ${C.teal}11` }}>
+              <div id="cubiertas-selector-card" style={{ marginTop: 12, padding: '12px 14px', background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 9, boxShadow: `0 0 0 1px ${C.teal}11`, scrollMarginTop: '70px' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
                   <span style={{ fontSize: 13, color: C.teal, fontWeight: 700 }}>
                     🏠 Cubiertas del techo ({allSegments.length})
