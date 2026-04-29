@@ -1220,11 +1220,41 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span>🏠 Área de techo disponible (m²)</span>
             <span style={{ fontSize: 9, color: '#fff', background: C.teal, padding: '1px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4 }}>CRÍTICO</span>
-            <span style={{ fontSize: 9, color: C.muted, fontStyle: 'italic' }}>se autocompleta abajo</span>
+            {f.googleAreaM2 != null && (
+              <span style={{ fontSize: 9, color: '#fff', background: C.green, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>✓ AUTO-DETECTADO</span>
+            )}
           </label>
-          <input type="number" style={{ ...ss.inp, fontSize: 16, fontWeight: 700 }} placeholder="Se calcula automáticamente al ubicar el techo abajo" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-            <strong style={{ color: C.yellow }}>⚡ Importante:</strong> el área es <strong>fundamental</strong> para tener cotización aterrizada (&gt;90% precisión). Mejor estimación: usa <strong>📍 Estimar área</strong> o <strong>🛰 Usar mi GPS</strong> abajo — el sistema calcula con Google Solar y polígonos por cubierta.
+          <input type="number" style={{ ...ss.inp, fontSize: 18, fontWeight: 800, padding: '12px 14px', borderColor: f.availableArea ? C.teal : C.orange }} placeholder="Se calcula automáticamente al ubicar el techo abajo" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
+          {/* Live coverage preview: si tenemos consumo, mostramos cuánto del consumo cubre */}
+          {(() => {
+            const area = parseFloat(f.availableArea) || 0;
+            const monthly = parseFloat(f.monthlyKwh) || 0;
+            if (area > 0 && monthly > 0 && panel?.wp) {
+              const reqKwp = (monthly / 30) / (psh * 0.78);
+              const reqArea = Math.ceil(reqKwp * 1000 / panel.wp) * m2PerPanel;
+              const pct = Math.min(Math.round((area / reqArea) * 100), 999);
+              const enough = pct >= 100;
+              return (
+                <div style={{
+                  marginTop: 6, padding: '6px 10px',
+                  background: enough ? `${C.green}15` : `${C.yellow}15`,
+                  border: `1px solid ${enough ? C.green : C.yellow}55`,
+                  borderRadius: 7, fontSize: 11, lineHeight: 1.5,
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                }}>
+                  <span style={{ color: enough ? C.green : C.yellow, fontWeight: 800, fontSize: 13 }}>
+                    {enough ? '✓' : '⚠'} {pct}% del consumo cubierto
+                  </span>
+                  <span style={{ color: C.muted, fontSize: 10 }}>
+                    necesitas ~{Math.round(reqArea)} m² para 100% · tienes <strong style={{ color: C.text }}>{Math.round(area)} m²</strong>
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          })()}
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+            <strong style={{ color: C.yellow }}>⚡ Importante:</strong> el área es <strong>fundamental</strong> para una cotización aterrizada (&gt;90% precisión). Usa <strong style={{ color: C.teal }}>📍 Estimar área</strong> o <strong style={{ color: C.teal }}>🛰 Usar mi GPS</strong> abajo — Google Solar identifica las cubiertas y se autocompleta.
           </div>
           {solarConfigured() && (
             <div style={{ marginTop: 8, position: 'relative' }}>
