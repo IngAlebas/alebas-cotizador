@@ -324,6 +324,9 @@ button:active { transform: scale(0.97); }
    Optimizado para pantallas 320-414px (95% de Android)
 ══════════════════════════════════════════════════════════════════ */
 @media (max-width: 600px) {
+  /* Prevenir overflow horizontal global — la causa más común de texto cortado */
+  html, body { overflow-x: hidden; }
+
   /* Cards principales: padding reducido y margen lateral consistente */
   body main, body .al-card,
   div[style*="maxWidth: 860px"],
@@ -332,9 +335,11 @@ button:active { transform: scale(0.97); }
     padding-right: 12px !important;
   }
 
-  /* Cards internas: pantalla pequeña, padding razonable */
-  div[style*="padding: '26px 30px'"],
-  div[style*="padding:'26px 30px'"] {
+  /* Cards internas: ss.card usa padding: '26px 30px' inline → pega como
+     'padding: 26px 30px' en el DOM (sin comillas internas). El selector
+     debe matchear así, sin las comillas que tenía antes. */
+  div[style*="padding: 26px 30px"],
+  div[style*="padding:26px 30px"] {
     padding: 16px 14px !important;
   }
 
@@ -365,9 +370,18 @@ button:active { transform: scale(0.97); }
     grid-column: span 2;
   }
 
-  /* KPI grids en resumen ejecutivo */
-  div[style*="repeat(3, 1fr)"][style*="gap: 8"]:not(.al-pdf-kpi-grid):not([style*="auto-fit"]) {
+  /* KPI / stats grids: cualquier grid 3-col se convierte a 2-col */
+  .al-stats-grid,
+  .al-excedente-grid,
+  div[style*="repeat(3, 1fr)"]:not(.al-pdf-kpi-grid):not([style*="auto-fit"]) {
     grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Stats cards: padding más compacto y texto que se ajuste */
+  .al-stats-grid > div, .al-excedente-grid > div {
+    min-width: 0;
+    overflow: hidden;
   }
 
   /* Stack vertical para preview techo (satellite + streets en columna) */
@@ -400,8 +414,10 @@ button:active { transform: scale(0.97); }
   .al-type-grid > div:nth-child(3) {
     grid-column: auto;
   }
-  /* KPI grids: 1 col */
-  div[style*="repeat(3, 1fr)"][style*="gap: 8"]:not(.al-pdf-kpi-grid):not([style*="auto-fit"]) {
+  /* Stats/KPI grids: 1 col en pantallas muy chicas */
+  .al-stats-grid,
+  .al-excedente-grid,
+  div[style*="repeat(3, 1fr)"]:not(.al-pdf-kpi-grid):not([style*="auto-fit"]) {
     grid-template-columns: 1fr !important;
   }
   /* Form custom: 1 col */

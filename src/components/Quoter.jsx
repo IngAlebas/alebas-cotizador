@@ -2356,7 +2356,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              <div className="al-excedente-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                 <div style={{ background: C.dark, borderRadius: 7, padding: '9px 10px', border: `1px solid ${deltaCol}44` }}>
                   <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 }}>{surplus ? 'Excedente' : 'Déficit'} / mes</div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: deltaCol, marginTop: 2 }}>{surplus ? '+' : ''}{fmt(Math.abs(delta))} kWh</div>
