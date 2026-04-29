@@ -241,6 +241,24 @@ button:active { transform: scale(0.97); }
 
 .animate-fade { animation: fadeIn .3s ease forwards; }
 .animate-pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* GPS button — primary recommended action, visually prominent */
+@keyframes gpsGlow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(1, 112, 139, 0.18), 0 4px 14px rgba(1, 112, 139, 0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(1, 112, 139, 0.30), 0 6px 20px rgba(1, 112, 139, 0.75); }
+}
+.al-gps-btn {
+  animation: gpsGlow 2.4s ease-in-out infinite;
+  position: relative;
+}
+.al-gps-btn:hover {
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.1);
+}
+.al-gps-btn:active {
+  transform: scale(0.98);
+}
+
 .animate-spin { animation: spin 1s linear infinite; display: inline-block; }
 .animate-slide-in { animation: slideIn .25s ease forwards; }
 .animate-check-pop { animation: checkPop .35s ease forwards; display: inline-block; }
