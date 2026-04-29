@@ -163,6 +163,13 @@
 [data-theme="light"] body { background: var(--dark); color: var(--text); }
 [data-theme="light"] noscript { color: var(--text); }
 
+/* GPS button — gradient teal: forzar texto blanco en light theme también
+   (mi rule global cambia color:#fff a navy → invisible sobre teal) */
+[data-theme="light"] .al-gps-btn,
+[data-theme="light"] .al-gps-btn * {
+  color: #fff !important;
+}
+
 /* Loading screen — siempre dark, regardless of theme. La pantalla de cálculo
    es muy breve (5-15s) y mantener el feel premium dark con el spinner amarillo
    da mejor experiencia que pelear con todos los inline-styles light. */

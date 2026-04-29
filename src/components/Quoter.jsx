@@ -17,6 +17,7 @@ import { lookupRoof, solarConfigured } from '../services/solar';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import InteractiveRoofMap from './InteractiveRoofMap';
+import SunPathDiagram from './SunPathDiagram';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
@@ -1152,9 +1153,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         ) : (
           <div style={{ marginBottom: 13 }}>
-            <label style={ss.lbl}>Consumo mensual (kWh) — del recibo de energía</label>
-            <input type="number" style={ss.inp} placeholder="Ej: 450" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Busca "Energía activa" o "kWh consumidos" en tu factura</div>
+            <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>📄 Consumo promedio mensual (kWh)</span>
+              <span style={{ fontSize: 9, color: '#fff', background: C.orange, padding: '1px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4 }}>OBLIGATORIO</span>
+            </label>
+            <input type="number" style={{ ...ss.inp, fontSize: 16, fontWeight: 700 }} placeholder="Ej: 450 kWh/mes" value={f.monthlyKwh} onChange={e => u('monthlyKwh', e.target.value)} />
+            <div style={{
+              fontSize: 11, lineHeight: 1.55, marginTop: 6, padding: '8px 11px',
+              background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 7, color: C.text,
+            }}>
+              <strong style={{ color: C.teal }}>💡 Cómo obtenerlo correctamente:</strong>{' '}
+              Toma el <strong>promedio de los últimos 6 meses</strong> de tu recibo de energía (sección "Histórico de consumo" o "kWh consumidos"). Este dato es <strong>la base de TODO el cálculo</strong> — si está mal, la cotización completa estará mal.
+            </div>
           </div>
         )}
         <div style={{ marginBottom: 13 }}>
@@ -1207,8 +1217,45 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </select>
         </div>
         <div style={{ marginBottom: 8 }}>
-          <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
-          <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
+          <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>🏠 Área de techo disponible (m²)</span>
+            <span style={{ fontSize: 9, color: '#fff', background: C.teal, padding: '1px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: 0.4 }}>CRÍTICO</span>
+            {f.googleAreaM2 != null && (
+              <span style={{ fontSize: 9, color: '#fff', background: C.green, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>✓ AUTO-DETECTADO</span>
+            )}
+          </label>
+          <input type="number" style={{ ...ss.inp, fontSize: 18, fontWeight: 800, padding: '12px 14px', borderColor: f.availableArea ? C.teal : C.orange }} placeholder="Se calcula automáticamente al ubicar el techo abajo" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
+          {/* Live coverage preview: si tenemos consumo, mostramos cuánto del consumo cubre */}
+          {(() => {
+            const area = parseFloat(f.availableArea) || 0;
+            const monthly = parseFloat(f.monthlyKwh) || 0;
+            if (area > 0 && monthly > 0 && panel?.wp) {
+              const reqKwp = (monthly / 30) / (psh * 0.78);
+              const reqArea = Math.ceil(reqKwp * 1000 / panel.wp) * m2PerPanel;
+              const pct = Math.min(Math.round((area / reqArea) * 100), 999);
+              const enough = pct >= 100;
+              return (
+                <div style={{
+                  marginTop: 6, padding: '6px 10px',
+                  background: enough ? `${C.green}15` : `${C.yellow}15`,
+                  border: `1px solid ${enough ? C.green : C.yellow}55`,
+                  borderRadius: 7, fontSize: 11, lineHeight: 1.5,
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                }}>
+                  <span style={{ color: enough ? C.green : C.yellow, fontWeight: 800, fontSize: 13 }}>
+                    {enough ? '✓' : '⚠'} {pct}% del consumo cubierto
+                  </span>
+                  <span style={{ color: C.muted, fontSize: 10 }}>
+                    necesitas ~{Math.round(reqArea)} m² para 100% · tienes <strong style={{ color: C.text }}>{Math.round(area)} m²</strong>
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          })()}
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+            <strong style={{ color: C.yellow }}>⚡ Importante:</strong> el área es <strong>fundamental</strong> para una cotización aterrizada (&gt;90% precisión). Usa <strong style={{ color: C.teal }}>📍 Estimar área</strong> o <strong style={{ color: C.teal }}>🛰 Usar mi GPS</strong> abajo — Google Solar identifica las cubiertas y se autocompleta.
+          </div>
           {solarConfigured() && (
             <div style={{ marginTop: 8, position: 'relative' }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1476,6 +1523,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             );
           })()}
+
+          {/* Diagrama de trayectoria solar — debajo del mapa para evitar overlap.
+              Muestra arco semicircular E→cenit→O con horas, posición actual del
+              sol y orientación principal del techo. */}
+          {f.roofAzimuthDeg != null && (
+            <SunPathDiagram
+              azimuthDeg={f.roofAzimuthDeg}
+              sunshineHoursYear={f.sunshineHoursYear}
+              latitude={f.lat || 4}
+            />
+          )}
 
           {/* ═══════════════════════════════════════════════════════════════
               CUBIERTAS DEL TECHO — interactivas, debajo de las imágenes para
@@ -3407,6 +3465,84 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           }
           if (f.systemType === 'off-grid' && res.mp > (parseFloat(f.monthlyKwh) || 0) * 1.1) {
             obs.push({ type: 'info', title: 'Excedente off-grid no monetizable', text: 'El sistema genera más que el consumo. Al no estar conectado al SIN, el excedente se desperdicia (dump load). Considera cargas diferibles: bombeo, termotanque, climatización o ampliar banco.' });
+          }
+          // ════════════ PACK 1 — Validaciones eléctricas adicionales ════════════
+          // Margen Voc en frío (RETIE NEC 690.7 — recomienda margen ≥5% sobre Vdc_max)
+          if (res.inv?.vocMax && panel?.voc && res.ppss > 0) {
+            const vocCold = panel.voc * (1 + ((panel.tempCoeffVoc ?? -0.28) / 100) * (10 - 25));
+            const stringVocCold = vocCold * res.ppss;
+            const margin = (1 - stringVocCold / res.inv.vocMax) * 100;
+            if (margin < 5) {
+              obs.push({ type: 'warn', title: `Margen Voc en frío bajo (${margin.toFixed(1)}%)`, text: `String Voc @10°C = ${stringVocCold.toFixed(1)} V vs Vdc_max ${res.inv.vocMax} V. RETIE NEC 690.7 recomienda margen ≥5% para zonas con frío extremo o variabilidad climática (Sabana de Bogotá, Boyacá, Nariño). Considera reducir 1 panel por string si es zona fría.` });
+            }
+          }
+          // DC/AC ratio del inversor — sub-dimensionado o sobredimensionado
+          if (res.inv?.kw && res.actKwp > 0) {
+            const dcacRatio = res.actKwp / res.inv.kw;
+            const range = f.systemType === 'on-grid' ? [1.10, 1.35]
+                       : f.systemType === 'hybrid' ? [1.00, 1.25]
+                       : [0.95, 1.15]; // off-grid
+            if (dcacRatio < range[0]) {
+              obs.push({ type: 'warn', title: `DC/AC ratio bajo (${dcacRatio.toFixed(2)})`, text: `Ratio óptimo para ${f.systemType}: ${range[0]}-${range[1]}. Tu inversor está sobredimensionado vs los paneles → desperdicio de inversión y eficiencia menor en parcial. Considera inversor más chico o ampliar paneles.` });
+            } else if (dcacRatio > range[1]) {
+              obs.push({ type: 'warn', title: `DC/AC ratio alto (${dcacRatio.toFixed(2)})`, text: `Ratio óptimo para ${f.systemType}: ${range[0]}-${range[1]}. Tu inversor clipea (recorta) la potencia pico al mediodía → pérdida ~3-5% de generación. Considera inversor más grande.` });
+            }
+          }
+          // Protecciones: si ≥2 strings paralelo, requiere fusibles por string (NEC 690.9)
+          if (res.ns >= 2) {
+            obs.push({ type: 'info', title: `Combinador requerido: fusibles por string (${res.ns} strings paralelo)`, text: `NEC 690.9 / RETIE: con 2+ strings en paralelo se requiere combinador con fusibles dimensionados a ~1.56 × Isc panel (≈${(panel.isc * 1.56).toFixed(1)} A) por string. Está incluido en el ítem "Protecciones" del presupuesto.` });
+          }
+          // DPS (Dispositivos de Protección contra Sobretensiones) — Tipo II en lado DC y AC
+          obs.push({ type: 'info', title: 'Protecciones DPS Tipo II incluidas', text: 'El presupuesto incluye DPS clase II en lado DC (paneles → inversor) y AC (inversor → red). RETIE Sec. 240 obliga DPS para sistemas FV en zonas con descargas atmosféricas frecuentes (toda Colombia). DPS Tipo I se evalúa adicional para predios con pararrayos.' });
+          // ════════════ PACK 3 — Validaciones físicas/estructurales ════════════
+          // Carga estructural por material del techo
+          if (f.roofMaterial && panel?.kg && res.numPanels > 0) {
+            const totalKg = panel.kg * res.numPanels;
+            const m2Used = res.numPanels * m2PerPanel;
+            const kgPerM2 = totalKg / Math.max(1, m2Used);
+            const matWeights = { teja_barro: 'crítico', lamina: 'medio', concreto: 'bajo', shingle: 'medio', otra: 'evaluar' };
+            const risk = matWeights[f.roofMaterial] || 'evaluar';
+            if (risk === 'crítico') {
+              obs.push({ type: 'warn', title: `Carga estructural a evaluar (${kgPerM2.toFixed(1)} kg/m² adicional sobre teja barro)`, text: `Teja de barro tiene capacidad estructural limitada (~50-80 kg/m² adicional). Tu sistema añade ${totalKg.toFixed(0)} kg distribuidos en ${m2Used.toFixed(0)} m² (${kgPerM2.toFixed(1)} kg/m²). RETIE NSR-10 obliga cálculo estructural por ingeniero civil — requiere visita técnica obligatoria.` });
+            } else if (risk === 'medio') {
+              obs.push({ type: 'info', title: `Carga estructural a verificar (${kgPerM2.toFixed(1)} kg/m²)`, text: `Material seleccionado tiene capacidad media. Con ${totalKg.toFixed(0)} kg en ${m2Used.toFixed(0)} m² (${kgPerM2.toFixed(1)} kg/m²), validar viga/correa por ingeniero civil. Lámina <0.7mm requiere refuerzo.` });
+            }
+          }
+          // Pendiente óptima por latitud (Colombia 4°N → ~5-15° óptimo)
+          if (f.roofTiltDeg != null && f.lat != null) {
+            const lat = Math.abs(Number(f.lat));
+            const optimalTilt = lat;
+            const tiltDiff = Math.abs(f.roofTiltDeg - optimalTilt);
+            if (tiltDiff > 15) {
+              obs.push({ type: 'info', title: `Pendiente subóptima (${f.roofTiltDeg}° vs ${optimalTilt.toFixed(0)}° óptimo)`, text: `Para latitud ${lat.toFixed(1)}°N el tilt óptimo anual es ~${optimalTilt.toFixed(0)}°. Tu techo está ${tiltDiff.toFixed(0)}° fuera del óptimo → pérdida ~${(tiltDiff * 0.4).toFixed(1)}% generación. Estructura inclinada (rack) puede recuperar ese %, pero suma costo y peso.` });
+            }
+          }
+          // ════════════ PACK 2 — Soiling, degradación, lifecycle ════════════
+          obs.push({ type: 'info', title: 'Pérdidas reales no mostradas en cobertura', text: `El cálculo aplica PR (Performance Ratio) 0.78 que ya incluye pérdidas eléctricas/térmicas/inversor. PERO no incluye: SOILING (3-8% año por suciedad acumulada — limpiar 2 veces/año recupera 90%) ni DEGRADACIÓN del panel (~0.5%/año, así pierde ~12% en 25 años). Considera estos al proyectar ahorros a 25 años.` });
+          if (res.inv && bgt?.tot > 0) {
+            obs.push({ type: 'info', title: 'Reemplazo de inversor a los 10-12 años', text: `Vida útil típica del inversor: 10-15 años (paneles 25-30). Reservar el costo de reemplazo en el ROI a 25 años. Inversor actual ${res.inv.brand} ${res.inv.model} de ${res.inv.kw} kW — costo aproximado de reemplazo ~10-15% del valor de equipos en pesos del año 10.` });
+          }
+          // ════════════ PACK 4 — Comerciales: garantías + Ley 1715 + AGPE ════════════
+          obs.push({ type: 'info', title: 'Garantías estándar de los equipos', text: 'PANELES: 12-15 años de producto + 25 años de producción (típicamente al 80% de output). INVERSOR: 5-10 años extensible a 15-20 con upgrade pagado. BATERÍAS LFP: 10 años o 6.000 ciclos (~80% capacidad). Verificar garantía exacta del fabricante en propuesta detallada.' });
+          if (bgt?.tot > 0) {
+            const ley1715Renta = bgt.tot * 0.50;  // Deducción 50% renta
+            const ley1715Iva = bgt.tot * 0.19;     // Exclusión IVA 19%
+            obs.push({ type: 'info', title: `Beneficios Ley 1715/2014 — hasta ~${fmtCOP(ley1715Renta + ley1715Iva)} ahorro tributario`, text: `Sistemas FV cumplen con FNCE (Fuente No Convencional de Energía). Beneficios cuantificados: (1) Deducción renta 50% del valor del proyecto durante 15 años desde año fiscal — hasta ${fmtCOP(ley1715Renta)}. (2) Exclusión IVA 19% sobre equipos importados/nacionales — hasta ${fmtCOP(ley1715Iva)}. (3) Exclusión arancel sobre importación de paneles e inversores. (4) Depreciación acelerada — hasta 20%/año vs 10% normal. Aplicar via UPME → MinHacienda con factura del proyecto.` });
+          }
+          if (agpe?.excedentes > 0 && agpe?.gridExport) {
+            obs.push({ type: 'info', title: `Trámite AGPE con ${operator.name}`, text: `Pasos: (1) Solicitud Conexión Simple (Formato CREG 030/2018), (2) Estudio de conexión por el OR, (3) Inscripción en CGM como AGPE ${agpe.agpeCategory}, (4) Instalación de medidor bidireccional (costo asumido por el OR para AGPE Menor ≤100 kWp), (5) Registro UPME-FNCE para beneficios Ley 1715. Tiempo total: 30-90 días. ALEBAS gestiona el trámite completo.` });
+          }
+          // Proyección 25 años con inflación CU
+          if (bgt?.sav > 0 && bgt?.tot > 0) {
+            const inflRate = 0.06;  // 6% anual CU típico Colombia
+            let acumulado = 0;
+            let yearROI = 0;
+            for (let y = 1; y <= 25; y++) {
+              const savYear = bgt.sav * Math.pow(1 + inflRate, y - 1) * Math.pow(0.995, y - 1); // degradación 0.5%/año
+              acumulado += savYear;
+              if (yearROI === 0 && acumulado >= bgt.tot) yearROI = y;
+            }
+            obs.push({ type: 'info', title: `Proyección 25 años: ahorro acumulado ~${fmtCOP(acumulado)} (ROI real ${yearROI || '>25'} años)`, text: `Asumiendo inflación CU 6%/año (típica histórica Colombia) y degradación panel 0.5%/año, el ahorro acumulado en 25 años sería ~${fmtCOP(acumulado)} vs inversión ${fmtCOP(bgt.tot)}. ROI real considerando inflación: ${yearROI || 'más de 25'} años. El primer año (${fmtCOP(bgt.sav)}) crece anualmente con la tarifa.` });
           }
           if (!res.inv) {
             const sysLabel = f.systemType === 'off-grid' ? 'aislado (off-grid)'

@@ -195,50 +195,9 @@ export default function InteractiveRoofMap({
     }
   }, [segments, ready]);
 
-  // Trayectoria del sol — arco azimutal de oriente (E) a poniente (O) pasando
-  // por el cenit/sur al mediodía. Para Colombia (lat ~4°), el sol está casi
-  // sobre la cabeza al mediodía, así que dibujamos una proyección simple sobre
-  // el plano del techo: 7 puntos (6am, 8am, 10am, 12m, 14h, 16h, 18h).
-  useEffect(() => {
-    if (!ready || !mapRef.current || !window.google?.maps) return;
-    const maps = window.google.maps;
-    if (sunPathRef.current) { sunPathRef.current.setMap(null); sunPathRef.current = null; }
-    if (!showSunPath || lat == null || lon == null) return;
-    // Distancia del arco proporcional al área para mantener coherencia visual.
-    const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.3 : 12;
-    // ~111km/grado lat; lng se contrae con cos(lat)
-    const dLat = r / 111000;
-    const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
-    // Azimuts del sol (Colombia): aproximación. 6am ~90° (E), 12m ~180° (S),
-    // 6pm ~270° (W). Usamos arco semi-circular E → S → W proyectado en el plano.
-    // En Colombia (lat ~4°N) la cúspide está casi al cenit; mostramos arco E-O
-    // pasando por el centro con leve desplazamiento hacia el norte para evidenciar
-    // el paso "ligeramente al sur" del sol durante junio (en abril es indistinto).
-    const points = [];
-    for (let h = -90; h <= 90; h += 15) {  // ángulo del arco
-      const rad = h * Math.PI / 180;
-      // x ∝ sin(rad) (E→W), y ∝ -cos(rad) × pequeño desplazamiento (centro)
-      const x = Math.sin(rad);
-      const y = -Math.cos(rad) * 0.15; // arco bajo, casi recto E-W
-      points.push({
-        lat: Number(lat) + y * dLat,
-        lng: Number(lon) + x * dLng,
-      });
-    }
-    sunPathRef.current = new maps.Polyline({
-      map: mapRef.current,
-      path: points,
-      geodesic: false,
-      strokeColor: '#FFD93D', strokeOpacity: 0.85, strokeWeight: 2.5,
-      icons: [
-        { icon: { path: 'M 0,-2 L 2,0 L 0,2 L -2,0 z', scale: 2.5, fillColor: '#FFD93D', fillOpacity: 1, strokeColor: '#FFD93D' }, offset: '0%' },
-        { icon: { path: 'M 0,-2 L 2,0 L 0,2 L -2,0 z', scale: 2.5, fillColor: '#FF8C00', fillOpacity: 1, strokeColor: '#FF8C00' }, offset: '50%' },
-        { icon: { path: 'M 0,-2 L 2,0 L 0,2 L -2,0 z', scale: 2.5, fillColor: '#FFD93D', fillOpacity: 1, strokeColor: '#FFD93D' }, offset: '100%' },
-      ],
-      clickable: false,
-      zIndex: 4,
-    });
-  }, [showSunPath, lat, lon, areaM2, ready]);
+  // NOTA: la ruta del sol fue movida a un diagrama dedicado bajo el mapa
+  // (componente SunPathDiagram) — antes se dibujaba como Polyline sobre el techo
+  // pero se solapaba con los polígonos y era ilegible. Mejor en su propio espacio.
 
   if (error) {
     return (
