@@ -641,12 +641,37 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
     const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
-    const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
-      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
+
+    // Re-sizing por yield real:
+    // El sysBase se dimensiona con la heurística PSH × PR (~1500 kWh/kWp/año) pero las
+    // APIs reales (PVGIS/PVWatts/Google Solar) reportan yields que pueden ser 20-30%
+    // menores en zonas nubladas/sombreadas. Sin compensación, el sistema queda
+    // sub-dimensionado: 100% target → 80% real. Si el área del techo lo permite,
+    // boosteamos los paneles para alcanzar 100% real.
+    let adjustedTargetKwp = targetKwp;
+    if (bestAnnualKwh && sysBase.actKwp > 0 && !f.wantsExcedentes && !areaLimitsSystem) {
+      const realYield = bestAnnualKwh / sysBase.actKwp; // kWh/kWp/año real
+      const realRequiredKwp = (kwh * 12) / realYield;
+      if (realRequiredKwp > sysBase.actKwp * 1.05) {
+        const cap = hasArea ? areaMaxKwp : MAX_KWP_AGPE;
+        adjustedTargetKwp = Math.min(realRequiredKwp, cap, MAX_KWP_AGPE);
+      }
+    }
+    // Re-seleccionar inversor compatible con el target ajustado.
+    const inv3 = adjustedTargetKwp !== targetKwp
+      ? selectCompatibleInverter(panel, adjustedTargetKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) })
+      : inv2;
+    // Escalar bestAnnualKwh proporcionalmente al kWp ajustado (mismo yield, más paneles).
+    const scaledAnnualKwh = bestAnnualKwh && adjustedTargetKwp !== targetKwp && sysBase.actKwp > 0
+      ? Math.round(bestAnnualKwh * (adjustedTargetKwp / sysBase.actKwp))
+      : bestAnnualKwh;
+
+    const sys = calcSystem(kwh, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, psh,
+      { pvgisAnnualKwh: scaledAnnualKwh, targetKwp: adjustedTargetKwp, shadeIndex, ...temps });
 
     const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
-    const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
+    const budget = calcBudget(sys, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const cuFull = tariffCU(operator);
     const cuMinusG = excedentePriceFor(operator);
     const cuSplit = splitCU(operator);
@@ -660,7 +685,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sizedFor = (f.wantsExcedentes && areaAllowsExcedentes) ? 'excedentes'
                    : areaLimitsSystem ? 'area'
                    : 'consumo';
-    setRes({ ...sys, inv: inv2, sizedFor, productionSource, productionSources, productionDispersion, googleSolarEstimate: gse || null });
+    setRes({ ...sys, inv: inv3, sizedFor, productionSource, productionSources, productionDispersion, googleSolarEstimate: gse || null });
     setBgt({
       ...budget,
       sav: annualSav, roi,
@@ -1153,48 +1178,100 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 </div>
               )}
-              {f.roofSegments?.length > 0 && (
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ color: C.teal, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span>Segmentos de techo ({f.roofSegments.length}):</span>
-                    {selectedSegmentIdx.size > 0 && (
-                      <span style={{ fontSize: 9, color: C.green, background: `${C.green}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
-                        ✓ {selectedSegmentIdx.size} activo{selectedSegmentIdx.size > 1 ? 's' : ''}
-                        {f.wantsExcedentes ? ' · maximiza excedentes' : ' · cubre consumo'}
-                      </span>
-                    )}
+              {f.roofSegments?.length > 0 && (() => {
+                // Combina dos visualizaciones:
+                // (1) Lista numerada con badge activo/disponible — los activos son los
+                //     que el sistema USA realmente; los demás están detectados pero
+                //     ociosos (a menos que el usuario quiera excedentes).
+                // (2) Compás rose abajo: flechas por azimuth, longitud ∝ área. Las
+                //     activas en verde brillante; las disponibles en gris muted.
+                const ACTIVE = '#4ade80';
+                const AVAILABLE = '#7A9EAA';
+                const maxArea = Math.max(...f.roofSegments.map(s => s.areaMeters2 || 0));
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ color: C.teal, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span>Segmentos de techo ({f.roofSegments.length}):</span>
+                      {selectedSegmentIdx.size > 0 && (
+                        <span style={{ fontSize: 9, color: ACTIVE, background: `${ACTIVE}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
+                          ✓ {selectedSegmentIdx.size} activo{selectedSegmentIdx.size > 1 ? 's' : ''}
+                          {f.wantsExcedentes ? ' · maximiza excedentes' : ' · cubre consumo'}
+                        </span>
+                      )}
+                    </div>
+                    {f.roofSegments.map((s, i) => {
+                      const isActive = selectedSegmentIdx.has(i);
+                      const col = isActive ? ACTIVE : AVAILABLE;
+                      return (
+                        <div key={i} style={{
+                          display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
+                          paddingLeft: 4, marginBottom: 2,
+                          opacity: isActive ? 1 : 0.55,
+                        }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 18, height: 18, borderRadius: '50%',
+                            background: isActive ? `${col}22` : 'transparent',
+                            border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}`,
+                            color: col, fontWeight: 800, fontSize: 10,
+                          }}>{i + 1}</span>
+                          {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
+                          {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
+                          {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
+                          {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                          {isActive
+                            ? <span style={{ fontSize: 9, color: ACTIVE, fontWeight: 700, marginLeft: 4 }}>✓ activo</span>
+                            : <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>○ disponible</span>}
+                        </div>
+                      );
+                    })}
+                    {/* Compás rose visual con activos en verde y disponibles en gris */}
+                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+                      <svg viewBox="-120 -120 240 240" width="200" height="200" aria-label="Compás de segmentos">
+                        <circle cx="0" cy="0" r="100" fill="none" stroke={`${C.teal}22`} strokeWidth="1" />
+                        <circle cx="0" cy="0" r="60"  fill="none" stroke={`${C.teal}15`} strokeWidth="0.7" />
+                        <text x="0" y="-105" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">N</text>
+                        <text x="0" y="115" textAnchor="middle" fill={C.yellow} fontSize="11" fontWeight="700">S</text>
+                        <text x="105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">E</text>
+                        <text x="-105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">O</text>
+                        {f.roofSegments.map((s, i) => {
+                          if (s.azimuthDegrees == null || maxArea <= 0) return null;
+                          const isActive = selectedSegmentIdx.has(i);
+                          const col = isActive ? ACTIVE : AVAILABLE;
+                          const ratio = (s.areaMeters2 || 0) / maxArea;
+                          const len = 35 + ratio * 65;
+                          const az = (s.azimuthDegrees - 90) * Math.PI / 180;
+                          const x2 = Math.cos(az) * len;
+                          const y2 = Math.sin(az) * len;
+                          return (
+                            <g key={i} opacity={isActive ? 1 : 0.5}>
+                              <line x1="0" y1="0" x2={x2} y2={y2}
+                                stroke={col}
+                                strokeWidth={isActive ? 2.5 : 1.5}
+                                strokeDasharray={isActive ? '' : '3 2'}
+                                strokeLinecap="round" />
+                              <circle cx={x2} cy={y2} r="9"
+                                fill={isActive ? `${col}cc` : `${col}88`}
+                                stroke={col} strokeWidth="1.5" />
+                              <text x={x2} y={y2 + 3.5} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="800">{i + 1}</text>
+                            </g>
+                          );
+                        })}
+                        <circle cx="0" cy="0" r="4" fill={C.text} />
+                      </svg>
+                    </div>
+                    <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontStyle: 'italic', marginTop: -4 }}>
+                      <strong style={{ color: ACTIVE }}>Verde</strong> = segmento usado por el sistema · <strong style={{ color: AVAILABLE }}>gris</strong> = disponible (no usado)
+                      <br />Flecha apunta al azimuth · longitud ∝ área · los del <strong style={{ color: C.yellow }}>Sur</strong> son los más productivos en Colombia
+                    </div>
+                    <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 4, paddingLeft: 4 }}>
+                      {f.wantsExcedentes
+                        ? '⚡ Excedentes activado: el sistema usa todos los segmentos viables (h☀ ≥ 1300) para maximizar generación.'
+                        : 'El sistema selecciona los segmentos con más horas de sol hasta cubrir el consumo. Marca «vender excedentes» para usar más segmentos.'}
+                    </div>
                   </div>
-                  {f.roofSegments.map((s, i) => {
-                    const isActive = selectedSegmentIdx.has(i);
-                    return (
-                      <div key={i} style={{
-                        display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
-                        paddingLeft: 4, marginBottom: 2,
-                        opacity: isActive ? 1 : 0.45,
-                      }}>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 18, height: 18, borderRadius: '50%',
-                          background: isActive ? `${C.green}22` : 'transparent',
-                          border: `1.5px ${isActive ? 'solid' : 'dashed'} ${isActive ? C.green : C.muted}`,
-                          color: isActive ? C.green : C.muted, fontWeight: 800, fontSize: 10,
-                        }}>{i + 1}</span>
-                        {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
-                        {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
-                        {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
-                        {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
-                        {isActive
-                          ? <span style={{ fontSize: 9, color: C.green, fontWeight: 700, marginLeft: 4 }}>✓ activo</span>
-                          : <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>○ disponible</span>}
-                      </div>
-                    );
-                  })}
-                  <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 4, paddingLeft: 4 }}>
-                    {f.wantsExcedentes
-                      ? '⚡ Excedentes activado: el sistema usa todos los segmentos viables (h☀ ≥ 1300) para maximizar generación.'
-                      : 'El sistema selecciona los segmentos con más horas de sol hasta cubrir el consumo. Marca «vender excedentes» para usar más segmentos.'}
-                  </div>
-                </div>
+                );
+              })()}
               )}
               {f.roofImagery && (
                 <div style={{ marginTop: 3 }}>
