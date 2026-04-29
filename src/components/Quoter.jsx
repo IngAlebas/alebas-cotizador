@@ -3091,16 +3091,57 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </table>
           </section>
 
-          {/* Layout del sistema — visual de strings + banco de baterías */}
+          {/* Layout del sistema — diagrama de componentes + strings + banco */}
           <section className="al-pdf-section">
-            <h2>Layout del sistema</h2>
-            <p className="al-pdf-lead">
-              <strong>{res.numPanels} paneles</strong> distribuidos en <strong>{res.ns} string{res.ns > 1 ? 's' : ''}</strong> de {res.ppss} paneles c/u
-              {res.inv && <> · inversor <strong>{res.inv.brand} {res.inv.model}</strong> ({res.inv.power} kW {res.inv.phase === 3 ? 'trifásico' : res.inv.phase === 2 ? 'bifásico' : 'monofásico'})</>}
-              {needsB && batt && f.battQty > 0 && <> · banco <strong>{f.battQty}× {batt.brand} {batt.model}</strong> ({(batt.kwh * f.battQty).toFixed(1)} kWh @ {bankSeries * batt.voltage}V)</>}
-            </p>
+            <h2>Layout y componentes del sistema</h2>
+
+            {/* Diagrama del flujo: paneles → inversor → (batería) → casa + (red) */}
+            <div className="al-pdf-system-diagram">
+              <div className="al-pdf-comp">
+                <div className="al-pdf-comp-icon" style={{ color: '#FF8C00' }}>☀</div>
+                <div className="al-pdf-comp-label">Paneles</div>
+                <div className="al-pdf-comp-spec">{res.numPanels} × {panel.wp}W<br />{res.actKwp} kWp DC</div>
+              </div>
+              <div className="al-pdf-arrow">→</div>
+              {res.inv && (
+                <>
+                  <div className="al-pdf-comp">
+                    <div className="al-pdf-comp-icon" style={{ color: '#01708B' }}>⊞</div>
+                    <div className="al-pdf-comp-label">Inversor</div>
+                    <div className="al-pdf-comp-spec">{res.inv.power} kW<br />{res.inv.phase === 3 ? '3∼' : res.inv.phase === 2 ? '2∼' : '1∼'}</div>
+                  </div>
+                  <div className="al-pdf-arrow">→</div>
+                </>
+              )}
+              {needsB && batt && f.battQty > 0 && (
+                <>
+                  <div className="al-pdf-comp">
+                    <div className="al-pdf-comp-icon" style={{ color: '#FF8C00' }}>▤</div>
+                    <div className="al-pdf-comp-label">Banco DC</div>
+                    <div className="al-pdf-comp-spec">{f.battQty} × {batt.kwh} kWh<br />{(batt.kwh * f.battQty).toFixed(1)} kWh @ {bankSeries * batt.voltage}V</div>
+                  </div>
+                  <div className="al-pdf-arrow">→</div>
+                </>
+              )}
+              <div className="al-pdf-comp">
+                <div className="al-pdf-comp-icon" style={{ color: '#01708B' }}>⌂</div>
+                <div className="al-pdf-comp-label">Carga</div>
+                <div className="al-pdf-comp-spec">{f.monthlyKwh} kWh/mes<br />{operator.name}</div>
+              </div>
+              {f.systemType !== 'off-grid' && (
+                <>
+                  <div className="al-pdf-arrow">{f.wantsExcedentes ? '⇄' : '←'}</div>
+                  <div className="al-pdf-comp">
+                    <div className="al-pdf-comp-icon" style={{ color: f.wantsExcedentes ? '#059669' : '#7A9EAA' }}>⚡</div>
+                    <div className="al-pdf-comp-label">Red</div>
+                    <div className="al-pdf-comp-spec">{f.wantsExcedentes ? 'AGPE' : 'consumo'}<br />{ACOMETIDA_INFO[f.acometida]?.label || f.acometida}</div>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Strings — visual rectangular */}
+            <div className="al-pdf-layout-subtitle">Distribución eléctrica DC — strings de paneles</div>
             <div className="al-pdf-layout-strings">
               {Array.from({ length: res.ns }).map((_, sIdx) => {
                 const remaining = res.numPanels - sIdx * res.ppss;
@@ -3128,22 +3169,25 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               const ah = batt.voltage > 0 ? Math.round(batt.kwh * 1000 / batt.voltage) : null;
               const gridCols = Math.min(Math.max(bankParallel, 2), 6);
               return (
-                <div className="al-pdf-batt-rack">
-                  <div className="al-pdf-batt-header">
-                    Banco DC {busV}V · {totalKwh} kWh totales · {bankSeries}S × {bankParallel}P
-                    {ah ? ` · ${ah} Ah por unidad` : ''}
-                    {batt.maxDischargeA ? ` · ${batt.maxDischargeA}A descarga máx` : ''}
+                <>
+                  <div className="al-pdf-layout-subtitle">Banco de baterías — rack visual</div>
+                  <div className="al-pdf-batt-rack">
+                    <div className="al-pdf-batt-header">
+                      Banco DC {busV}V · {totalKwh} kWh totales · {bankSeries}S × {bankParallel}P
+                      {ah ? ` · ${ah} Ah por unidad` : ''}
+                      {batt.maxDischargeA ? ` · ${batt.maxDischargeA}A descarga máx` : ''}
+                    </div>
+                    <div className="al-pdf-batt-grid" style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)` }}>
+                      {Array.from({ length: f.battQty }).map((_, idx) => (
+                        <div key={idx} className="al-pdf-batt-cell">
+                          <div className="al-pdf-batt-num">#{idx + 1}</div>
+                          <div className="al-pdf-batt-spec">{batt.voltage}V</div>
+                          <div className="al-pdf-batt-kwh">{batt.kwh} kWh</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="al-pdf-batt-grid" style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)` }}>
-                    {Array.from({ length: f.battQty }).map((_, idx) => (
-                      <div key={idx} className="al-pdf-batt-cell">
-                        <div className="al-pdf-batt-num">#{idx + 1}</div>
-                        <div className="al-pdf-batt-spec">{batt.voltage}V</div>
-                        <div className="al-pdf-batt-kwh">{batt.kwh} kWh</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                </>
               );
             })()}
           </section>
@@ -3247,19 +3291,57 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </section>
           )}
 
-          {/* Inversión */}
+          {/* Inversión — desglose completo */}
           {bgt?.tot > 0 && (
             <section className="al-pdf-section">
-              <h2>Inversión</h2>
+              <h2>Inversión — desglose completo</h2>
               <table className="al-pdf-table">
+                <thead>
+                  <tr><th>Concepto</th><th style={{ textAlign: 'right' }}>Valor (COP)</th></tr>
+                </thead>
                 <tbody>
-                  {bgt.eq > 0 && <tr><td>Equipos</td><td>{fmtCOP(bgt.eq)}</td></tr>}
-                  {bgt.transport > 0 && <tr><td>Transporte ({bgt.transportCarrier})</td><td>{fmtCOP(bgt.transport)}</td></tr>}
-                  <tr className="al-pdf-total"><td>Total</td><td>{fmtCOP(bgt.tot)}</td></tr>
-                  {bgt.budgetUsd && <tr><td>Equivalente USD</td><td>USD {fmt(bgt.budgetUsd)} (TRM {bgt.trmDate})</td></tr>}
+                  {bgt.pC > 0 && <tr><td>Paneles solares ({res.numPanels} × {fmtCOP(panel.price)})</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.pC)}</td></tr>}
+                  {bgt.iC > 0 && <tr><td>Inversor ({res.inv?.brand} {res.inv?.model})</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.iC)}</td></tr>}
+                  {bgt.bC > 0 && <tr><td>Banco baterías ({f.battQty} × {fmtCOP(batt.price)})</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.bC)}</td></tr>}
+                  {bgt.sA > 0 && <tr style={{ background: '#FF8C0008' }}><td><strong>Subtotal A — Equipos</strong></td><td style={{ textAlign: 'right' }}><strong>{fmtCOP(bgt.sA)}</strong></td></tr>}
+                  {bgt.st > 0 && <tr><td>Estructura de montaje</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.st)}</td></tr>}
+                  {bgt.ca > 0 && <tr><td>Cableado DC/AC + canalización</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.ca)}</td></tr>}
+                  {bgt.pt > 0 && <tr><td>Protecciones (DPS, fusibles, breakers)</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.pt)}</td></tr>}
+                  {bgt.ins > 0 && <tr><td>Instalación certificada (mano de obra RETIE)</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.ins)}</td></tr>}
+                  {bgt.eng > 0 && <tr><td>Ingeniería y diseño</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.eng)}</td></tr>}
+                  {bgt.emsa > 0 && <tr><td>Trámites operador de red ({operator.name})</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.emsa)}</td></tr>}
+                  {bgt.transport > 0 && <tr><td>Transporte ({bgt.transportCarrier} · {ZONA_LABEL?.[bgt.transportZone] || bgt.transportZone})</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.transport)}</td></tr>}
+                  {bgt.iva > 0 && <tr><td>IVA aplicable</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.iva)}</td></tr>}
+                  {bgt.sB > 0 && <tr style={{ background: '#01708B08' }}><td><strong>Subtotal B — Servicios + IVA</strong></td><td style={{ textAlign: 'right' }}><strong>{fmtCOP(bgt.sB)}</strong></td></tr>}
+                  <tr className="al-pdf-total"><td>TOTAL INVERSIÓN</td><td style={{ textAlign: 'right' }}>{fmtCOP(bgt.tot)}</td></tr>
+                  {bgt.budgetUsd && <tr><td>Equivalente referencial</td><td style={{ textAlign: 'right' }}>USD {fmt(bgt.budgetUsd)} (TRM {bgt.trmDate})</td></tr>}
                 </tbody>
               </table>
-              <p className="al-pdf-info">El precio incluye equipos y transporte. La instalación, ingeniería y permisos se cotizan según el alcance final del proyecto.</p>
+
+              {/* Retorno de inversión */}
+              {bgt.sav > 0 && bgt.roi > 0 && (
+                <div className="al-pdf-roi-grid">
+                  <div className="al-pdf-roi-card">
+                    <span>Ahorro anual</span>
+                    <strong>{fmtCOP(bgt.sav)}</strong>
+                    <small>tarifa CU {operator.name}</small>
+                  </div>
+                  <div className="al-pdf-roi-card">
+                    <span>Retorno (payback)</span>
+                    <strong>{bgt.roi} años</strong>
+                    <small>ROI estimado</small>
+                  </div>
+                  {agpe?.totalAnualCop > 0 && (
+                    <div className="al-pdf-roi-card">
+                      <span>Beneficio AGPE/año</span>
+                      <strong>{fmtCOP(agpe.totalAnualCop)}</strong>
+                      <small>autoconsumo + excedentes</small>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <p className="al-pdf-info">El presupuesto refleja precios mayoristas vigentes. Aplicación de incentivos tributarios Ley 1715/2014 (deducción renta + exclusión IVA + arancel) se evalúan en propuesta detallada según el alcance final del proyecto.</p>
             </section>
           )}
 
