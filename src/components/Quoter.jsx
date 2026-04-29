@@ -3533,39 +3533,119 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   {res.googleSolarEstimate && <tr><td>Configuración óptima Google</td><td>{res.googleSolarEstimate.bestConfigPanels} paneles · {res.googleSolarEstimate.bestConfigKwp} kWp · vida útil {res.googleSolarEstimate.panelLifetimeYears} años</td></tr>}
                 </tbody>
               </table>
-              {/* Tabla de segmentos del techo (cuando hay múltiples) */}
-              {f.roofSegments?.length >= 2 && (
-                <>
-                  <p className="al-pdf-lead" style={{ marginTop: 8 }}>
-                    <strong>{f.roofSegments.length} segmentos identificados</strong> — el sistema selecciona los de mejor producción solar.
-                  </p>
-                  <table className="al-pdf-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Área</th>
-                        <th>Azimuth</th>
-                        <th>Inclinación</th>
-                        <th>Horas sol/año</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {f.roofSegments.slice(0, 8).map((s, i) => (
-                        <tr key={i}>
-                          <td><strong>{i + 1}</strong></td>
-                          <td>{s.areaMeters2 != null ? `${Math.round(s.areaMeters2)} m²` : '—'}</td>
-                          <td>{s.azimuthDegrees != null ? `${Math.round(s.azimuthDegrees)}°` : '—'}</td>
-                          <td>{s.pitchDegrees != null ? `${Math.round(s.pitchDegrees)}°` : '—'}</td>
-                          <td>{s.sunshineHoursPerYear != null ? `${Math.round(s.sunshineHoursPerYear).toLocaleString('es-CO')} h` : '—'}</td>
+              {/* Tabla de segmentos del techo + compás visual + estado activo/disponible */}
+              {f.roofSegments?.length >= 2 && (() => {
+                const ACTIVE = '#059669';      // verde más oscuro para print
+                const AVAILABLE = '#7A9EAA';
+                const maxArea = Math.max(...f.roofSegments.map(s => s.areaMeters2 || 0));
+                const activeCount = selectedSegmentIdx.size;
+                return (
+                  <>
+                    <p className="al-pdf-lead" style={{ marginTop: 8 }}>
+                      <strong>{f.roofSegments.length} segmentos identificados</strong>
+                      {activeCount > 0 && (
+                        <> · <strong style={{ color: '#059669' }}>{activeCount} activo{activeCount > 1 ? 's' : ''}</strong> {f.wantsExcedentes ? 'maximizando excedentes' : 'cubren el consumo'}</>
+                      )}
+                    </p>
+                    <table className="al-pdf-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Estado</th>
+                          <th>Área</th>
+                          <th>Azimuth</th>
+                          <th>Inclinación</th>
+                          <th>Horas sol/año</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {f.roofSegments.length > 8 && (
-                    <p className="al-pdf-info">+ {f.roofSegments.length - 8} segmento{f.roofSegments.length - 8 > 1 ? 's' : ''} adicional{f.roofSegments.length - 8 > 1 ? 'es' : ''} no listado{f.roofSegments.length - 8 > 1 ? 's' : ''}.</p>
-                  )}
-                </>
-              )}
+                      </thead>
+                      <tbody>
+                        {f.roofSegments.slice(0, 12).map((s, i) => {
+                          const isActive = selectedSegmentIdx.has(i);
+                          return (
+                            <tr key={i} style={isActive ? { background: '#ECFDF5' } : { color: '#777' }}>
+                              <td><strong>{i + 1}</strong></td>
+                              <td style={{ color: isActive ? '#059669' : '#7A9EAA', fontWeight: isActive ? 700 : 500 }}>
+                                {isActive ? '✓ Activo' : '○ Disponible'}
+                              </td>
+                              <td>{s.areaMeters2 != null ? `${Math.round(s.areaMeters2)} m²` : '—'}</td>
+                              <td>{s.azimuthDegrees != null ? `${Math.round(s.azimuthDegrees)}°` : '—'}</td>
+                              <td>{s.pitchDegrees != null ? `${Math.round(s.pitchDegrees)}°` : '—'}</td>
+                              <td>{s.sunshineHoursPerYear != null ? `${Math.round(s.sunshineHoursPerYear).toLocaleString('es-CO')} h` : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {f.roofSegments.length > 12 && (
+                      <p className="al-pdf-info">+ {f.roofSegments.length - 12} segmento{f.roofSegments.length - 12 > 1 ? 's' : ''} adicional{f.roofSegments.length - 12 > 1 ? 'es' : ''} no listado{f.roofSegments.length - 12 > 1 ? 's' : ''}.</p>
+                    )}
+
+                    {/* Compás visual de orientación + estado */}
+                    <div className="al-pdf-compass-wrap">
+                      <div className="al-pdf-compass-title">Compás de orientación · activos vs disponibles</div>
+                      <svg viewBox="-130 -130 260 260" width="220" height="220" aria-label="Compás">
+                        <circle cx="0" cy="0" r="100" fill="none" stroke="#01708B33" strokeWidth="1" />
+                        <circle cx="0" cy="0" r="60"  fill="none" stroke="#01708B22" strokeWidth="0.7" />
+                        <text x="0" y="-110" textAnchor="middle" fill="#555" fontSize="12" fontWeight="700">N</text>
+                        <text x="0" y="120" textAnchor="middle" fill="#FF8C00" fontSize="12" fontWeight="700">S</text>
+                        <text x="115" y="4" textAnchor="middle" fill="#555" fontSize="12" fontWeight="700">E</text>
+                        <text x="-115" y="4" textAnchor="middle" fill="#555" fontSize="12" fontWeight="700">O</text>
+                        {f.roofSegments.map((s, i) => {
+                          if (s.azimuthDegrees == null || maxArea <= 0) return null;
+                          const isActive = selectedSegmentIdx.has(i);
+                          const col = isActive ? ACTIVE : AVAILABLE;
+                          const ratio = (s.areaMeters2 || 0) / maxArea;
+                          const len = 35 + ratio * 65;
+                          const az = (s.azimuthDegrees - 90) * Math.PI / 180;
+                          const x2 = Math.cos(az) * len;
+                          const y2 = Math.sin(az) * len;
+                          return (
+                            <g key={i} opacity={isActive ? 1 : 0.55}>
+                              <line x1="0" y1="0" x2={x2} y2={y2}
+                                stroke={col}
+                                strokeWidth={isActive ? 2.5 : 1.5}
+                                strokeDasharray={isActive ? '' : '3 2'}
+                                strokeLinecap="round" />
+                              <circle cx={x2} cy={y2} r="9" fill={col} />
+                              <text x={x2} y={y2 + 3.5} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="800">{i + 1}</text>
+                            </g>
+                          );
+                        })}
+                        <circle cx="0" cy="0" r="4" fill="#07090F" />
+                      </svg>
+                      <div className="al-pdf-compass-legend">
+                        <div><span className="al-pdf-legend-dot" style={{ background: ACTIVE }} /> Activo · usado por el sistema</div>
+                        <div><span className="al-pdf-legend-dot al-pdf-legend-dashed" style={{ borderColor: AVAILABLE }} /> Disponible · no usado</div>
+                        <div className="al-pdf-compass-note">
+                          {f.wantsExcedentes
+                            ? '⚡ Excedentes activado: usa todos los segmentos viables (h☀ ≥ 1300/año).'
+                            : 'El sistema usa los segmentos con más horas de sol hasta cubrir el consumo. Activar excedentes amplía a más segmentos.'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trayectoria del sol — diagrama esquemático para print */}
+                    <div className="al-pdf-sunpath-wrap">
+                      <div className="al-pdf-compass-title">Trayectoria del sol sobre el techo (proyección)</div>
+                      <svg viewBox="0 0 360 100" width="100%" height="80" preserveAspectRatio="none">
+                        <rect x="0" y="60" width="360" height="40" fill="#01708B0d" />
+                        <text x="20" y="55" fontSize="9" fill="#555" fontWeight="600">E · 6 AM</text>
+                        <text x="170" y="20" fontSize="9" fill="#FF8C00" fontWeight="700">CENIT · 12 PM</text>
+                        <text x="305" y="55" fontSize="9" fill="#555" fontWeight="600">O · 6 PM</text>
+                        <path d="M 30 60 Q 180 0 330 60" fill="none" stroke="#FFD93D" strokeWidth="2" strokeDasharray="4 3" />
+                        <circle cx="30" cy="60" r="5" fill="#FFD93D" />
+                        <circle cx="180" cy="20" r="7" fill="#FF8C00" />
+                        <circle cx="330" cy="60" r="5" fill="#FFD93D" />
+                        <line x1="0" y1="60" x2="360" y2="60" stroke="#01708B66" strokeWidth="1" />
+                        <text x="180" y="85" textAnchor="middle" fontSize="8" fill="#555">Plano del techo (línea horizontal de referencia)</text>
+                      </svg>
+                      <div className="al-pdf-compass-note">
+                        Ubicación geográfica de Colombia (lat ~4°N): el sol pasa casi por el cenit al mediodía. El arco se proyecta de Este a Oeste atravesando el techo.
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </section>
           )}
 

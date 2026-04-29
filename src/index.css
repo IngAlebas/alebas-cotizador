@@ -921,6 +921,89 @@ button:active { transform: scale(0.97); }
     letter-spacing: 0.5px;
   }
 
+  /* PDF — Compás visual de segmentos (activos vs disponibles) */
+  .al-pdf-compass-wrap {
+    margin-top: 12px;
+    padding: 12px;
+    background: #fafafa;
+    border: 1px solid #01708B22;
+    border-radius: 5px;
+    page-break-inside: avoid;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 14px;
+    align-items: center;
+  }
+  .al-pdf-compass-title {
+    grid-column: 1 / -1;
+    font-size: 8.5pt;
+    color: #01708B;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 2px;
+  }
+  .al-pdf-compass-legend {
+    font-size: 8.5pt;
+    color: #07090F;
+    line-height: 1.5;
+  }
+  .al-pdf-compass-legend > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .al-pdf-legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1.5px solid;
+  }
+  .al-pdf-legend-dashed {
+    background: transparent !important;
+    border-style: dashed !important;
+  }
+  .al-pdf-compass-note {
+    margin-top: 6px;
+    font-size: 8pt;
+    color: #555;
+    font-style: italic;
+    line-height: 1.4;
+  }
+
+  /* PDF — Diagrama de trayectoria del sol */
+  .al-pdf-sunpath-wrap {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, #FFF7E6, #fff);
+    border: 1px solid #FFD93D55;
+    border-radius: 5px;
+    page-break-inside: avoid;
+  }
+  .al-pdf-sunpath-wrap svg {
+    margin-top: 6px;
+    width: 100%;
+    height: auto;
+  }
+
+  /* Reducir espacios entre secciones para evitar gaps al imprimir.
+     'orphans/widows' aseguran que no queden líneas sueltas al final de página. */
+  .al-pdf-section {
+    margin-bottom: 12px;       /* antes: 16px */
+    page-break-inside: auto;   /* permitir partir si no cabe — evita gaps grandes */
+    break-inside: auto;
+    orphans: 3;
+    widows: 3;
+  }
+  /* Las tablas, KPI grid, compás y sun-path SÍ se mantienen unidos para no
+     quedar partidos por la mitad; la sección como bloque puede partirse. */
+  .al-pdf-section h2 + table,
+  .al-pdf-section h2 + p {
+    page-break-after: avoid;
+  }
+
   /* @page A4 */
   @page {
     size: A4 portrait;
