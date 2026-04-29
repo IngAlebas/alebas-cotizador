@@ -112,48 +112,48 @@ export default function InteractiveRoofMap({
     });
   }, [areaM2, lat, lon, ready]);
 
-  // Polígonos por segmento — bounding box (rectángulo geográfico) coloreado +
-  // label central con el área. Permite al cliente ver dónde está cada zona.
+  // Marcadores por segmento — círculo centrado proporcional al área + label.
+  // Antes usábamos polygons del bounding box pero el bbox es eje-alineado y
+  // raramente coincide con la forma real del segmento (techos suelen estar
+  // rotados). Los círculos son más HONESTOS: solo indican posición + tamaño
+  // relativo, sin sugerir una forma incorrecta.
   useEffect(() => {
     if (!ready || !mapRef.current || !window.google?.maps) return;
     const maps = window.google.maps;
-    // Limpiar overlays previos
     polygonsRef.current.forEach(p => p.setMap(null));
     polygonsRef.current = [];
     labelsRef.current.forEach(l => l.setMap(null));
     labelsRef.current = [];
     if (!Array.isArray(segments) || segments.length === 0) return;
-    // Verde brand para activos (los que el sistema usa) y gris muted para los
-    // disponibles pero no usados. Border style varía: solid vs dashed.
     const ACTIVE = '#4ade80';
     const AVAILABLE = '#7A9EAA';
     segments.forEach((s, i) => {
-      const bb = s.boundingBox;
-      if (!bb || !bb.sw || !bb.ne) return;
+      const center = s.center && s.center.lat && s.center.lng
+        ? { lat: s.center.lat, lng: s.center.lng }
+        : (s.boundingBox && s.boundingBox.sw && s.boundingBox.ne
+          ? { lat: (s.boundingBox.sw.lat + s.boundingBox.ne.lat) / 2,
+              lng: (s.boundingBox.sw.lng + s.boundingBox.ne.lng) / 2 }
+          : null);
+      if (!center) return;
       const isActive = !!s.selected;
       const col = isActive ? ACTIVE : AVAILABLE;
-      const path = [
-        { lat: bb.sw.lat, lng: bb.sw.lng },
-        { lat: bb.ne.lat, lng: bb.sw.lng },
-        { lat: bb.ne.lat, lng: bb.ne.lng },
-        { lat: bb.sw.lat, lng: bb.ne.lng },
-      ];
-      const poly = new maps.Polygon({
+      const areaM2 = s.areaMeters2 || 0;
+      // Radio = √(área/π) en metros; min 1.5m, max 8m para no dominar el mapa.
+      const radius = Math.max(1.5, Math.min(8, Math.sqrt(areaM2 / Math.PI)));
+      const circle = new maps.Circle({
         map: mapRef.current,
-        paths: path,
+        center,
+        radius,
         strokeColor: col,
-        strokeOpacity: isActive ? 0.98 : 0.55,
+        strokeOpacity: isActive ? 0.95 : 0.5,
         strokeWeight: isActive ? 2.5 : 1.5,
         fillColor: col,
-        fillOpacity: isActive ? 0.22 : 0.06,
+        fillOpacity: isActive ? 0.35 : 0.12,
         clickable: false,
         zIndex: isActive ? 6 : 5,
       });
-      polygonsRef.current.push(poly);
-      // Label con el área (y prefijo ✓ si está activo).
-      const labelPos = s.center && s.center.lat && s.center.lng
-        ? { lat: s.center.lat, lng: s.center.lng }
-        : { lat: (bb.sw.lat + bb.ne.lat) / 2, lng: (bb.sw.lng + bb.ne.lng) / 2 };
+      polygonsRef.current.push(circle);
+      // Label flotante con número + área.
       const labelEl = document.createElement('div');
       labelEl.style.cssText = `
         background: ${col}; color: #fff; padding: 2px 7px; border-radius: 11px;
@@ -161,43 +161,101 @@ export default function InteractiveRoofMap({
         white-space: nowrap; transform: translate(-50%, -50%); pointer-events: none;
         opacity: ${isActive ? '1' : '0.7'};
       `;
-      labelEl.textContent = `${isActive ? '✓ ' : ''}${i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m²`;
+      labelEl.textContent = `${isActive ? '✓ ' : ''}${i + 1} · ${areaM2.toFixed(0)} m²`;
       const label = new maps.OverlayView();
       label.onAdd = function () { this.getPanes().overlayLayer.appendChild(labelEl); };
       label.draw = function () {
         const proj = this.getProjection();
         if (!proj) return;
-        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(labelPos.lat, labelPos.lng));
+        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(center.lat, center.lng));
         if (pt) { labelEl.style.position = 'absolute'; labelEl.style.left = pt.x + 'px'; labelEl.style.top = pt.y + 'px'; }
       };
       label.onRemove = function () { if (labelEl.parentNode) labelEl.parentNode.removeChild(labelEl); };
       label.setMap(mapRef.current);
       labelsRef.current.push(label);
     });
-    // Auto-fit a los polígonos para que se vean TODOS los segmentos detectados
-    // con padding cómodo. Solo si hay >=1 polígono con bounding box válido.
-    const validBboxes = segments.filter(s => s.boundingBox && s.boundingBox.sw && s.boundingBox.ne);
-    if (validBboxes.length > 0) {
+    // Auto-fit a los círculos.
+    const validCenters = segments.filter(s => s.center && s.center.lat && s.center.lng);
+    if (validCenters.length > 0) {
       const bounds = new maps.LatLngBounds();
-      validBboxes.forEach(s => {
-        bounds.extend({ lat: s.boundingBox.sw.lat, lng: s.boundingBox.sw.lng });
-        bounds.extend({ lat: s.boundingBox.ne.lat, lng: s.boundingBox.ne.lng });
-      });
-      // Padding 50px da espacio para los labels flotantes en bordes.
-      mapRef.current.fitBounds(bounds, 50);
-      // Limitar zoom max después del fitBounds — no acercarse demasiado si el
-      // techo es muy pequeño (sin esto Google va a zoom 22 y se ve borroso).
+      validCenters.forEach(s => bounds.extend({ lat: s.center.lat, lng: s.center.lng }));
+      // Si solo 1 segmento, expandir bounds artificialmente para dar contexto.
+      if (validCenters.length === 1) {
+        const s = validCenters[0];
+        const dLat = 0.0003, dLng = 0.0003;
+        bounds.extend({ lat: s.center.lat + dLat, lng: s.center.lng + dLng });
+        bounds.extend({ lat: s.center.lat - dLat, lng: s.center.lng - dLng });
+      }
+      mapRef.current.fitBounds(bounds, 60);
       const listener = maps.event.addListenerOnce(mapRef.current, 'idle', () => {
         if (mapRef.current.getZoom() > 20) mapRef.current.setZoom(20);
       });
-      // Cleanup si re-renderiza antes del idle
       return () => maps.event.removeListener(listener);
     }
   }, [segments, ready]);
 
-  // NOTA: la ruta del sol fue movida a un diagrama dedicado bajo el mapa
-  // (componente SunPathDiagram) — antes se dibujaba como Polyline sobre el techo
-  // pero se solapaba con los polígonos y era ilegible. Mejor en su propio espacio.
+  // Ruta del sol DELGADA sobre el mapa — arco de E (oriente) → cenit → O
+  // (poniente). Diseño minimal: línea amarilla 1.5px con sun emoji 🌞 en
+  // ambos extremos para que se identifique como ruta solar sin dominar
+  // visualmente. El diagrama detallado sigue debajo del mapa.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    if (sunPathRef.current) {
+      try { sunPathRef.current.line && sunPathRef.current.line.setMap(null); } catch (_) {}
+      try { sunPathRef.current.east && sunPathRef.current.east.setMap(null); } catch (_) {}
+      try { sunPathRef.current.west && sunPathRef.current.west.setMap(null); } catch (_) {}
+      sunPathRef.current = null;
+    }
+    if (!showSunPath || lat == null || lon == null) return;
+    // Arco proporcional al área: si hay segmentos, usar bounds; sino fallback
+    // a un radio fijo proporcional a areaM2.
+    const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.6 : 15;
+    const dLat = r / 111000;
+    const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
+    // Arco E→cenit→O proyectado: 7 puntos suficientes para curva suave.
+    const points = [];
+    for (let h = -90; h <= 90; h += 18) {
+      const rad = h * Math.PI / 180;
+      const x = Math.sin(rad);
+      const y = -Math.cos(rad) * 0.18;
+      points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
+    }
+    const line = new maps.Polyline({
+      map: mapRef.current,
+      path: points,
+      geodesic: false,
+      strokeColor: '#FFD93D',
+      strokeOpacity: 0.7,
+      strokeWeight: 1.5,
+      clickable: false,
+      zIndex: 4,
+    });
+    // Marcadores E/O — sun emoji para identificación clara.
+    const sunMarker = (pos, title) => new maps.Marker({
+      map: mapRef.current,
+      position: pos,
+      icon: {
+        path: maps.SymbolPath.CIRCLE,
+        scale: 5,
+        fillColor: '#FFD93D',
+        fillOpacity: 1,
+        strokeColor: '#FF8C00',
+        strokeWeight: 1,
+      },
+      title,
+      clickable: false,
+      zIndex: 4,
+    });
+    sunPathRef.current = {
+      line,
+      east: sunMarker(points[0], '☀ Salida del sol (Este)'),
+      west: sunMarker(points[points.length - 1], '☀ Puesta del sol (Oeste)'),
+    };
+  }, [showSunPath, lat, lon, areaM2, ready]);
+
+  // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
+  // mapa. Aquí solo va una indicación delgada visible.
 
   if (error) {
     return (
