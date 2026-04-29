@@ -1459,11 +1459,60 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}`,
                           color: col, fontWeight: 800, fontSize: 11, flexShrink: 0,
                         }}>{listIdx + 1}</span>
-                        {s._custom && <span style={{ fontSize: 9, color: C.yellow, padding: '1px 5px', borderRadius: 4, background: `${C.yellow}15`, border: `1px solid ${C.yellow}55` }}>+CUSTOM</span>}
+                        {s._custom && <span style={{ fontSize: 9, color: C.yellow, padding: '1px 5px', borderRadius: 4, background: `${C.yellow}15`, border: `1px solid ${C.yellow}55` }}>+ MANUAL</span>}
                         {s.areaMeters2 != null && <strong>{s.areaMeters2.toFixed(0)} m²</strong>}
-                        {s.azimuthDegrees != null && <span style={{ color: C.muted }}>{Math.round(s.azimuthDegrees)}° az</span>}
-                        {s.pitchDegrees != null && <span style={{ color: C.muted }}>{Math.round(s.pitchDegrees)}° incl</span>}
-                        {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                        {s.azimuthDegrees != null && (() => {
+                          const az = Math.round(s.azimuthDegrees);
+                          // Convertir grados a punto cardinal: 0=N, 90=E, 180=S, 270=O.
+                          // El Sur es ideal en Colombia (hemisferio Norte). Marcamos en
+                          // verde si está bien orientado (135-225° = SE-S-SO).
+                          const dirs = [
+                            { name: 'Norte', sym: 'N', min: 337.5, max: 360 },
+                            { name: 'Norte', sym: 'N', min: 0, max: 22.5 },
+                            { name: 'Noreste', sym: 'NE', min: 22.5, max: 67.5 },
+                            { name: 'Este', sym: 'E', min: 67.5, max: 112.5 },
+                            { name: 'Sureste', sym: 'SE', min: 112.5, max: 157.5 },
+                            { name: 'Sur', sym: 'S', min: 157.5, max: 202.5 },
+                            { name: 'Suroeste', sym: 'SO', min: 202.5, max: 247.5 },
+                            { name: 'Oeste', sym: 'O', min: 247.5, max: 292.5 },
+                            { name: 'Noroeste', sym: 'NO', min: 292.5, max: 337.5 },
+                          ];
+                          const d = dirs.find(x => az >= x.min && az < x.max) || dirs[5];
+                          const optimal = az >= 135 && az <= 225;
+                          return (
+                            <span style={{ color: optimal ? '#4ade80' : C.muted, fontWeight: optimal ? 600 : 400 }}>
+                              {optimal ? '☀ ' : ''}{d.name} <span style={{ color: C.muted, opacity: 0.7, fontWeight: 400 }}>({az}°)</span>
+                            </span>
+                          );
+                        })()}
+                        {s.pitchDegrees != null && (() => {
+                          const p = Math.round(s.pitchDegrees);
+                          let label = 'plano', warn = false;
+                          if (p < 5) label = 'plano';
+                          else if (p < 15) label = 'pendiente baja';
+                          else if (p < 30) label = 'pendiente media';
+                          else if (p < 45) { label = 'pendiente alta'; warn = true; }
+                          else { label = 'muy inclinado'; warn = true; }
+                          return (
+                            <span style={{ color: warn ? C.yellow : C.muted }}>
+                              {label} <span style={{ color: C.muted, opacity: 0.7 }}>({p}°)</span>
+                            </span>
+                          );
+                        })()}
+                        {s.sunshineHoursPerYear != null && (() => {
+                          const h = Math.round(s.sunshineHoursPerYear);
+                          let cal = 'buen sol';
+                          let col2 = C.yellow;
+                          if (h >= 1700) cal = 'excelente sol';
+                          else if (h >= 1500) cal = 'buen sol';
+                          else if (h >= 1300) cal = 'sol regular';
+                          else { cal = 'poco sol'; col2 = C.muted; }
+                          return (
+                            <span style={{ color: col2 }}>
+                              ☀ {cal} <span style={{ color: C.muted, opacity: 0.7 }}>({h.toLocaleString('es-CO')} h/año)</span>
+                            </span>
+                          );
+                        })()}
                         {s.note && <span style={{ fontSize: 10, color: C.muted, fontStyle: 'italic' }}>· {s.note}</span>}
                         <span style={{ marginLeft: 'auto', fontSize: 11, color: col, fontWeight: 700 }}>
                           {isActive ? '✓' : '○'}
@@ -1518,23 +1567,48 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   ) : (
                     <div style={{ background: `${C.yellow}06`, padding: 10, borderRadius: 7, border: `1px solid ${C.yellow}33` }}>
                       <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700, marginBottom: 8 }}>+ Nueva cubierta personalizada</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
                         <div>
-                          <label style={{ ...ss.lbl, fontSize: 9 }}>Área (m²)</label>
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>Tamaño · m²</label>
                           <input type="number" min="1" max="2000" step="1"
                             value={customSegDraft.areaMeters2}
                             onChange={(e) => setCustomSegDraft(d => ({ ...d, areaMeters2: e.target.value }))}
                             placeholder="50" style={{ ...ss.inp, padding: '7px 10px', fontSize: 12 }} />
                         </div>
                         <div>
-                          <label style={{ ...ss.lbl, fontSize: 9 }}>Azimuth (0=N · 180=S)</label>
-                          <input type="number" min="0" max="359" step="5"
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>¿A qué lado mira?</label>
+                          <select
                             value={customSegDraft.azimuthDegrees}
                             onChange={(e) => setCustomSegDraft(d => ({ ...d, azimuthDegrees: e.target.value }))}
-                            placeholder="180" style={{ ...ss.inp, padding: '7px 10px', fontSize: 12 }} />
+                            style={{ ...ss.inp, padding: '7px 10px', fontSize: 12, cursor: 'pointer' }}
+                          >
+                            <option value="0">↑ Norte</option>
+                            <option value="45">↗ Noreste</option>
+                            <option value="90">→ Este</option>
+                            <option value="135">↘ Sureste ☀</option>
+                            <option value="180">↓ Sur ☀ (ideal)</option>
+                            <option value="225">↙ Suroeste ☀</option>
+                            <option value="270">← Oeste</option>
+                            <option value="315">↖ Noroeste</option>
+                          </select>
                         </div>
                         <div>
-                          <label style={{ ...ss.lbl, fontSize: 9 }}>Inclinación (°)</label>
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>¿Qué tan inclinado?</label>
+                          <select
+                            value={customSegDraft.pitchDegrees}
+                            onChange={(e) => setCustomSegDraft(d => ({ ...d, pitchDegrees: e.target.value }))}
+                            style={{ ...ss.inp, padding: '7px 10px', fontSize: 12, cursor: 'pointer' }}
+                          >
+                            <option value="0">Plano (0°)</option>
+                            <option value="10">Pendiente baja (10°)</option>
+                            <option value="15">Pendiente media (15°)</option>
+                            <option value="25">Pendiente alta (25°)</option>
+                            <option value="40">Muy inclinado (40°)</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'none' }}>
+                          {/* Hidden — el select de "qué tan inclinado" reemplaza este input
+                              numérico para usuarios comunes. Se conserva oculto por compatibilidad. */}
                           <input type="number" min="0" max="60" step="1"
                             value={customSegDraft.pitchDegrees}
                             onChange={(e) => setCustomSegDraft(d => ({ ...d, pitchDegrees: e.target.value }))}
