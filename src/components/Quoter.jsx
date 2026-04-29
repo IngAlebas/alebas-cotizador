@@ -17,6 +17,7 @@ import { lookupRoof, solarConfigured } from '../services/solar';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import InteractiveRoofMap from './InteractiveRoofMap';
+import SunPathDiagram from './SunPathDiagram';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
@@ -1492,6 +1493,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             );
           })()}
+
+          {/* Diagrama de trayectoria solar — debajo del mapa para evitar overlap.
+              Muestra arco semicircular E→cenit→O con horas, posición actual del
+              sol y orientación principal del techo. */}
+          {f.roofAzimuthDeg != null && (
+            <SunPathDiagram
+              azimuthDeg={f.roofAzimuthDeg}
+              sunshineHoursYear={f.sunshineHoursYear}
+              latitude={f.lat || 4}
+            />
+          )}
 
           {/* ═══════════════════════════════════════════════════════════════
               CUBIERTAS DEL TECHO — interactivas, debajo de las imágenes para
