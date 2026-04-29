@@ -24,6 +24,10 @@ import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
+  // Tipo de servicio según CREG 091: residencial=N1, comercial=N2, industrial=N3
+  // Diferencia tarifa CU porque los componentes T (transmisión) y D (distribución)
+  // varían por nivel de tensión. Default residencial (mayoría de cotizaciones).
+  userCategory: 'residencial',
   panelId: '', battId: '', battQty: 2,
   destId: 'villavicencio', address: '',
   availableArea: '', wantsExcedentes: false,
@@ -752,9 +756,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
     const budget = calcBudget(sys, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
-    const cuFull = tariffCU(operator);
-    const cuMinusG = excedentePriceFor(operator);
-    const cuSplit = splitCU(operator);
+    // Mapeo CREG 091: tipo de servicio → nivel de tensión para tarifa
+    //   residencial → N1 (baja tensión, vivienda)
+    //   comercial   → N2 (mediana tensión, locales)
+    //   industrial  → N3 (alta tensión, plantas)
+    // El backend (n8n) provee tarifas componentes por OR; splitCU usa el VL.
+    const userVL = f.userCategory === 'comercial' ? 'N2'
+                 : f.userCategory === 'industrial' ? 'N3'
+                 : 'N1';
+    const cuFull = tariffCU(operator, userVL);
+    const cuMinusG = excedentePriceFor(operator, userVL);
+    const cuSplit = splitCU(operator, userVL);
     const benefit = calcAGPEBenefit(sys.ap, kwh, cuFull, spot?.cop_per_kwh || 0, sys.actKwp,
       { gridExport, excedentePrice: cuMinusG });
     const annualSav = benefit.totalAnual;
@@ -1152,6 +1164,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>Suma aproximada. Ajusta watts y horas según tus equipos reales.</div>
           </div>
         ) : (
+          <>
           <div style={{ marginBottom: 13 }}>
             <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span>📄 Consumo promedio mensual (kWh)</span>
@@ -1166,6 +1179,35 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               Toma el <strong>promedio de los últimos 6 meses</strong> de tu recibo de energía (sección "Histórico de consumo" o "kWh consumidos"). Este dato es <strong>la base de TODO el cálculo</strong> — si está mal, la cotización completa estará mal.
             </div>
           </div>
+          {/* Tipo de usuario — CREG 091 diferencia tarifa según sector */}
+          <div style={{ marginBottom: 13 }}>
+            <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>🏷 Tipo de servicio</span>
+              <span style={{ fontSize: 9, color: C.teal, fontStyle: 'italic' }}>tarifa según CREG 091</span>
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {[
+                { id: 'residencial', label: 'Residencial', vl: 'N1', desc: 'Vivienda · estratos 1-6' },
+                { id: 'comercial',   label: 'Comercial',   vl: 'N2', desc: 'Oficina · local · clínica' },
+                { id: 'industrial',  label: 'Industrial',  vl: 'N3', desc: 'Planta · bodega · fábrica' },
+              ].map(opt => {
+                const active = f.userCategory === opt.id;
+                return (
+                  <button key={opt.id} type="button" onClick={() => u('userCategory', opt.id)} style={{
+                    padding: '10px 8px', borderRadius: 8, cursor: 'pointer',
+                    border: `1.5px solid ${active ? C.teal : C.border}`,
+                    background: active ? `${C.teal}18` : 'transparent',
+                    color: active ? C.teal : C.muted, fontWeight: active ? 700 : 500,
+                    fontSize: 12, fontFamily: 'inherit', textAlign: 'center',
+                  }}>
+                    <div>{opt.label}</div>
+                    <div style={{ fontSize: 9, fontWeight: 400, color: C.muted, marginTop: 2 }}>{opt.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          </>
         )}
         <div style={{ marginBottom: 13 }}>
           <label style={ss.lbl}>Operador de red / empresa de energía</label>
@@ -1196,9 +1238,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             })}
           </div>
           <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-            {f.phaseManual ? 'Selección manual.' : `Sugerido por consumo: ${ACOMETIDA_INFO[suggestedAcometida].label}.`}
-            {' '}<span style={{ color: C.teal }}>{ACOMETIDA_INFO[f.acometida].retie}</span>
-            {' · '}El inversor se filtra por fase: {f.acometida === 'trifasico' ? 'trifásico (3F)' : 'monofásico / bifásico (1F)'}.
+            {f.phaseManual ? 'Manual' : `Sugerido por consumo`} · inversor {f.acometida === 'trifasico' ? '3F' : '1F'}
             {f.phaseManual && <button type="button" onClick={() => u('phaseManual', false)} style={{ marginLeft: 8, background: 'transparent', border: 'none', color: C.teal, cursor: 'pointer', fontSize: 10, textDecoration: 'underline' }}>auto</button>}
           </div>
         </div>
