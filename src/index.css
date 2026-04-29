@@ -51,15 +51,29 @@
 }
 /* Texto principal — case-insensitive con flag 'i' para matchear React inline
    styles aunque React escriba '#e8f0f7' o '#E8F0F7'. Cubre todas las formas. */
-[data-theme="light"] [style*="color: rgb(232, 240, 247)"],
+[data-theme="light"] [style*="rgb(232, 240, 247)"],
+[data-theme="light"] [style*="rgb(232,240,247)"],
+[data-theme="light"] [style*="color: rgb(232"],
+[data-theme="light"] [style*="color:rgb(232"],
 [data-theme="light"] [style*="color:#E8F0F7" i],
 [data-theme="light"] [style*="color: #E8F0F7" i] {
   color: var(--text) !important;
 }
-[data-theme="light"] [style*="color: rgb(122, 158, 170)"],
+[data-theme="light"] [style*="rgb(122, 158, 170)"],
+[data-theme="light"] [style*="rgb(122,158,170)"],
+[data-theme="light"] [style*="color: rgb(122"],
+[data-theme="light"] [style*="color:rgb(122"],
 [data-theme="light"] [style*="color:#7A9EAA" i],
 [data-theme="light"] [style*="color: #7A9EAA" i] {
   color: var(--muted) !important;
+}
+/* Fallback: cualquier elemento de texto descendiente del body en light theme
+   sin clase específica de botón/badge tendrá color readable por defecto.
+   Solo cubre casos donde no hay color inline asignado — el inline gana siempre. */
+[data-theme="light"] body,
+[data-theme="light"] main,
+[data-theme="light"] section {
+  color: var(--text);
 }
 /* Texto blanco hardcoded → texto oscuro en light, EXCEPTO botones/badges con
    bg colorido (preservan blanco para contraste sobre teal/orange). */
