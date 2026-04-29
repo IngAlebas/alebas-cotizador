@@ -48,6 +48,7 @@ const Q0 = {
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
+  customSegments: [],  // Cubiertas añadidas manualmente por el usuario (no detectadas por Google)
   googleSolarEstimate: null,  // {yearlyEnergyDcKwh, specificYieldKwhPerKwpYear, bestConfigPanels, ...}
   googleAreaM2: null,    // área detectada por Google Solar (independiente del input del cliente)
   roofConfidence: null,  // 0..1 — confidence del análisis de techo
@@ -508,12 +509,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // - Si solo cubre consumo: ordena por horas-sol desc y toma cuantos necesite hasta
   //   cubrir el área requerida por res.numPanels (los más productivos primero).
   // - Si aún no hay cálculo: ninguno seleccionado todavía.
-  const selectedSegmentIdx = useMemo(() => {
+  // selectedSegmentIdx: auto-selección por defecto. Si el usuario hace tap en un
+  // segmento, persistimos su override en manualSegmentSelection (Set | null).
+  // null => usar auto. Set => usar exactamente ese conjunto del usuario.
+  const [manualSegmentSelection, setManualSegmentSelection] = useState(null);
+  const [showCustomSegmentForm, setShowCustomSegmentForm] = useState(false);
+  const [customSegDraft, setCustomSegDraft] = useState({ areaMeters2: '', azimuthDegrees: '180', pitchDegrees: '15', note: '' });
+  // Si cambia el set de segmentos detectados (ej. por mover el pin), reseteamos
+  // las overrides manuales — los índices ya no aplican al nuevo array.
+  useEffect(() => { setManualSegmentSelection(null); }, [f.roofSegments, f.customSegments]);
+
+  const autoSelectedSegmentIdx = useMemo(() => {
     const sel = new Set();
-    if (!f.roofSegments?.length) return sel;
-    const sorted = f.roofSegments
-      .map((s, idx) => ({ ...s, _idx: idx }))
-      .sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0));
+    const allSegs = [
+      ...(f.roofSegments || []).map((s, idx) => ({ ...s, _idx: idx })),
+      ...(f.customSegments || []).map((s, idx) => ({ ...s, _idx: (f.roofSegments?.length || 0) + idx })),
+    ];
+    if (allSegs.length === 0) return sel;
+    const sorted = [...allSegs].sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0));
     if (f.wantsExcedentes) {
       sorted.forEach(s => {
         if ((s.sunshineHoursPerYear || 0) >= 1300) sel.add(s._idx);
@@ -529,7 +542,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       }
     }
     return sel;
-  }, [f.roofSegments, f.wantsExcedentes, res?.numPanels, m2PerPanel]);
+  }, [f.roofSegments, f.customSegments, f.wantsExcedentes, res?.numPanels, m2PerPanel]);
+
+  // Selección efectiva = override manual si existe, sino auto.
+  const selectedSegmentIdx = manualSegmentSelection || autoSelectedSegmentIdx;
+
+  const toggleSegment = (idx) => {
+    const base = manualSegmentSelection || new Set(autoSelectedSegmentIdx);
+    const next = new Set(base);
+    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    setManualSegmentSelection(next);
+  };
+  const resetManualSelection = () => setManualSegmentSelection(null);
 
   // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
   // setF() es asíncrono, por eso no podemos invocar calculate() directamente dentro de
@@ -1178,101 +1202,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 </div>
               )}
-              {f.roofSegments?.length > 0 && (() => {
-                // Combina dos visualizaciones:
-                // (1) Lista numerada con badge activo/disponible — los activos son los
-                //     que el sistema USA realmente; los demás están detectados pero
-                //     ociosos (a menos que el usuario quiera excedentes).
-                // (2) Compás rose abajo: flechas por azimuth, longitud ∝ área. Las
-                //     activas en verde brillante; las disponibles en gris muted.
-                const ACTIVE = '#4ade80';
-                const AVAILABLE = '#7A9EAA';
-                const maxArea = Math.max(...f.roofSegments.map(s => s.areaMeters2 || 0));
-                return (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ color: C.teal, marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span>Segmentos de techo ({f.roofSegments.length}):</span>
-                      {selectedSegmentIdx.size > 0 && (
-                        <span style={{ fontSize: 9, color: ACTIVE, background: `${ACTIVE}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
-                          ✓ {selectedSegmentIdx.size} activo{selectedSegmentIdx.size > 1 ? 's' : ''}
-                          {f.wantsExcedentes ? ' · maximiza excedentes' : ' · cubre consumo'}
-                        </span>
-                      )}
-                    </div>
-                    {f.roofSegments.map((s, i) => {
-                      const isActive = selectedSegmentIdx.has(i);
-                      const col = isActive ? ACTIVE : AVAILABLE;
-                      return (
-                        <div key={i} style={{
-                          display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
-                          paddingLeft: 4, marginBottom: 2,
-                          opacity: isActive ? 1 : 0.55,
-                        }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            width: 18, height: 18, borderRadius: '50%',
-                            background: isActive ? `${col}22` : 'transparent',
-                            border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}`,
-                            color: col, fontWeight: 800, fontSize: 10,
-                          }}>{i + 1}</span>
-                          {s.areaMeters2 != null && <span><strong>{s.areaMeters2.toFixed(0)} m²</strong></span>}
-                          {s.azimuthDegrees != null && <span>{Math.round(s.azimuthDegrees)}° az.</span>}
-                          {s.pitchDegrees != null && <span>{Math.round(s.pitchDegrees)}° incl.</span>}
-                          {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
-                          {isActive
-                            ? <span style={{ fontSize: 9, color: ACTIVE, fontWeight: 700, marginLeft: 4 }}>✓ activo</span>
-                            : <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>○ disponible</span>}
-                        </div>
-                      );
-                    })}
-                    {/* Compás rose visual con activos en verde y disponibles en gris */}
-                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
-                      <svg viewBox="-120 -120 240 240" width="200" height="200" aria-label="Compás de segmentos">
-                        <circle cx="0" cy="0" r="100" fill="none" stroke={`${C.teal}22`} strokeWidth="1" />
-                        <circle cx="0" cy="0" r="60"  fill="none" stroke={`${C.teal}15`} strokeWidth="0.7" />
-                        <text x="0" y="-105" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">N</text>
-                        <text x="0" y="115" textAnchor="middle" fill={C.yellow} fontSize="11" fontWeight="700">S</text>
-                        <text x="105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">E</text>
-                        <text x="-105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">O</text>
-                        {f.roofSegments.map((s, i) => {
-                          if (s.azimuthDegrees == null || maxArea <= 0) return null;
-                          const isActive = selectedSegmentIdx.has(i);
-                          const col = isActive ? ACTIVE : AVAILABLE;
-                          const ratio = (s.areaMeters2 || 0) / maxArea;
-                          const len = 35 + ratio * 65;
-                          const az = (s.azimuthDegrees - 90) * Math.PI / 180;
-                          const x2 = Math.cos(az) * len;
-                          const y2 = Math.sin(az) * len;
-                          return (
-                            <g key={i} opacity={isActive ? 1 : 0.5}>
-                              <line x1="0" y1="0" x2={x2} y2={y2}
-                                stroke={col}
-                                strokeWidth={isActive ? 2.5 : 1.5}
-                                strokeDasharray={isActive ? '' : '3 2'}
-                                strokeLinecap="round" />
-                              <circle cx={x2} cy={y2} r="9"
-                                fill={isActive ? `${col}cc` : `${col}88`}
-                                stroke={col} strokeWidth="1.5" />
-                              <text x={x2} y={y2 + 3.5} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="800">{i + 1}</text>
-                            </g>
-                          );
-                        })}
-                        <circle cx="0" cy="0" r="4" fill={C.text} />
-                      </svg>
-                    </div>
-                    <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontStyle: 'italic', marginTop: -4 }}>
-                      <strong style={{ color: ACTIVE }}>Verde</strong> = segmento usado por el sistema · <strong style={{ color: AVAILABLE }}>gris</strong> = disponible (no usado)
-                      <br />Flecha apunta al azimuth · longitud ∝ área · los del <strong style={{ color: C.yellow }}>Sur</strong> son los más productivos en Colombia
-                    </div>
-                    <div style={{ fontSize: 9, color: C.muted, fontStyle: 'italic', marginTop: 4, paddingLeft: 4 }}>
-                      {f.wantsExcedentes
-                        ? '⚡ Excedentes activado: el sistema usa todos los segmentos viables (h☀ ≥ 1300) para maximizar generación.'
-                        : 'El sistema selecciona los segmentos con más horas de sol hasta cubrir el consumo. Marca «vender excedentes» para usar más segmentos.'}
-                    </div>
-                  </div>
-                );
-              })()}
-              )}
+              {/* Segmentos del techo se muestran ahora DEBAJO de las imágenes (después
+                  de la preview) para que el cliente tenga contexto visual del techo
+                  antes de ver qué cubiertas usa el sistema. */}
               {f.roofImagery && (
                 <div style={{ marginTop: 3 }}>
                   Imágenes Google Solar:{' '}
@@ -1378,6 +1310,215 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </span>
                   </span>
                 </label>
+              </div>
+            );
+          })()}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              CUBIERTAS DEL TECHO — interactivas, debajo de las imágenes para
+              que el cliente tenga contexto visual antes de elegir.
+              - Tap en cualquier cubierta para incluirla/excluirla
+              - Botón "Restablecer auto" para volver a la selección automática
+              - Botón "+ Añadir cubierta" para registrar techos que Google no detectó
+              ═══════════════════════════════════════════════════════════════ */}
+          {(f.roofSegments?.length > 0 || (f.customSegments?.length > 0)) && (() => {
+            const ACTIVE = '#4ade80';
+            const AVAILABLE = '#7A9EAA';
+            const allSegments = [
+              ...(f.roofSegments || []).map((s, idx) => ({ ...s, _idx: idx, _custom: false })),
+              ...(f.customSegments || []).map((s, idx) => ({
+                ...s,
+                _idx: (f.roofSegments?.length || 0) + idx,
+                _custom: true,
+              })),
+            ];
+            const totalActiveArea = allSegments
+              .filter(s => selectedSegmentIdx.has(s._idx))
+              .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
+            const maxArea = Math.max(...allSegments.map(s => s.areaMeters2 || 0));
+            const isManual = manualSegmentSelection !== null;
+            return (
+              <div style={{ marginTop: 12, padding: '12px 14px', background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: C.teal, fontWeight: 700 }}>
+                    🏠 Cubiertas del techo ({allSegments.length})
+                  </span>
+                  <span style={{ fontSize: 9, color: ACTIVE, background: `${ACTIVE}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
+                    ✓ {selectedSegmentIdx.size} activa{selectedSegmentIdx.size !== 1 ? 's' : ''} · {Math.round(totalActiveArea)} m²
+                  </span>
+                  {isManual && (
+                    <button type="button" onClick={resetManualSelection} style={{
+                      fontSize: 9, padding: '3px 10px', borderRadius: 12,
+                      background: 'transparent', border: `1px solid ${C.muted}`, color: C.muted,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}>↺ Restablecer auto</button>
+                  )}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, fontStyle: 'italic' }}>
+                  Tap en cualquier cubierta para incluirla / excluirla del sistema. Si Google no detectó una cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
+                </div>
+                {/* Lista clickable */}
+                <div>
+                  {allSegments.map((s, listIdx) => {
+                    const isActive = selectedSegmentIdx.has(s._idx);
+                    const col = isActive ? ACTIVE : AVAILABLE;
+                    return (
+                      <button
+                        key={s._idx}
+                        type="button"
+                        onClick={() => toggleSegment(s._idx)}
+                        style={{
+                          display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+                          width: '100%', textAlign: 'left',
+                          padding: '8px 10px', marginBottom: 4,
+                          background: isActive ? `${col}10` : 'transparent',
+                          border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}55`,
+                          borderRadius: 7,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          opacity: isActive ? 1 : 0.7,
+                          color: C.text, fontSize: 11,
+                        }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 22, height: 22, borderRadius: '50%',
+                          background: isActive ? `${col}33` : 'transparent',
+                          border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}`,
+                          color: col, fontWeight: 800, fontSize: 11, flexShrink: 0,
+                        }}>{listIdx + 1}</span>
+                        {s._custom && <span style={{ fontSize: 9, color: C.yellow, padding: '1px 5px', borderRadius: 4, background: `${C.yellow}15`, border: `1px solid ${C.yellow}55` }}>+CUSTOM</span>}
+                        {s.areaMeters2 != null && <strong>{s.areaMeters2.toFixed(0)} m²</strong>}
+                        {s.azimuthDegrees != null && <span style={{ color: C.muted }}>{Math.round(s.azimuthDegrees)}° az</span>}
+                        {s.pitchDegrees != null && <span style={{ color: C.muted }}>{Math.round(s.pitchDegrees)}° incl</span>}
+                        {s.sunshineHoursPerYear != null && <span style={{ color: C.yellow }}>{Math.round(s.sunshineHoursPerYear)} h☀</span>}
+                        {s.note && <span style={{ fontSize: 10, color: C.muted, fontStyle: 'italic' }}>· {s.note}</span>}
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: col, fontWeight: 700 }}>
+                          {isActive ? '✓' : '○'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Compás visual */}
+                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+                  <svg viewBox="-120 -120 240 240" width="180" height="180" aria-label="Compás">
+                    <circle cx="0" cy="0" r="100" fill="none" stroke={`${C.teal}22`} strokeWidth="1" />
+                    <circle cx="0" cy="0" r="60"  fill="none" stroke={`${C.teal}15`} strokeWidth="0.7" />
+                    <text x="0" y="-105" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">N</text>
+                    <text x="0" y="115" textAnchor="middle" fill={C.yellow} fontSize="11" fontWeight="700">S</text>
+                    <text x="105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">E</text>
+                    <text x="-105" y="4" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">O</text>
+                    {allSegments.map((s, listIdx) => {
+                      if (s.azimuthDegrees == null || maxArea <= 0) return null;
+                      const isActive = selectedSegmentIdx.has(s._idx);
+                      const col = isActive ? ACTIVE : AVAILABLE;
+                      const ratio = (s.areaMeters2 || 0) / maxArea;
+                      const len = 35 + ratio * 65;
+                      const az = (s.azimuthDegrees - 90) * Math.PI / 180;
+                      const x2 = Math.cos(az) * len;
+                      const y2 = Math.sin(az) * len;
+                      return (
+                        <g key={listIdx} opacity={isActive ? 1 : 0.5}>
+                          <line x1="0" y1="0" x2={x2} y2={y2}
+                            stroke={col}
+                            strokeWidth={isActive ? 2.5 : 1.5}
+                            strokeDasharray={isActive ? '' : '3 2'} strokeLinecap="round" />
+                          <circle cx={x2} cy={y2} r="9"
+                            fill={isActive ? `${col}cc` : `${col}88`}
+                            stroke={col} strokeWidth="1.5" />
+                          <text x={x2} y={y2 + 3.5} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="800">{listIdx + 1}</text>
+                        </g>
+                      );
+                    })}
+                    <circle cx="0" cy="0" r="4" fill={C.text} />
+                  </svg>
+                </div>
+                {/* Toggle: añadir cubierta custom */}
+                <div style={{ marginTop: 8, paddingTop: 10, borderTop: `1px dashed ${C.border}` }}>
+                  {!showCustomSegmentForm ? (
+                    <button type="button" onClick={() => setShowCustomSegmentForm(true)} style={{
+                      width: '100%', padding: '8px 12px', background: `${C.yellow}10`,
+                      border: `1.5px dashed ${C.yellow}66`, borderRadius: 7,
+                      color: C.yellow, fontWeight: 700, fontSize: 11,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}>+ Añadir cubierta no detectada por Google</button>
+                  ) : (
+                    <div style={{ background: `${C.yellow}06`, padding: 10, borderRadius: 7, border: `1px solid ${C.yellow}33` }}>
+                      <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700, marginBottom: 8 }}>+ Nueva cubierta personalizada</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
+                        <div>
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>Área (m²)</label>
+                          <input type="number" min="1" max="2000" step="1"
+                            value={customSegDraft.areaMeters2}
+                            onChange={(e) => setCustomSegDraft(d => ({ ...d, areaMeters2: e.target.value }))}
+                            placeholder="50" style={{ ...ss.inp, padding: '7px 10px', fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>Azimuth (0=N · 180=S)</label>
+                          <input type="number" min="0" max="359" step="5"
+                            value={customSegDraft.azimuthDegrees}
+                            onChange={(e) => setCustomSegDraft(d => ({ ...d, azimuthDegrees: e.target.value }))}
+                            placeholder="180" style={{ ...ss.inp, padding: '7px 10px', fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>Inclinación (°)</label>
+                          <input type="number" min="0" max="60" step="1"
+                            value={customSegDraft.pitchDegrees}
+                            onChange={(e) => setCustomSegDraft(d => ({ ...d, pitchDegrees: e.target.value }))}
+                            placeholder="15" style={{ ...ss.inp, padding: '7px 10px', fontSize: 12 }} />
+                        </div>
+                        <div>
+                          <label style={{ ...ss.lbl, fontSize: 9 }}>Notas (opcional)</label>
+                          <input type="text"
+                            value={customSegDraft.note}
+                            onChange={(e) => setCustomSegDraft(d => ({ ...d, note: e.target.value }))}
+                            placeholder="parqueadero, anexo..." style={{ ...ss.inp, padding: '7px 10px', fontSize: 12 }} />
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button type="button" onClick={() => {
+                          const a = parseFloat(customSegDraft.areaMeters2);
+                          const az = parseFloat(customSegDraft.azimuthDegrees);
+                          const p = parseFloat(customSegDraft.pitchDegrees);
+                          if (!a || a <= 0) return;
+                          // Estimar horas-sol/año basado en orientación: óptimo Sur (180°)
+                          // ≈ promedio del techo Google; resta hasta 25% para azimuts extremos.
+                          const avgSun = f.sunshineHoursYear || 1500;
+                          const orientFactor = az != null ? Math.max(0.75, 1 - Math.abs(180 - az) / 720) : 0.95;
+                          const newSeg = {
+                            areaMeters2: a,
+                            azimuthDegrees: az || 180,
+                            pitchDegrees: p || 15,
+                            sunshineHoursPerYear: Math.round(avgSun * orientFactor),
+                            note: customSegDraft.note || 'manual',
+                          };
+                          u('customSegments', [...(f.customSegments || []), newSeg]);
+                          setCustomSegDraft({ areaMeters2: '', azimuthDegrees: '180', pitchDegrees: '15', note: '' });
+                          setShowCustomSegmentForm(false);
+                        }} style={{ ...ss.btn, padding: '7px 16px', fontSize: 11 }}>
+                          Añadir
+                        </button>
+                        <button type="button" onClick={() => {
+                          setShowCustomSegmentForm(false);
+                          setCustomSegDraft({ areaMeters2: '', azimuthDegrees: '180', pitchDegrees: '15', note: '' });
+                        }} style={{ ...ss.ghost, padding: '7px 16px', fontSize: 11 }}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {f.customSegments?.length > 0 && !showCustomSegmentForm && (
+                    <button type="button" onClick={() => u('customSegments', [])} style={{
+                      width: '100%', marginTop: 6, padding: '5px', fontSize: 9,
+                      background: 'transparent', border: 'none', color: C.muted,
+                      cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                    }}>Borrar cubiertas custom ({f.customSegments.length})</button>
+                  )}
+                </div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 6, fontStyle: 'italic' }}>
+                  {f.wantsExcedentes
+                    ? '⚡ Excedentes activado: el sistema usa todos los segmentos viables (≥1300 h☀/año) por defecto.'
+                    : 'Auto: el sistema usa los segmentos con más horas de sol hasta cubrir el consumo.'}
+                </div>
               </div>
             );
           })()}
