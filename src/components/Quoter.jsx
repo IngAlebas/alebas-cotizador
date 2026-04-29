@@ -1201,6 +1201,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
+                      segments={f.roofSegments || null}
+                      showSunPath={true}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
                         setRoofError(null); setRoofLoading(true);
