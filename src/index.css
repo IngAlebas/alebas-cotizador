@@ -40,32 +40,53 @@
    React renderiza style={{ background: C.dark }} como inline style con el
    valor RGB (#07090F → rgb(7, 9, 15)). Reemplazamos por bg light. */
 [data-theme="light"] [style*="rgb(7, 9, 15)"],
-[data-theme="light"] [style*="background:#07090F"],
-[data-theme="light"] [style*="background: #07090F"] {
+[data-theme="light"] [style*="background:#07090F" i],
+[data-theme="light"] [style*="background: #07090F" i] {
   background-color: var(--dark) !important;
 }
 [data-theme="light"] [style*="rgb(12, 20, 34)"],
-[data-theme="light"] [style*="background:#0C1422"],
-[data-theme="light"] [style*="background: #0C1422"] {
+[data-theme="light"] [style*="background:#0C1422" i],
+[data-theme="light"] [style*="background: #0C1422" i] {
   background-color: var(--card) !important;
 }
+/* Texto principal — case-insensitive con flag 'i' para matchear React inline
+   styles aunque React escriba '#e8f0f7' o '#E8F0F7'. Cubre todas las formas. */
 [data-theme="light"] [style*="color: rgb(232, 240, 247)"],
-[data-theme="light"] [style*="color:#E8F0F7"],
-[data-theme="light"] [style*="color: #E8F0F7"] {
+[data-theme="light"] [style*="color:#E8F0F7" i],
+[data-theme="light"] [style*="color: #E8F0F7" i] {
   color: var(--text) !important;
 }
 [data-theme="light"] [style*="color: rgb(122, 158, 170)"],
-[data-theme="light"] [style*="color:#7A9EAA"],
-[data-theme="light"] [style*="color: #7A9EAA"] {
+[data-theme="light"] [style*="color:#7A9EAA" i],
+[data-theme="light"] [style*="color: #7A9EAA" i] {
   color: var(--muted) !important;
 }
-/* Texto blanco hardcoded → texto oscuro en light */
+/* Texto blanco hardcoded → texto oscuro en light, EXCEPTO botones/badges con
+   bg colorido (preservan blanco para contraste sobre teal/orange). */
 [data-theme="light"] [style*="color: rgb(255, 255, 255)"],
 [data-theme="light"] [style*="color: white"],
-[data-theme="light"] [style*="color:#fff"],
-[data-theme="light"] [style*="color: #fff"] {
+[data-theme="light"] [style*="color:#fff" i],
+[data-theme="light"] [style*="color: #fff" i],
+[data-theme="light"] [style*="color:#FFFFFF" i],
+[data-theme="light"] [style*="color: #FFFFFF" i] {
   color: var(--text) !important;
 }
+/* Excepción: botones con bg teal/orange MANTIENEN texto blanco — la
+   especificidad más alta (dos atributos) gana sobre la regla anterior. */
+[data-theme="light"] button[style*="background: rgb(1, 112, 139)"][style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] button[style*="background: #01708B" i][style*="color:#fff" i],
+[data-theme="light"] button[style*="background: #01708B" i][style*="color: #fff" i],
+[data-theme="light"] button[style*="background: rgb(255, 140, 0)"][style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] button[style*="background: #FF8C00" i][style*="color:#fff" i],
+[data-theme="light"] button[style*="background: #FF8C00" i][style*="color: #fff" i],
+[data-theme="light"] [class*="al-btn-primary"],
+[data-theme="light"] [class*="al-badge-sun"],
+[data-theme="light"] [class*="al-badge-teal"] {
+  color: #fff !important;
+}
+/* Y el btn primary específicamente tenía texto oscuro (#07090F) sobre el
+   gradient amarillo/naranja — eso ya contrasta y NO debe cambiar. */
+[data-theme="light"] [class*="al-btn-primary"] { color: #07090F !important; }
 /* Brand colors (sun, teal) en light necesitan oscurecerse para legibilidad */
 [data-theme="light"] [style*="rgb(255, 140, 0)"],
 [data-theme="light"] [style*="color:#FF8C00"],
