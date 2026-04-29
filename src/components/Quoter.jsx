@@ -532,17 +532,33 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         if ((s.sunshineHoursPerYear || 0) >= 1300) sel.add(s._idx);
       });
       if (sel.size === 0) sorted.slice(0, Math.min(3, sorted.length)).forEach(s => sel.add(s._idx));
-    } else if (res?.numPanels) {
-      const requiredArea = res.numPanels * m2PerPanel;
-      let cumArea = 0;
-      for (const s of sorted) {
-        if (cumArea >= requiredArea) break;
-        sel.add(s._idx);
-        cumArea += s.areaMeters2 || 0;
-      }
+      return sel;
+    }
+    // Cobertura por consumo:
+    //   - Si ya tenemos res.numPanels (después de calcular): usar requiredArea exacta
+    //   - Si todavía no (estamos en paso de techo, sin cálculo final): sugerir basado
+    //     en consumptionKwp + 15% buffer para compensar yield real <heurístico
+    let requiredArea;
+    if (res?.numPanels) {
+      requiredArea = res.numPanels * m2PerPanel;
+    } else if (consumptionKwp > 0 && panel?.wp) {
+      const requiredKwp = consumptionKwp * 1.15; // 15% buffer real-world yield
+      const requiredPanels = Math.ceil(requiredKwp * 1000 / panel.wp);
+      requiredArea = requiredPanels * m2PerPanel;
+    } else {
+      // No info — al menos seleccionar el segmento más productivo para que
+      // el cliente NO vea 0 activas (confunde a usuarios no técnicos).
+      if (sorted[0]) sel.add(sorted[0]._idx);
+      return sel;
+    }
+    let cumArea = 0;
+    for (const s of sorted) {
+      if (cumArea >= requiredArea) break;
+      sel.add(s._idx);
+      cumArea += s.areaMeters2 || 0;
     }
     return sel;
-  }, [f.roofSegments, f.customSegments, f.wantsExcedentes, res?.numPanels, m2PerPanel]);
+  }, [f.roofSegments, f.customSegments, f.wantsExcedentes, res?.numPanels, m2PerPanel, consumptionKwp, panel?.wp]);
 
   // Selección efectiva = override manual si existe, sino auto.
   const selectedSegmentIdx = manualSegmentSelection || autoSelectedSegmentIdx;
@@ -1365,25 +1381,55 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
             const maxArea = Math.max(...allSegments.map(s => s.areaMeters2 || 0));
             const isManual = manualSegmentSelection !== null;
+            // Estimación pedagógica para usuarios no técnicos: cuántos m² se necesitan
+            // típicamente para cubrir el consumo declarado.
+            const estRequiredKwp = consumptionKwp * 1.15;
+            const estRequiredPanels = panel?.wp ? Math.ceil(estRequiredKwp * 1000 / panel.wp) : 0;
+            const estRequiredArea = Math.round(estRequiredPanels * m2PerPanel);
+            const coveragePct = estRequiredArea > 0 ? Math.round((totalActiveArea / estRequiredArea) * 100) : 0;
+            const enoughForConsumption = coveragePct >= 95;
             return (
-              <div style={{ marginTop: 12, padding: '12px 14px', background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9 }}>
+              <div style={{ marginTop: 12, padding: '12px 14px', background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 9, boxShadow: `0 0 0 1px ${C.teal}11` }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, color: C.teal, fontWeight: 700 }}>
+                  <span style={{ fontSize: 13, color: C.teal, fontWeight: 700 }}>
                     🏠 Cubiertas del techo ({allSegments.length})
                   </span>
-                  <span style={{ fontSize: 9, color: ACTIVE, background: `${ACTIVE}22`, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>
+                  <span style={{
+                    fontSize: 10,
+                    color: enoughForConsumption ? ACTIVE : C.yellow,
+                    background: enoughForConsumption ? `${ACTIVE}22` : `${C.yellow}22`,
+                    padding: '2px 9px', borderRadius: 10, fontWeight: 700,
+                  }}>
                     ✓ {selectedSegmentIdx.size} activa{selectedSegmentIdx.size !== 1 ? 's' : ''} · {Math.round(totalActiveArea)} m²
+                    {estRequiredArea > 0 && ` · ${coveragePct}% del consumo`}
                   </span>
                   {isManual && (
                     <button type="button" onClick={resetManualSelection} style={{
-                      fontSize: 9, padding: '3px 10px', borderRadius: 12,
-                      background: 'transparent', border: `1px solid ${C.muted}`, color: C.muted,
-                      cursor: 'pointer', fontFamily: 'inherit',
-                    }}>↺ Restablecer auto</button>
+                      fontSize: 9, padding: '4px 10px', borderRadius: 12,
+                      background: `${C.yellow}15`, border: `1px solid ${C.yellow}66`, color: C.yellow,
+                      cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700,
+                    }}>↺ Sugerencia automática</button>
                   )}
                 </div>
+                {/* Banner pedagógico — visible para usuario no técnico */}
+                {estRequiredArea > 0 && (
+                  <div style={{
+                    fontSize: 11, lineHeight: 1.55, color: C.text, marginBottom: 10,
+                    padding: '8px 11px',
+                    background: `linear-gradient(90deg, ${C.teal}12, transparent)`,
+                    border: `1px solid ${C.teal}33`, borderRadius: 7,
+                  }}>
+                    <strong style={{ color: C.teal }}>💡 Sugerencia automática:</strong>{' '}
+                    para tu consumo de <strong>{f.monthlyKwh} kWh/mes</strong> necesitas
+                    <strong style={{ color: C.yellow }}> ~{estRequiredArea} m²</strong> de techo
+                    útil ({estRequiredPanels} paneles de {panel?.wp || 0}W).{' '}
+                    {enoughForConsumption
+                      ? <span style={{ color: ACTIVE, fontWeight: 700 }}>✓ Las cubiertas activas cubren el consumo.</span>
+                      : <span style={{ color: C.yellow, fontWeight: 700 }}>Activa más cubiertas o usa el botón &laquo;Sugerencia automática&raquo;.</span>}
+                  </div>
+                )}
                 <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, fontStyle: 'italic' }}>
-                  Tap en cualquier cubierta para incluirla / excluirla del sistema. Si Google no detectó una cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
+                  Tap en cualquier cubierta para incluirla / excluirla. El sistema preselecciona las mejores orientadas para cubrir tu consumo. Si Google no detectó una cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
                 </div>
                 {/* Lista clickable */}
                 <div>
