@@ -519,6 +519,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // las overrides manuales — los índices ya no aplican al nuevo array.
   useEffect(() => { setManualSegmentSelection(null); }, [f.roofSegments, f.customSegments]);
 
+  // Umbral de radiación bajo el cual una cubierta NO se incluye automáticamente.
+  // Para Colombia, sun anual <1100 h/año significa baja productividad (orientación
+  // norte, sombreado fuerte, pendiente extrema). El usuario aún puede activarlas
+  // manualmente si quiere — pero el sistema NO las selecciona por defecto, las
+  // marca como 'reservadas'.
+  const MIN_VIABLE_SUN = 1100;
+
   const autoSelectedSegmentIdx = useMemo(() => {
     const sel = new Set();
     const allSegs = [
@@ -526,8 +533,21 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       ...(f.customSegments || []).map((s, idx) => ({ ...s, _idx: (f.roofSegments?.length || 0) + idx })),
     ];
     if (allSegs.length === 0) return sel;
-    const sorted = [...allSegs].sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0));
+    // Filtrar fuera las cubiertas reservadas (sun < MIN_VIABLE_SUN). Estas NO
+    // entran en la auto-selección por defecto, aunque el usuario puede toggle
+    // manualmente.
+    const viable = allSegs.filter(s => (s.sunshineHoursPerYear || 0) >= MIN_VIABLE_SUN);
+    if (viable.length === 0) {
+      // Si NINGUNA cubierta supera el umbral, al menos tomar la mejor disponible
+      // (caso edge: todo el techo está mal orientado).
+      const best = [...allSegs].sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0))[0];
+      if (best) sel.add(best._idx);
+      return sel;
+    }
+    const sorted = [...viable].sort((a, b) => (b.sunshineHoursPerYear || 0) - (a.sunshineHoursPerYear || 0));
     if (f.wantsExcedentes) {
+      // Excedentes: usar TODAS las viables (sin tope superior). Umbral más alto:
+      // 1300 h/año para garantizar que el excedente sea rentable.
       sorted.forEach(s => {
         if ((s.sunshineHoursPerYear || 0) >= 1300) sel.add(s._idx);
       });
@@ -546,8 +566,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       const requiredPanels = Math.ceil(requiredKwp * 1000 / panel.wp);
       requiredArea = requiredPanels * m2PerPanel;
     } else {
-      // No info — al menos seleccionar el segmento más productivo para que
-      // el cliente NO vea 0 activas (confunde a usuarios no técnicos).
       if (sorted[0]) sel.add(sorted[0]._idx);
       return sel;
     }
@@ -1511,25 +1529,29 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, fontStyle: 'italic' }}>
                   Tap en cualquier cubierta para incluirla / excluirla. El sistema preselecciona las mejores orientadas para cubrir tu consumo. Si Google no detectó una cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
                 </div>
-                {/* Lista clickable */}
+                {/* Lista clickable. Tres estados: activa (verde), disponible (gris),
+                    reservada (naranja) — esta última son cubiertas con sun < 1100 h/año
+                    que NO se incluyen automáticamente por baja productividad. */}
                 <div>
                   {allSegments.map((s, listIdx) => {
                     const isActive = selectedSegmentIdx.has(s._idx);
-                    const col = isActive ? ACTIVE : AVAILABLE;
+                    const isReserved = !isActive && (s.sunshineHoursPerYear || 0) < MIN_VIABLE_SUN;
+                    const col = isActive ? ACTIVE : (isReserved ? C.orange : AVAILABLE);
                     return (
                       <button
                         key={s._idx}
                         type="button"
                         onClick={() => toggleSegment(s._idx)}
+                        title={isReserved ? `Cubierta reservada: solo ${Math.round(s.sunshineHoursPerYear || 0)} h sol/año (umbral mínimo ${MIN_VIABLE_SUN}). Tap si igual quieres incluirla.` : ''}
                         style={{
                           display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
                           width: '100%', textAlign: 'left',
                           padding: '8px 10px', marginBottom: 4,
-                          background: isActive ? `${col}10` : 'transparent',
+                          background: isActive ? `${col}10` : isReserved ? `${col}06` : 'transparent',
                           border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}55`,
                           borderRadius: 7,
                           cursor: 'pointer', fontFamily: 'inherit',
-                          opacity: isActive ? 1 : 0.7,
+                          opacity: isActive ? 1 : (isReserved ? 0.6 : 0.7),
                           color: C.text, fontSize: 11,
                         }}>
                         <span style={{
@@ -1539,6 +1561,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           border: `1.5px ${isActive ? 'solid' : 'dashed'} ${col}`,
                           color: col, fontWeight: 800, fontSize: 11, flexShrink: 0,
                         }}>{listIdx + 1}</span>
+                        {isReserved && (
+                          <span style={{ fontSize: 9, color: C.orange, padding: '1px 5px', borderRadius: 4, background: `${C.orange}15`, border: `1px solid ${C.orange}55`, fontWeight: 700 }}>
+                            🚫 RESERVADA
+                          </span>
+                        )}
                         {s._custom && <span style={{ fontSize: 9, color: C.yellow, padding: '1px 5px', borderRadius: 4, background: `${C.yellow}15`, border: `1px solid ${C.yellow}55` }}>+ MANUAL</span>}
                         {s.areaMeters2 != null && <strong>{s.areaMeters2.toFixed(0)} m²</strong>}
                         {s.azimuthDegrees != null && (() => {
@@ -1595,7 +1622,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         })()}
                         {s.note && <span style={{ fontSize: 10, color: C.muted, fontStyle: 'italic' }}>· {s.note}</span>}
                         <span style={{ marginLeft: 'auto', fontSize: 11, color: col, fontWeight: 700 }}>
-                          {isActive ? '✓' : '○'}
+                          {isActive ? '✓' : (isReserved ? '🚫' : '○')}
                         </span>
                       </button>
                     );
