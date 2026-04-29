@@ -188,12 +188,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* CENTER: tagline (solo desktop — oculto en mobile) */}
-        <div className="al-tagline-desktop" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none' }}>
-          {['Dimensiona','Cotiza','Conecta','Instala'].map((t,i) => (
-            <span key={t} style={{ fontSize: 11, color: i===1 ? C.yellow : C.teal, fontWeight: i===1 ? 700 : 400, letterSpacing: '0.5px' }}>{t}</span>
-          ))}
-        </div>
+        {/* Tagline removido del navbar (se muestra ya en el hero del home).
+            Causaba overlap recurrente con logo + nav buttons en widths 1280-1920px. */}
 
         {/* RIGHT: nav buttons — desktop only */}
         <div className="al-topnav-btns" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
