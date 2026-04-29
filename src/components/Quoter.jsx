@@ -4177,7 +4177,7 @@ function LoadingSystem({ C, ss, logo, f, operator, needsB, dest }) {
   }, [cursor, tools]);
 
   return (
-    <div style={{
+    <div className="al-loading-screen" style={{
       minHeight: 'calc(100vh - 56px - var(--footer-h, 64px))',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '20px 14px',
