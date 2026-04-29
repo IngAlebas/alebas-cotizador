@@ -163,6 +163,35 @@
 [data-theme="light"] body { background: var(--dark); color: var(--text); }
 [data-theme="light"] noscript { color: var(--text); }
 
+/* Loading screen — siempre dark, regardless of theme. La pantalla de cálculo
+   es muy breve (5-15s) y mantener el feel premium dark con el spinner amarillo
+   da mejor experiencia que pelear con todos los inline-styles light. */
+[data-theme="light"] .al-loading-screen {
+  background: #07090F;
+}
+[data-theme="light"] .al-loading-screen [style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] .al-loading-screen [style*="color: white"],
+[data-theme="light"] .al-loading-screen [style*="color:#fff" i],
+[data-theme="light"] .al-loading-screen [style*="color: #fff" i] {
+  color: #fff !important;
+}
+[data-theme="light"] .al-loading-screen [style*="rgb(232, 244, 247)"],
+[data-theme="light"] .al-loading-screen [style*="rgb(232,244,247)"],
+[data-theme="light"] .al-loading-screen [style*="#E8F4F7" i] {
+  color: #E8F4F7 !important;
+}
+[data-theme="light"] .al-loading-screen [style*="rgb(122, 158, 170)"],
+[data-theme="light"] .al-loading-screen [style*="rgb(122,158,170)"],
+[data-theme="light"] .al-loading-screen [style*="#7A9EAA" i] {
+  color: #7A9EAA !important;
+}
+[data-theme="light"] .al-loading-screen [style*="rgb(7, 9, 15)"] {
+  background-color: #07090F !important;
+}
+[data-theme="light"] .al-loading-screen [style*="rgb(12, 20, 34)"] {
+  background-color: #0C1422 !important;
+}
+
 /* ── BASE ── */
 html { scroll-behavior: smooth; }
 
