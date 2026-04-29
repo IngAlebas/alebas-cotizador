@@ -33,8 +33,15 @@ export default function InteractiveRoofMap({
         if (cancelled || !containerRef.current) return;
         const center = { lat: Number(lat), lng: Number(lon) };
         const map = new maps.Map(containerRef.current, {
-          center, zoom: 20, mapTypeId: 'satellite', tilt: 0,
-          disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy',
+          center,
+          zoom: 19,  // 19 da más contexto que 20 — todavía se ve el techo claro
+          minZoom: 16,
+          maxZoom: 22,
+          mapTypeId: 'satellite',
+          tilt: 0,
+          disableDefaultUI: true,
+          zoomControl: true,
+          gestureHandling: 'greedy',  // un dedo arrastra (no requiere 2 dedos)
           clickableIcons: false,
         });
         const marker = new maps.Marker({
@@ -167,6 +174,25 @@ export default function InteractiveRoofMap({
       label.setMap(mapRef.current);
       labelsRef.current.push(label);
     });
+    // Auto-fit a los polígonos para que se vean TODOS los segmentos detectados
+    // con padding cómodo. Solo si hay >=1 polígono con bounding box válido.
+    const validBboxes = segments.filter(s => s.boundingBox && s.boundingBox.sw && s.boundingBox.ne);
+    if (validBboxes.length > 0) {
+      const bounds = new maps.LatLngBounds();
+      validBboxes.forEach(s => {
+        bounds.extend({ lat: s.boundingBox.sw.lat, lng: s.boundingBox.sw.lng });
+        bounds.extend({ lat: s.boundingBox.ne.lat, lng: s.boundingBox.ne.lng });
+      });
+      // Padding 50px da espacio para los labels flotantes en bordes.
+      mapRef.current.fitBounds(bounds, 50);
+      // Limitar zoom max después del fitBounds — no acercarse demasiado si el
+      // techo es muy pequeño (sin esto Google va a zoom 22 y se ve borroso).
+      const listener = maps.event.addListenerOnce(mapRef.current, 'idle', () => {
+        if (mapRef.current.getZoom() > 20) mapRef.current.setZoom(20);
+      });
+      // Cleanup si re-renderiza antes del idle
+      return () => maps.event.removeListener(listener);
+    }
   }, [segments, ready]);
 
   // Trayectoria del sol — arco azimutal de oriente (E) a poniente (O) pasando
