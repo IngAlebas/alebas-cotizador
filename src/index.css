@@ -705,6 +705,103 @@ button:active { transform: scale(0.97); }
     line-height: 1.4;
   }
 
+  /* PDF — Diagrama del sistema (paneles → inversor → batería → casa → red) */
+  .al-pdf-system-diagram {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 12px;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #01708B05, #FF8C0005);
+    border: 1px solid #01708B22;
+    border-radius: 5px;
+    page-break-inside: avoid;
+  }
+  .al-pdf-comp {
+    background: #fff;
+    border: 1.2px solid #01708B66;
+    border-radius: 5px;
+    padding: 8px 10px;
+    min-width: 75px;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  .al-pdf-comp-icon {
+    font-size: 18pt;
+    line-height: 1;
+    margin-bottom: 4px;
+    font-weight: 800;
+  }
+  .al-pdf-comp-label {
+    font-size: 8pt;
+    color: #07090F;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .al-pdf-comp-spec {
+    font-size: 7pt;
+    color: #555;
+    line-height: 1.3;
+  }
+  .al-pdf-arrow {
+    align-self: center;
+    font-size: 16pt;
+    color: #01708B;
+    padding: 0 4px;
+  }
+  .al-pdf-layout-subtitle {
+    font-size: 9pt;
+    color: #01708B;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin: 12px 0 6px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #01708B33;
+  }
+
+  /* PDF — Cards de ROI (ahorro + retorno + AGPE) */
+  .al-pdf-roi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 10px 0;
+  }
+  .al-pdf-roi-card {
+    background: linear-gradient(135deg, #FF8C0010, #01708B05);
+    border: 1.2px solid #FF8C0044;
+    border-radius: 4px;
+    padding: 8px 10px;
+    text-align: center;
+    page-break-inside: avoid;
+  }
+  .al-pdf-roi-card span {
+    display: block;
+    font-size: 7.5pt;
+    color: #555;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 2px;
+  }
+  .al-pdf-roi-card strong {
+    display: block;
+    font-size: 12pt;
+    color: #07090F;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .al-pdf-roi-card small {
+    display: block;
+    font-size: 7pt;
+    color: #777;
+    margin-top: 2px;
+  }
+
   /* PDF — Layout del sistema (strings + banco baterías) */
   .al-pdf-layout-strings {
     display: flex;
