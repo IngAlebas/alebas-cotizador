@@ -131,17 +131,35 @@
           }
         }
       } catch (_) {}
-      // Cuando React monte, se desvanece automáticamente.
-      var splashHide = function () {
+      // Splash hide robusto. Tres triggers:
+      //   1. React monta (#root tiene hijos) → fade out + remove
+      //   2. Timeout máx 4s → force-hide pase lo que pase (caso de error JS,
+      //      red lenta o SW sirviendo bundle roto — el splash NO debe quedar
+      //      eterno bloqueando la pantalla y el scroll)
+      //   3. Tap del usuario en el splash → force-hide (escape hatch)
+      var splashRemoved = false;
+      var splashRemove = function () {
+        if (splashRemoved) return;
+        splashRemoved = true;
         var s = document.getElementById('splash');
-        if (s && document.getElementById('root').children.length > 0) {
+        if (s) {
           s.classList.add('hide');
-          setTimeout(function () { s && s.parentNode && s.parentNode.removeChild(s); }, 600);
-        } else {
-          setTimeout(splashHide, 100);
+          setTimeout(function () { try { s.parentNode && s.parentNode.removeChild(s); } catch (_) {} }, 500);
         }
       };
-      setTimeout(splashHide, 200);
+      var splashCheck = function () {
+        if (splashRemoved) return;
+        var root = document.getElementById('root');
+        if (root && root.children.length > 0) splashRemove();
+        else setTimeout(splashCheck, 80);
+      };
+      // Comenzar el polling rápido
+      setTimeout(splashCheck, 100);
+      // Force-hide a 4 segundos pase lo que pase (failsafe)
+      setTimeout(splashRemove, 4000);
+      // Tap en el splash lo cierra (escape para usuarios atascados)
+      var splashEl = document.getElementById('splash');
+      if (splashEl) splashEl.addEventListener('click', splashRemove, { once: true });
     </script>
 
     <!-- Service Worker Registration -->
