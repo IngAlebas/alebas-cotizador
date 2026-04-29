@@ -93,6 +93,27 @@ export default function App() {
     try { const ra = storage.get('sh:admin'); if (ra?.value==='1') setAdminAuth(true); } catch {}
   }, []);
 
+  // Tema de la app — light/dark/auto, persistente en localStorage. Default: dark.
+  const [theme, setTheme] = useState(() => {
+    try {
+      const stored = storage.get('sh:theme');
+      if (stored?.value && ['light', 'dark', 'auto'].includes(stored.value)) return stored.value;
+    } catch {}
+    return 'dark';
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    let effective = theme;
+    if (theme === 'auto') {
+      effective = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    root.setAttribute('data-theme', effective);
+    storage.set('sh:theme', theme);
+  }, [theme]);
+  const cycleTheme = () => {
+    setTheme(t => t === 'dark' ? 'light' : t === 'light' ? 'auto' : 'dark');
+  };
+
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
   const uP = d => { setPanels(d); sv('al:panels', d); };
   const uI = d => { setInverters(d); sv('al:inverters', d); };
@@ -193,6 +214,22 @@ export default function App() {
             <button onClick={logout} className="al-logout-btn" style={{ padding:'6px 11px', borderRadius:7, border:'1px solid #f8717133', cursor:'pointer', fontWeight:600, fontSize:11, background:'transparent', color:'#f87171', marginLeft:6 }}>×</button>
           )}
         </div>
+        {/* Toggle tema — fuera de al-topnav-btns para que también se vea en mobile */}
+        <button
+          onClick={cycleTheme}
+          className="al-theme-btn"
+          title={`Tema: ${theme} — click para cambiar`}
+          aria-label="Cambiar tema"
+          style={{
+            padding: '6px 10px', borderRadius: 7,
+            border: '1px solid var(--border)',
+            cursor: 'pointer', fontWeight: 600, fontSize: 16,
+            background: 'transparent', color: 'var(--muted)',
+            marginLeft: 6, lineHeight: 1, fontFamily: 'inherit',
+            flexShrink: 0,
+          }}>
+          {theme === 'dark' ? '🌙' : theme === 'light' ? '☀' : '🌓'}
+        </button>
       </nav>
 
       {/* ── BOTTOM NAV MOBILE ── */}
