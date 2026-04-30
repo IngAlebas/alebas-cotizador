@@ -170,17 +170,9 @@
   color: #fff !important;
 }
 
-/* Loading screen — siempre dark, regardless of theme. La pantalla de cálculo
-   es muy breve (5-15s) y mantener el feel premium dark con el spinner amarillo
-   da mejor experiencia que pelear con todos los inline-styles light. */
-[data-theme="light"] .al-loading-screen {
-  background: #07090F;
-}
-
-/* Cuando se muestra la pantalla de carga, ocultar el footer (en light theme
-   es blanco y rompe visualmente el card dark del loading; en dark también
-   simplifica la vista). El loading-screen pasa a ocupar todo el espacio
-   entre navbar y bottom-nav. */
+/* Loading screen — sigue el tema actual (light o dark) en lugar de forzar
+   dark. Se mantiene el ocultado del footer durante el cálculo y la altura
+   completa entre navbar y bottom-nav. */
 body:has(.al-loading-screen) .al-footer { display: none !important; }
 .al-loading-screen {
   min-height: calc(100vh - 56px) !important;
@@ -189,28 +181,6 @@ body:has(.al-loading-screen) .al-footer { display: none !important; }
   .al-loading-screen {
     min-height: calc(100vh - 52px - 58px - env(safe-area-inset-bottom, 0px)) !important;
   }
-}
-[data-theme="light"] .al-loading-screen [style*="color: rgb(255, 255, 255)"],
-[data-theme="light"] .al-loading-screen [style*="color: white"],
-[data-theme="light"] .al-loading-screen [style*="color:#fff" i],
-[data-theme="light"] .al-loading-screen [style*="color: #fff" i] {
-  color: #fff !important;
-}
-[data-theme="light"] .al-loading-screen [style*="rgb(232, 244, 247)"],
-[data-theme="light"] .al-loading-screen [style*="rgb(232,244,247)"],
-[data-theme="light"] .al-loading-screen [style*="#E8F4F7" i] {
-  color: #E8F4F7 !important;
-}
-[data-theme="light"] .al-loading-screen [style*="rgb(122, 158, 170)"],
-[data-theme="light"] .al-loading-screen [style*="rgb(122,158,170)"],
-[data-theme="light"] .al-loading-screen [style*="#7A9EAA" i] {
-  color: #7A9EAA !important;
-}
-[data-theme="light"] .al-loading-screen [style*="rgb(7, 9, 15)"] {
-  background-color: #07090F !important;
-}
-[data-theme="light"] .al-loading-screen [style*="rgb(12, 20, 34)"] {
-  background-color: #0C1422 !important;
 }
 
 /* ── BASE ── */
