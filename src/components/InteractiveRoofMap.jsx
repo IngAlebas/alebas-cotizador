@@ -167,6 +167,30 @@ export default function InteractiveRoofMap({
         center = { lat: pinLatRef + dLatF, lng: pinLngRef + dLngF };
       }
       if (!center) return;
+      // FALLBACK MARKER (siempre visible): marcador Google estándar en el
+      // center del segmento. Garantiza que el cliente vea AL MENOS un
+      // pin por cada cubierta detectada, aunque el polígono falle más
+      // abajo por cualquier razón. El marker queda detrás del polígono.
+      const fallbackCol = !!s.selected ? ACTIVE : AVAILABLE;
+      const fallbackMarker = new maps.Marker({
+        map: mapRef.current,
+        position: center,
+        icon: {
+          path: maps.SymbolPath.CIRCLE,
+          scale: 7,
+          fillColor: fallbackCol,
+          fillOpacity: 0.85,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
+        title: `Cubierta ${i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m²`,
+        clickable: !!onSegmentToggle && s._idx != null,
+        zIndex: 4,
+      });
+      if (onSegmentToggle && s._idx != null) {
+        fallbackMarker.addListener('click', () => onSegmentToggle(s._idx));
+      }
+      polygonsRef.current.push(fallbackMarker);
       const isActive = !!s.selected;
       const col = isActive ? ACTIVE : AVAILABLE;
       const areaM2 = s.areaMeters2 || 0;
@@ -442,8 +466,8 @@ export default function InteractiveRoofMap({
       path: points,
       geodesic: false,
       strokeColor: '#FFD93D',
-      strokeOpacity: 0.85,
-      strokeWeight: 1,
+      strokeOpacity: 1,
+      strokeWeight: 3,
       clickable: false,
       zIndex: 4,
       icons: [{
