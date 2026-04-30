@@ -130,12 +130,19 @@ export default function InteractiveRoofMap({
     const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
     const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
     segments.forEach((s, i) => {
-      const center = s.center && s.center.lat && s.center.lng
-        ? { lat: s.center.lat, lng: s.center.lng }
-        : (s.boundingBox && s.boundingBox.sw && s.boundingBox.ne
-          ? { lat: (s.boundingBox.sw.lat + s.boundingBox.ne.lat) / 2,
-              lng: (s.boundingBox.sw.lng + s.boundingBox.ne.lng) / 2 }
-          : null);
+      // Defensive: validar coords numéricas antes de usar. Si alguna es NaN
+      // o faltante, intentar bbox (también con check) o saltar el segmento.
+      let center = null;
+      if (s.center && Number.isFinite(s.center.lat) && Number.isFinite(s.center.lng)) {
+        center = { lat: s.center.lat, lng: s.center.lng };
+      } else if (s.boundingBox && s.boundingBox.sw && s.boundingBox.ne
+                 && Number.isFinite(s.boundingBox.sw.lat) && Number.isFinite(s.boundingBox.sw.lng)
+                 && Number.isFinite(s.boundingBox.ne.lat) && Number.isFinite(s.boundingBox.ne.lng)) {
+        center = {
+          lat: (s.boundingBox.sw.lat + s.boundingBox.ne.lat) / 2,
+          lng: (s.boundingBox.sw.lng + s.boundingBox.ne.lng) / 2,
+        };
+      }
       if (!center) return;
       const isActive = !!s.selected;
       const col = isActive ? ACTIVE : AVAILABLE;
@@ -341,7 +348,8 @@ export default function InteractiveRoofMap({
       labelsRef.current.push(label);
     });
     // Auto-fit a los círculos.
-    const validCenters = segments.filter(s => s.center && s.center.lat && s.center.lng);
+    const validCenters = segments.filter(s => s.center
+      && Number.isFinite(s.center.lat) && Number.isFinite(s.center.lng));
     if (validCenters.length > 0) {
       // Centro = promedio de coords (centroid). Más confiable que fitBounds
       // para fijar zoom alto: fitBounds elige zoom según los bounds y el
