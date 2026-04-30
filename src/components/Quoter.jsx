@@ -274,6 +274,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (!f.addressSameAsInstall) return;
     if (roofQuery && roofQuery !== f.address) u('address', roofQuery);
   }, [f.addressSameAsInstall, roofQuery, f.address]);
+  // Sincronización inversa: si el cliente tipea la dirección en step 2 SIN
+  // haber estimado área en step 1 (roofQuery vacío), alimentar roofQuery
+  // para que al volver a step 1 y darle 'Estimar área' Google Solar use esa
+  // dirección. Solo cuando el toggle 'misma dirección' está activo.
+  useEffect(() => {
+    if (!f.addressSameAsInstall) return;
+    if (f.address && f.address !== roofQuery) setRoofQuery(f.address);
+  }, [f.addressSameAsInstall, f.address]);  // eslint-disable-line
   const contactPlacesSessionRef = React.useRef(null);
   const contactAddrDebounceRef = React.useRef(null);
   // Recomendación IA post-cálculo
