@@ -140,36 +140,71 @@ export default function InteractiveRoofMap({
       const isActive = !!s.selected;
       const col = isActive ? ACTIVE : AVAILABLE;
       const areaM2 = s.areaMeters2 || 0;
-      const radius = Math.max(1.5, Math.min(8, Math.sqrt(areaM2 / Math.PI)));
       const isClickable = !!onSegmentToggle && s._idx != null;
       // Solo las cubiertas CUSTOM (_custom: true) son arrastrables. Las
       // detectadas por Google Solar tienen posición fija.
       const isDraggable = !!onSegmentMove && s._custom && s._idx != null;
-      const circle = new maps.Circle({
+      // POLÍGONO RECTANGULAR ROTADO POR AZIMUT — visualiza la orientación
+      // real del techo (el lado largo va paralelo al lomo, perpendicular
+      // al azimut). Reemplaza al círculo simple por una representación
+      // más fiel a la geometría del techo.
+      const azDegSeg = s.azimuthDegrees != null ? Number(s.azimuthDegrees) : 180;
+      // Lado del cuadrado equivalente al área del segmento. Aspecto 1.4:1
+      // (más ancho a lo largo del lomo, más estrecho en sentido de la
+      // pendiente — típico de techos a 1 agua).
+      const baseSide = Math.sqrt(Math.max(4, areaM2));
+      const widthM = baseSide * 1.18;   // perpendicular al azimut (lomo)
+      const heightM = baseSide * 0.85;  // a lo largo del azimut (pendiente)
+      // Rotación: el azimut indica DOWN-slope. El lado largo (width) va
+      // perpendicular = paralelo al lomo. Convertir a coords lat/lng.
+      const azRadSeg = (azDegSeg * Math.PI) / 180;
+      const cosA = Math.cos(azRadSeg), sinA = Math.sin(azRadSeg);
+      const latM = 1 / 111000;
+      const lngM = 1 / (111000 * Math.cos(center.lat * Math.PI / 180));
+      // Esquinas en sistema local (x = perpendicular al azimut, y = a lo
+      // largo del azimut), luego rotadas y traducidas a lat/lng.
+      const corners = [
+        [-widthM / 2, -heightM / 2],
+        [ widthM / 2, -heightM / 2],
+        [ widthM / 2,  heightM / 2],
+        [-widthM / 2,  heightM / 2],
+      ].map(([lx, ly]) => {
+        // Rotación 2D: x' = x cos - y sin, y' = x sin + y cos
+        // PERO el azimut es bearing desde Norte; tenemos que mapear:
+        //   eje x local (perpendicular al azimut) = dirección del lomo
+        //   eje y local (a lo largo del azimut) = dirección de la pendiente
+        const dx = lx * cosA - ly * sinA;   // delta este (m)
+        const dy = lx * sinA + ly * cosA;   // delta norte (m)
+        return {
+          lat: center.lat + dy * latM,
+          lng: center.lng + dx * lngM,
+        };
+      });
+      const polygon = new maps.Polygon({
         map: mapRef.current,
-        center,
-        radius,
+        paths: corners,
         strokeColor: col,
-        strokeOpacity: isActive ? 0.55 : 0.25,
-        strokeWeight: isActive ? 1.8 : 1,
+        strokeOpacity: isActive ? 0.85 : 0.4,
+        strokeWeight: isActive ? 2 : 1.2,
         fillColor: col,
-        fillOpacity: isActive ? 0.10 : 0.04,
+        fillOpacity: isActive ? 0.22 : 0.08,
         clickable: isClickable || isDraggable,
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
       });
-      if (isClickable) circle.addListener('click', () => onSegmentToggle(s._idx));
+      if (isClickable) polygon.addListener('click', () => onSegmentToggle(s._idx));
       if (isDraggable) {
-        // Al terminar el drag, emitir el nuevo center al padre para que
-        // actualice f.customSegments. El label flotante se reposiciona
-        // automáticamente en el próximo render del effect (dependencia
-        // 'segments' cambia y redraws).
-        circle.addListener('dragend', () => {
-          const c = circle.getCenter();
-          if (c) onSegmentMove(s._idx, { lat: c.lat(), lng: c.lng() });
+        // Al terminar el drag, calcular el nuevo centroide del polígono
+        // y emitirlo al padre para que actualice f.customSegments.center.
+        polygon.addListener('dragend', () => {
+          const path = polygon.getPath();
+          let sumLat = 0, sumLng = 0;
+          path.forEach(pt => { sumLat += pt.lat(); sumLng += pt.lng(); });
+          const n = path.getLength();
+          if (n > 0) onSegmentMove(s._idx, { lat: sumLat / n, lng: sumLng / n });
         });
       }
-      polygonsRef.current.push(circle);
+      polygonsRef.current.push(polygon);
       // Label flotante clickable con número + área.
       const labelEl = document.createElement('div');
       labelEl.style.cssText = `
@@ -197,17 +232,33 @@ export default function InteractiveRoofMap({
       }
       const label = new maps.OverlayView();
       label.onAdd = function () { this.getPanes().overlayLayer.appendChild(labelEl); };
-      // Offset perpendicular al azimut: separa labels de cubiertas vecinas
-      // y los alinea con la geometría real del techo. Sign alterna por idx
-      // para que cubiertas adyacentes no queden encima.
-      const azDeg = s.azimuthDegrees != null ? Number(s.azimuthDegrees) : 180;
-      const perpDeg = (azDeg + 90) % 360;
-      const perpRad = (perpDeg * Math.PI) / 180;
-      const offsetM = 6 + (i % 3) * 2;  // 6, 8, 10m alternando
-      const sign = i % 2 === 0 ? 1 : -1;
-      const dLat = (Math.cos(perpRad) * offsetM * sign) / 111000;
-      const dLng = (Math.sin(perpRad) * offsetM * sign) / (111000 * Math.cos(center.lat * Math.PI / 180));
+      // Offset del label hacia AFUERA del techo (en dirección del azimut,
+      // o sea down-slope) — es donde típicamente hay espacio libre entre
+      // techos contiguos. Sign alterna para que cubiertas adyacentes no
+      // queden encima si están alineadas.
+      const perpDeg = (azDegSeg + 90) % 360;  // lateral al lomo
+      const offsetM = baseSide * 0.85 + 3;    // fuera del polígono
+      const useAxis = i % 2 === 0 ? 'down-slope' : 'lateral';
+      const azChoice = useAxis === 'down-slope' ? azDegSeg : perpDeg;
+      const dirRad = (azChoice * Math.PI) / 180;
+      const sign = (i % 4) < 2 ? 1 : -1;
+      const dLat = (Math.cos(dirRad) * offsetM * sign) / 111000;
+      const dLng = (Math.sin(dirRad) * offsetM * sign) / (111000 * Math.cos(center.lat * Math.PI / 180));
       const labelCenter = { lat: center.lat + dLat, lng: center.lng + dLng };
+      // LÍNEA GUÍA: del centro del polígono al label, así el cliente sabe
+      // QUÉ label corresponde a QUÉ cubierta sin ambigüedad. Línea delgada
+      // del color del segmento, semi-transparente.
+      const leader = new maps.Polyline({
+        map: mapRef.current,
+        path: [center, labelCenter],
+        geodesic: false,
+        strokeColor: col,
+        strokeOpacity: isActive ? 0.7 : 0.35,
+        strokeWeight: 1,
+        clickable: false,
+        zIndex: isActive ? 4 : 3,
+      });
+      polygonsRef.current.push(leader);
       label.draw = function () {
         const proj = this.getProjection();
         if (!proj) return;
