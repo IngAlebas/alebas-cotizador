@@ -129,19 +129,25 @@ export default function InteractiveRoofMap({
     if (!Array.isArray(segments) || segments.length === 0) return;
     const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
     const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
+    // PIN COORDS — referencia universal para fallback. Las computamos una sola
+    // vez fuera del loop para garantizar que NO sean shadowed por variables
+    // internas (bug histórico de la versión anterior).
+    const pinLatRef = Number(lat);
+    const pinLngRef = Number(lon);
+    const pinValid = Number.isFinite(pinLatRef) && Number.isFinite(pinLngRef);
+    // Helper para extraer coords de cualquier objeto (acepta lat/lng o
+    // latitude/longitude). Definido fuera del forEach para evitar recreación
+    // en cada iteración.
+    const pickCoords = (obj) => {
+      if (!obj) return null;
+      const la = obj.lat ?? obj.latitude;
+      const lo = obj.lng ?? obj.longitude;
+      if (Number.isFinite(la) && Number.isFinite(lo)) return { lat: la, lng: lo };
+      return null;
+    };
+    let renderedCount = 0;
     segments.forEach((s, i) => {
       try {
-      // Defensive: validar coords numéricas antes de usar. Aceptar AMBOS
-      // formatos: {lat, lng} (workflow n8n actualizado) y {latitude,
-      // longitude} (formato Google Solar API original — si n8n no fue
-      // re-importado tras la migración).
-      const pickCoords = (obj) => {
-        if (!obj) return null;
-        const lat = obj.lat ?? obj.latitude;
-        const lng = obj.lng ?? obj.longitude;
-        if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-        return null;
-      };
       let center = pickCoords(s.center);
       if (!center && s.boundingBox) {
         const sw = pickCoords(s.boundingBox.sw);
@@ -149,16 +155,16 @@ export default function InteractiveRoofMap({
         if (sw && ne) center = { lat: (sw.lat + ne.lat) / 2, lng: (sw.lng + ne.lng) / 2 };
       }
       // FALLBACK FINAL: si el segmento NO trae coords (n8n viejo, datos
-      // truncados, etc), generar un center cerca del pin principal con
-      // offset distribuido en círculo según índice. Mejor mostrar algo
-      // (aunque sea aproximado) que dejar el mapa vacío.
-      if (!center && Number.isFinite(Number(lat)) && Number.isFinite(Number(lon))) {
-        const baseR = 8;  // metros desde el pin
+      // truncados, custom segments sin center), generar uno alrededor del
+      // pin principal. Distribución radial para que cubiertas adyacentes
+      // no se superpongan.
+      if (!center && pinValid) {
+        const baseR = 8;
         const angle = (i / Math.max(1, segments.length)) * 2 * Math.PI;
         const offM = baseR + (i % 3) * 4;
         const dLatF = (Math.cos(angle) * offM) / 111000;
-        const dLngF = (Math.sin(angle) * offM) / (111000 * Math.cos(Number(lat) * Math.PI / 180));
-        center = { lat: Number(lat) + dLatF, lng: Number(lon) + dLngF };
+        const dLngF = (Math.sin(angle) * offM) / (111000 * Math.cos(pinLatRef * Math.PI / 180));
+        center = { lat: pinLatRef + dLatF, lng: pinLngRef + dLngF };
       }
       if (!center) return;
       const isActive = !!s.selected;
