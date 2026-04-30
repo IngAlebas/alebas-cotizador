@@ -1715,7 +1715,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             const totalActiveArea = allSegments
               .filter(s => selectedSegmentIdx.has(s._idx))
               .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
-            const maxArea = Math.max(...allSegments.map(s => s.areaMeters2 || 0));
+            const maxArea = allSegments.length
+              ? Math.max(...allSegments.map(s => s.areaMeters2 || 0))
+              : 0;
             const isManual = manualSegmentSelection !== null;
             // Estimación pedagógica para usuarios no técnicos: cuántos m² se necesitan
             // típicamente para cubrir el consumo declarado.
