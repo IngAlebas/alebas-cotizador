@@ -2385,15 +2385,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   }, 350);
                 }}
                 onFocus={() => setContactAddrSuggestOpen(true)}
-                onBlur={() => {
-                  setTimeout(() => setContactAddrSuggestOpen(false), 200);
-                  // Sync inverso al perder foco — si el toggle 'misma del
-                  // install' está activo y roofQuery está vacío, alimentar
-                  // step 1 con la dirección que acaba de tipear.
-                  if (f.addressSameAsInstall && f.address && f.address !== roofQuery) {
-                    setRoofQuery(f.address);
-                  }
-                }}
+                onBlur={() => setTimeout(() => setContactAddrSuggestOpen(false), 200)}
                 placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
                 autoComplete="street-address"
               />
