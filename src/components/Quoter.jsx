@@ -1954,21 +1954,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             const significant = Math.abs(diffPct) >= 30;
             if (!significant) return null;
             const userBigger = diffPct > 0;
+            // Área que el sistema realmente USARÁ — la mínima necesaria para
+            // cubrir 100% del consumo, no la declarada total. Aclarar al cliente
+            // que la declaración es 'área disponible' pero el sistema dimensiona
+            // por consumo, NO usa todo el techo.
+            const reqKwp = consumptionKwp * 1.15;  // +15% buffer real-world yield
+            const reqPanels = panel?.wp ? Math.ceil(reqKwp * 1000 / panel.wp) : 0;
+            const reqArea = Math.round(reqPanels * m2PerPanel);
             return (
               <div style={{ marginTop: 8, padding: '10px 12px', background: `${C.yellow}10`, border: `1px solid ${C.yellow}55`, borderRadius: 8, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
-                <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>⚠ Discrepancia área declarada vs Google Solar</div>
+                <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>ℹ Área disponible vs área que se usará</div>
                 <div style={{ fontSize: 10, color: C.muted }}>
-                  Tu declaración: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
-                  Google detectó: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
+                  Disponible declarada: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
+                  Detectada Google: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
                   Diferencia: <strong style={{ color: userBigger ? C.orange : C.teal }}>{userBigger ? '+' : ''}{diffPct.toFixed(0)}%</strong>
                 </div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                {reqArea > 0 && (
+                  <div style={{ fontSize: 11, color: C.text, marginTop: 6, padding: '6px 10px', background: `${C.green}15`, border: `1px solid ${C.green}55`, borderRadius: 6 }}>
+                    <strong style={{ color: '#4ade80' }}>✓ El sistema solo usará ~{reqArea} m²</strong>{' '}
+                    ({reqPanels} paneles de {panel?.wp || 0} W) — la porción mínima del techo necesaria para cubrir el 100% de tu consumo. El resto del área queda libre.
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>
                   {userBigger
-                    ? `Tu área supera lo detectado por Google. Verifica si estás incluyendo patios cubiertos, anexos no contiguos, o áreas con obstáculos (ductos AC, antenas, claraboyas) que satélite no descuenta.`
-                    : `Google detecta más techo del que declaraste. Puede haber área aprovechable adicional — confirma si la limitación es voluntaria (paneles existentes, vista preservada, arrendamiento).`}
-                </div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-                  El cotizador usa <strong style={{ color: '#fff' }}>tu declaración</strong> ({userArea} m²) — el cliente sabe qué porción del techo va a usar.
+                    ? 'Tu declaración supera lo detectado por Google (puede incluir patios cubiertos o anexos que el satélite no ve). No afecta el cálculo: el sistema dimensiona por consumo.'
+                    : 'Google detecta más techo del que declaraste. Tu área declarada es lo máximo que el sistema considerará disponible.'}
                 </div>
               </div>
             );
