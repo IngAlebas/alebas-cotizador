@@ -127,8 +127,8 @@ export default function InteractiveRoofMap({
     labelsRef.current.forEach(l => l.setMap(null));
     labelsRef.current = [];
     if (!Array.isArray(segments) || segments.length === 0) return;
-    const ACTIVE = '#4ade80';
-    const AVAILABLE = '#7A9EAA';
+    const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
+    const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
     segments.forEach((s, i) => {
       const center = s.center && s.center.lat && s.center.lng
         ? { lat: s.center.lat, lng: s.center.lng }
@@ -183,11 +183,15 @@ export default function InteractiveRoofMap({
       const polygon = new maps.Polygon({
         map: mapRef.current,
         paths: corners,
-        strokeColor: isActive ? '#ffffff' : col,  // borde BLANCO para activos: máximo contraste sobre satellite
-        strokeOpacity: isActive ? 1 : 0.6,
-        strokeWeight: isActive ? 3 : 1.5,
+        // Halo BLANCO para todos (activos e inactivos) — máximo contraste
+        // sobre satellite. Antes solo activos tenían halo. Ahora todos
+        // los polígonos son claramente distinguibles, pero los activos
+        // se diferencian por color verde + outline interno + fill más denso.
+        strokeColor: '#ffffff',
+        strokeOpacity: isActive ? 1 : 0.85,
+        strokeWeight: isActive ? 3 : 2,
         fillColor: col,
-        fillOpacity: isActive ? 0.45 : 0.12,
+        fillOpacity: isActive ? 0.45 : 0.25,
         clickable: isClickable || isDraggable,
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
@@ -205,21 +209,21 @@ export default function InteractiveRoofMap({
         });
       }
       polygonsRef.current.push(polygon);
-      // Para activos: agregar un borde interno en color (sobre el blanco)
-      // para reforzar el contraste contra el satellite. Doble borde =
-      // halo blanco + outline verde, máxima visibilidad sin ocultar techo.
+      // Borde interno en color del segmento (verde para activo, naranja
+      // para inactivo) sobre el halo blanco — DOBLE BORDE estilo
+      // 'highlighter' que distingue cubiertas en cualquier satellite.
+      const innerOutline = new maps.Polygon({
+        map: mapRef.current,
+        paths: corners,
+        strokeColor: col,
+        strokeOpacity: isActive ? 0.95 : 0.85,
+        strokeWeight: isActive ? 1.5 : 1.2,
+        fillOpacity: 0,
+        clickable: false,
+        zIndex: isActive ? 7 : 6,
+      });
+      polygonsRef.current.push(innerOutline);
       if (isActive) {
-        const innerOutline = new maps.Polygon({
-          map: mapRef.current,
-          paths: corners,
-          strokeColor: col,
-          strokeOpacity: 0.95,
-          strokeWeight: 1.5,
-          fillOpacity: 0,
-          clickable: false,
-          zIndex: 7,
-        });
-        polygonsRef.current.push(innerOutline);
         // FLECHA DE ORIENTACIÓN AL SOL sobre la cubierta — desde el lomo
         // (lado norte del techo) hacia el azimut (down-slope, donde el
         // techo "mira"). Visualiza dónde caen los rayos del sol en este
