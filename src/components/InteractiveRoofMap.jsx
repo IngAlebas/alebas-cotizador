@@ -174,18 +174,26 @@ export default function InteractiveRoofMap({
       // pin por cada cubierta detectada, aunque el polígono falle más
       // abajo por cualquier razón. El marker queda detrás del polígono.
       const fallbackCol = !!s.selected ? ACTIVE : AVAILABLE;
+      // Marker con label numérico — referencia visible sobre el satellite.
+      // Cada cubierta detectada queda identificada con su número (1, 2, 3...).
       const fallbackMarker = new maps.Marker({
         map: mapRef.current,
         position: center,
         icon: {
           path: maps.SymbolPath.CIRCLE,
-          scale: 7,
+          scale: 12,
           fillColor: fallbackCol,
-          fillOpacity: 0.85,
+          fillOpacity: 0.92,
           strokeColor: '#ffffff',
-          strokeWeight: 2,
+          strokeWeight: 2.5,
         },
-        title: `Cubierta ${i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m²`,
+        label: {
+          text: s._custom ? 'M' : String(i + 1),
+          color: '#ffffff',
+          fontSize: '12px',
+          fontWeight: '800',
+        },
+        title: `Cubierta ${s._custom ? 'manual' : i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m² · ${s.selected ? 'ACTIVA' : 'disponible'}`,
         clickable: !!onSegmentToggle && s._idx != null,
         zIndex: 4,
       });
