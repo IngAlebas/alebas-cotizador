@@ -1,5 +1,5 @@
-const CACHE_NAME = 'solarhub-v1';
-const STATIC_CACHE = 'solarhub-static-v1';
+const CACHE_NAME = 'solarhub-v2';
+const STATIC_CACHE = 'solarhub-static-v2';
 
 // Assets to cache on install
 const PRECACHE_URLS = [
