@@ -288,7 +288,60 @@ export default function InteractiveRoofMap({
         zIndex: isActive ? 7 : 6,
       });
       polygonsRef.current.push(innerOutline);
-      if (isActive) {
+      // GRID DE PANELES SINTÉTICO (estilo Google Solar Platform)
+      // Para cubiertas ACTIVAS, renderizar pequeños rectángulos azules
+      // representando los paneles que se instalarían. Distribuidos en
+      // grid orientado al azimut, dentro del área de la cubierta.
+      if (isActive && areaM2 > 0) {
+        const PANEL_COLOR = '#3b82f6';  // azul típico paneles
+        // Cuántos paneles caben en este segmento (con packing 65%)
+        const panelArea = panelW * panelH;
+        const panelsCount = Math.floor((areaM2 * 0.65) / panelArea);
+        if (panelsCount > 0) {
+          // Dimensiones del grid (cols × rows) para que ~quepa en widthM × heightM
+          const cols = Math.max(1, Math.floor(widthM / panelW));
+          const rows = Math.max(1, Math.ceil(panelsCount / cols));
+          // Comenzar grid en esquina inferior-izquierda local
+          const totalGridW = cols * panelW;
+          const totalGridH = rows * panelH;
+          const startX = -totalGridW / 2;
+          const startY = -totalGridH / 2;
+          let drawn = 0;
+          for (let r = 0; r < rows && drawn < panelsCount; r++) {
+            for (let c = 0; c < cols && drawn < panelsCount; c++) {
+              const lx = startX + c * panelW + panelW / 2;
+              const ly = startY + r * panelH + panelH / 2;
+              const halfW = panelW * 0.45, halfH = panelH * 0.45;
+              const localCorners = [
+                [lx - halfW, ly - halfH],
+                [lx + halfW, ly - halfH],
+                [lx + halfW, ly + halfH],
+                [lx - halfW, ly + halfH],
+              ];
+              const panelCorners = localCorners.map(([px, py]) => {
+                const dx = px * cosA - py * sinA;
+                const dy = px * sinA + py * cosA;
+                return {
+                  lat: center.lat + dy * latM,
+                  lng: center.lng + dx * lngM,
+                };
+              });
+              const panelPoly = new maps.Polygon({
+                map: mapRef.current,
+                paths: panelCorners,
+                strokeColor: '#1e3a8a',  // borde azul oscuro
+                strokeOpacity: 0.7,
+                strokeWeight: 0.5,
+                fillColor: PANEL_COLOR,
+                fillOpacity: 0.85,
+                clickable: false,
+                zIndex: 9,
+              });
+              polygonsRef.current.push(panelPoly);
+              drawn++;
+            }
+          }
+        }
         // FLECHA DE ORIENTACIÓN AL SOL sobre la cubierta — desde el lomo
         // (lado norte del techo) hacia el azimut (down-slope, donde el
         // techo "mira"). Visualiza dónde caen los rayos del sol en este
