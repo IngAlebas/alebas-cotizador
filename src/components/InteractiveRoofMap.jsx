@@ -197,10 +197,21 @@ export default function InteractiveRoofMap({
       }
       const label = new maps.OverlayView();
       label.onAdd = function () { this.getPanes().overlayLayer.appendChild(labelEl); };
+      // Offset perpendicular al azimut: separa labels de cubiertas vecinas
+      // y los alinea con la geometría real del techo. Sign alterna por idx
+      // para que cubiertas adyacentes no queden encima.
+      const azDeg = s.azimuthDegrees != null ? Number(s.azimuthDegrees) : 180;
+      const perpDeg = (azDeg + 90) % 360;
+      const perpRad = (perpDeg * Math.PI) / 180;
+      const offsetM = 6 + (i % 3) * 2;  // 6, 8, 10m alternando
+      const sign = i % 2 === 0 ? 1 : -1;
+      const dLat = (Math.cos(perpRad) * offsetM * sign) / 111000;
+      const dLng = (Math.sin(perpRad) * offsetM * sign) / (111000 * Math.cos(center.lat * Math.PI / 180));
+      const labelCenter = { lat: center.lat + dLat, lng: center.lng + dLng };
       label.draw = function () {
         const proj = this.getProjection();
         if (!proj) return;
-        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(center.lat, center.lng));
+        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(labelCenter.lat, labelCenter.lng));
         if (pt) { labelEl.style.position = 'absolute'; labelEl.style.left = pt.x + 'px'; labelEl.style.top = pt.y + 'px'; }
       };
       label.onRemove = function () { if (labelEl.parentNode) labelEl.parentNode.removeChild(labelEl); };
@@ -216,10 +227,11 @@ export default function InteractiveRoofMap({
       const avgLat = validCenters.reduce((a, s) => a + s.center.lat, 0) / validCenters.length;
       const avgLng = validCenters.reduce((a, s) => a + s.center.lng, 0) / validCenters.length;
       mapRef.current.setCenter({ lat: avgLat, lng: avgLng });
-      // Zoom 21 = máximo útil (max=22 reservado para zoom manual). Da el
-      // mayor acercamiento posible sobre las cubiertas detectadas por
-      // Google sin perder contexto del techo.
-      mapRef.current.setZoom(21);
+      // Zoom 22 = MÁXIMO de Google Maps. Antes era 21 'reservando' un nivel
+      // para zoom manual, pero el cliente reporta que no puede acercar más.
+      // Arrancando en 22 garantizamos el max possible inmediatamente. Si
+      // no hay imagery a ese nivel, Google fallback a 21 automáticamente.
+      mapRef.current.setZoom(22);
     }
   }, [segments, ready]);
 
