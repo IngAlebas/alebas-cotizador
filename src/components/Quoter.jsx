@@ -1527,7 +1527,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1, background: C.border }}>
                   <div>
                     <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Satelital · zoom 20 · arrastra el pin</span>
+                      <span>Satelital · arrastra el pin · zoom con pellizco</span>
                       <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
                     </div>
                     <InteractiveRoofMap
