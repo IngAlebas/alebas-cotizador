@@ -58,7 +58,7 @@ export async function fetchPVWatts(lat, lon, kwp, tilt = 10, azimuth = 180) {
   if (n8nConfigured()) {
     try {
       data = await n8nPost('pvwatts', { lat, lon, kwp, tilt, azimuth });
-      if (!data?.annualKwh) throw new Error('PVWatts n8n: respuesta sin annualKwh');
+      if (!data?.annualKwh) throw new Error('Modelo de producción no disponible.');
     } catch (e) {
       if (NREL_KEY) {
         data = await fetchDirect(lat, lon, kwp, tilt, azimuth);
