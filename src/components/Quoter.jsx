@@ -36,6 +36,12 @@ const Q0 = {
   // de inversores (phase 1 vs 3) en selectCompatibleInverter.
   acometida: 'bifasico',
   phaseManual: false,    // true = usuario forzó la acometida
+  // Tipo de servicio (CREG 091/015 + CREG 174/2021) — gobierna:
+  //   - Tarifa CU aplicable (G+T+D+Cv+PR+R por nivel de tensión)
+  //   - Subsidios/contribuciones (solo residencial: estratos 1-3 subsidio, 5-6 contribución)
+  //   - Esquema AGPE Menor (≤100 kW, CU−G) vs Mayor (>100 kW, precio bolsa XM)
+  //   - Aplicación CREG 174/2021 art. 7 sobre remuneración de excedentes
+  serviceCategory: 'residencial',  // 'residencial' | 'comercial' | 'industrial'
   // Dimensionamiento de almacenamiento
   backupHours: 4,        // Horas de respaldo (Híbrido)
   autonomyDays: 1,       // Días sin sol (Off-grid)
@@ -1177,6 +1183,45 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         </div>
         <div style={{ marginBottom: 13 }}>
+          <label style={{ ...ss.lbl, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>Tipo de servicio (CREG 091)</span>
+            <span style={{ fontSize: 9, color: C.muted, fontWeight: 400 }}>· determina tarifa CU y excedentes</span>
+          </label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[
+              { id: 'residencial', label: 'Residencial', desc: 'Estratos 1-6 · vivienda', icon: '🏠' },
+              { id: 'comercial',   label: 'Comercial',   desc: 'Local, oficina, negocio', icon: '🏢' },
+              { id: 'industrial',  label: 'Industrial',  desc: 'Planta, fábrica, alta carga', icon: '🏭' },
+            ].map(opt => {
+              const active = f.serviceCategory === opt.id;
+              return (
+                <button key={opt.id} type="button" onClick={() => u('serviceCategory', opt.id)}
+                  style={{ flex: '1 1 140px', minWidth: 130, padding: '8px 10px', borderRadius: 7,
+                           border: `2px solid ${active ? C.teal : C.border}`,
+                           background: active ? `${C.teal}22` : 'transparent',
+                           color: active ? C.teal : '#fff', cursor: 'pointer',
+                           textAlign: 'left', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.icon} {opt.label}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{opt.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, lineHeight: 1.55, marginTop: 6, padding: '8px 11px',
+                        background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 7, color: C.text }}>
+            <strong style={{ color: C.teal }}>📋 Cómo afecta tu cotización:</strong>{' '}
+            {f.serviceCategory === 'residencial' && (
+              <>El consumo se factura a la <strong>tarifa CU residencial</strong> de tu operador (con subsidio en estratos 1-3 o contribución en 5-6, no calculados aquí). Tus <strong>excedentes</strong> se remuneran a <strong style={{ color: C.yellow }}>CU − G</strong> (CREG 174/2021 art. 7) — incluye T+D+Cv+PR+R.</>
+            )}
+            {f.serviceCategory === 'comercial' && (
+              <>El consumo se factura a la <strong>tarifa CU comercial</strong> (sin subsidios, posibles contribuciones según operador). Tus <strong>excedentes</strong> se remuneran a <strong style={{ color: C.yellow }}>CU − G</strong> si tu sistema es AGPE Menor (≤100 kW); si supera 100 kW, se valoran a <strong style={{ color: C.yellow }}>precio bolsa XM</strong> (CREG 174/2021).</>
+            )}
+            {f.serviceCategory === 'industrial' && (
+              <>El consumo se factura a la <strong>tarifa CU industrial</strong> (típicamente nivel de tensión N2-N3, sin subsidios). Tus <strong>excedentes</strong> dependen del tamaño: AGPE Menor (≤100 kW) → <strong style={{ color: C.yellow }}>CU − G</strong>; AGPE Mayor (100 kW–1 MW) → <strong style={{ color: C.yellow }}>precio bolsa XM</strong>. Recomendado contrato de venta de energía con un comercializador.</>
+            )}
+          </div>
+        </div>
+        <div style={{ marginBottom: 13 }}>
           <label style={ss.lbl}>Acometida / fases de la carga (RETIE 240)</label>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {['monofasico', 'bifasico', 'trifasico'].map(ph => {
@@ -1197,7 +1242,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
           <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
             {f.phaseManual ? 'Selección manual.' : `Sugerido por consumo: ${ACOMETIDA_INFO[suggestedAcometida].label}.`}
-            {' '}<span style={{ color: C.teal }}>{ACOMETIDA_INFO[f.acometida].retie}</span>
             {' · '}El inversor se filtra por fase: {f.acometida === 'trifasico' ? 'trifásico (3F)' : 'monofásico / bifásico (1F)'}.
             {f.phaseManual && <button type="button" onClick={() => u('phaseManual', false)} style={{ marginLeft: 8, background: 'transparent', border: 'none', color: C.teal, cursor: 'pointer', fontSize: 10, textDecoration: 'underline' }}>auto</button>}
           </div>
@@ -1424,19 +1468,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </span>
                   )}
                   {f.roofImagery.imageryQuality && <> · <span style={{ color: C.teal }}>{f.roofImagery.imageryQuality}</span></>}
-                </div>
-              )}
-              {f.roofImagery && (f.roofImagery.rgbUrl || f.roofImagery.annualFluxUrl || f.roofImagery.dsmUrl) && (
-                <div style={{ marginTop: 4, fontSize: 9, color: C.muted, lineHeight: 1.5 }}>
-                  <div style={{ color: C.muted, marginBottom: 2 }}>📦 Archivos técnicos (.tif para análisis GIS — el preview visible es la imagen satelital de arriba):</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingLeft: 6 }}>
-                    {f.roofImagery.rgbUrl && <a href={f.roofImagery.rgbUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>RGB.tif ↓</a>}
-                    {f.roofImagery.dsmUrl && <a href={f.roofImagery.dsmUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>DSM.tif ↓</a>}
-                    {f.roofImagery.maskUrl && <a href={f.roofImagery.maskUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>máscara.tif ↓</a>}
-                    {f.roofImagery.annualFluxUrl && <a href={f.roofImagery.annualFluxUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>flujo anual.tif ↓</a>}
-                    {f.roofImagery.monthlyFluxUrl && <a href={f.roofImagery.monthlyFluxUrl} target="_blank" rel="noreferrer" download style={{ color: C.teal, textDecoration: 'none' }}>flujo mensual.tif ↓</a>}
-                    {f.roofImagery.hourlyShadeUrls?.length > 0 && <span>{f.roofImagery.hourlyShadeUrls.length} capas sombra horaria</span>}
-                  </div>
+                  {f.roofImagery.hourlyShadeUrls?.length > 0 && (
+                    <> · <span style={{ color: C.muted, fontSize: 10 }}>{f.roofImagery.hourlyShadeUrls.length} capas de sombra horaria analizadas</span></>
+                  )}
                 </div>
               )}
               <div style={{ marginTop: 3 }}>
