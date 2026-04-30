@@ -220,6 +220,43 @@ export default function InteractiveRoofMap({
           zIndex: 7,
         });
         polygonsRef.current.push(innerOutline);
+        // FLECHA DE ORIENTACIÓN AL SOL sobre la cubierta — desde el lomo
+        // (lado norte del techo) hacia el azimut (down-slope, donde el
+        // techo "mira"). Visualiza dónde caen los rayos del sol en este
+        // techo específico. Color naranja distinto al del polígono para
+        // que destaque sin confundirse con el borde verde.
+        // Inicio de la flecha: punto a -heightM/2 en el sistema local
+        //   (en sentido contrario al azimut), traducido al mapa.
+        // Fin de la flecha: punto a +heightM/2 en el sistema local.
+        const arrowStartLocal = [0, -heightM * 0.45];
+        const arrowEndLocal = [0, heightM * 0.45];
+        const toLatLng = ([lx, ly]) => {
+          const dx = lx * cosA - ly * sinA;
+          const dy = lx * sinA + ly * cosA;
+          return { lat: center.lat + dy * latM, lng: center.lng + dx * lngM };
+        };
+        const sunArrow = new maps.Polyline({
+          map: mapRef.current,
+          path: [toLatLng(arrowStartLocal), toLatLng(arrowEndLocal)],
+          geodesic: false,
+          strokeColor: '#FFD93D',
+          strokeOpacity: 0.95,
+          strokeWeight: 2.5,
+          clickable: false,
+          zIndex: 8,
+          icons: [{
+            icon: {
+              path: maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 3.5,
+              fillColor: '#FF8C00',
+              fillOpacity: 1,
+              strokeColor: '#fff',
+              strokeWeight: 1.2,
+            },
+            offset: '100%',
+          }],
+        });
+        polygonsRef.current.push(sunArrow);
       }
       // Label flotante clickable con número + área.
       const labelEl = document.createElement('div');
@@ -317,20 +354,28 @@ export default function InteractiveRoofMap({
       sunPathRef.current = null;
     }
     if (!showSunPath || lat == null || lon == null) return;
-    // RUTA DEL SOL: arco LARGO y bien arriba del techo. Ancho extendido
-    // para que el cliente perciba claramente la trayectoria E→cenit→O,
-    // y desplazado al norte lo suficiente para nunca atravesar cubiertas.
+    // RUTA DEL SOL: arco LARGO y bien arriba del techo (al NORTE = lat
+    // POSITIVA). En el hemisferio norte (Colombia +4°N), el cliente ve
+    // el cielo "arriba" en el mapa = norte = lat creciente. Por eso y
+    // debe ser POSITIVO para subir en pantalla.
     const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.4 : 12;
     const dLat = r / 111000;
     const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
-    const northOffset = 2.5;       // múltiplo de r — bien arriba del techo
+    const northOffset = 2.5;       // múltiplo de r — bien al norte (arriba en pantalla)
     const arcWidth = 2.2;          // ancho del arco — LARGO
     const arcHeight = 0.55;        // altura del arco — visible curvatura
     const points = [];
+    // Iteramos h de -90 (este, amanecer) → +90 (oeste, atardecer). El
+    // sol VIAJA de este a oeste, por eso negamos sin(rad): así el primer
+    // punto está a la DERECHA (este = lng creciente) y el último a la
+    // IZQUIERDA (oeste). La flecha intermedia apuntará hacia el oeste,
+    // alineada con la dirección real del sol durante el día.
     for (let h = -90; h <= 90; h += 10) {
       const rad = h * Math.PI / 180;
-      const x = Math.sin(rad) * arcWidth;
-      const y = -(Math.cos(rad) * arcHeight + northOffset);
+      const x = -Math.sin(rad) * arcWidth;  // negativo: este→oeste = derecha→izquierda
+      // y POSITIVO = norte (arriba en pantalla). cos(rad) máximo en h=0
+      // (cenit, centro del arco) → ahí el arco está más arriba.
+      const y = (Math.cos(rad) * arcHeight + northOffset);
       points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
     }
     // Línea muy DELGADA con FLECHA prominente en el medio indicando
