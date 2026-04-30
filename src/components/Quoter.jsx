@@ -1260,11 +1260,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               );
             })}
           </div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-            {f.phaseManual ? 'Selección manual.' : `Sugerido por consumo: ${ACOMETIDA_INFO[suggestedAcometida].label}.`}
-            {' · '}El inversor se filtra por fase: {f.acometida === 'trifasico' ? 'trifásico (3F)' : 'monofásico / bifásico (1F)'}.
-            {f.phaseManual && <button type="button" onClick={() => u('phaseManual', false)} style={{ marginLeft: 8, background: 'transparent', border: 'none', color: C.teal, cursor: 'pointer', fontSize: 10, textDecoration: 'underline' }}>auto</button>}
-          </div>
+          {f.phaseManual && (
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+              <button type="button" onClick={() => u('phaseManual', false)} style={{ background: 'transparent', border: 'none', color: C.teal, cursor: 'pointer', fontSize: 10, textDecoration: 'underline', padding: 0 }}>↺ Volver a sugerencia automática</button>
+            </div>
+          )}
         </div>
         <div style={{ marginBottom: 8 }}>
           <label style={ss.lbl}>Panel solar</label>
@@ -1318,7 +1318,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             return null;
           })()}
           <div style={{ fontSize: 10, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-            <strong style={{ color: C.yellow }}>⚡ Importante:</strong> el área es <strong>fundamental</strong> para una cotización aterrizada (&gt;90% precisión). Usa <strong style={{ color: C.teal }}>📍 Estimar área</strong> o <strong style={{ color: C.teal }}>🛰 Usar mi GPS</strong> abajo — Google Solar identifica las cubiertas y se autocompleta.
+            <strong style={{ color: C.yellow }}>⚡ Importante:</strong> el área es <strong>fundamental</strong> para una cotización aterrizada. Usa <strong style={{ color: C.teal }}>📍 Estimar área</strong> o <strong style={{ color: C.teal }}>🛰 Usar mi GPS</strong> abajo — el sistema identifica las cubiertas y se autocompleta.
           </div>
           {solarConfigured() && (
             <div style={{ marginTop: 8, position: 'relative' }}>
@@ -1427,16 +1427,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
           {f.roofLookupSource && (
             <div style={{ fontSize: 10, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
-              Fuente: <span style={{ color: C.teal, fontWeight: 600 }}>
-                {f.roofLookupSource === 'google' ? 'Google Solar API' : f.roofLookupSource === 'claude' ? 'Estimación asistida' : f.roofLookupSource}
-              </span>
-              {f.lat != null && f.lon != null && <> · {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
+              {f.lat != null && f.lon != null && <>📍 {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
               {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
               {f.shadeIndex != null && (
                 <div style={{ marginTop: 3 }}>
                   ☀ Sombra local: <span style={{ color: f.shadeIndex >= 0.9 ? C.teal : f.shadeIndex >= 0.8 ? C.yellow : C.orange, fontWeight: 700 }}>
                     {Math.round((1 - f.shadeIndex) * 100)}% pérdida
-                  </span> · índice {f.shadeIndex.toFixed(2)} ({f.shadeSource === 'google-solar-panels' || f.shadeSource === 'google-datalayers' ? 'Google Solar API' : f.shadeSource === 'claude-estimate' ? 'estimación IA' : f.shadeSource})
+                  </span> · índice {f.shadeIndex.toFixed(2)}
                 </div>
               )}
               {(f.roofTiltDeg != null || f.roofAzimuthDeg != null) && (
@@ -1451,7 +1448,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {f.sunshineHoursYear != null && (
                 <div style={{ marginTop: 3 }}>
                   Horas sol/año: <strong style={{ color: C.yellow }}>{Math.round(f.sunshineHoursYear).toLocaleString('es-CO')}</strong>
-                  {f.googleMaxPanels != null && <> · capacidad máx. Google: <strong style={{ color: C.teal }}>{f.googleMaxPanels} paneles</strong></>}
+                  {f.googleMaxPanels != null && <> · capacidad máx. estimada: <strong style={{ color: C.teal }}>{f.googleMaxPanels} paneles</strong></>}
                 </div>
               )}
               {(f.roofWholeAreaM2 != null || f.roofGroundAreaM2 != null) && (
@@ -1465,11 +1462,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {f.roofPrecisionHint === 'low' && f.roofPanelsDetected != null && (
                 <div style={{ marginTop: 6, padding: '8px 10px', background: `${C.orange}10`, border: `1px solid ${C.orange}55`, borderRadius: 6, fontSize: 10, lineHeight: 1.5 }}>
                   <div style={{ color: C.orange, fontWeight: 700, marginBottom: 3 }}>⚠ Precisión baja del análisis</div>
-                  Google solo detectó <strong style={{ color: '#fff' }}>{f.roofPanelsDetected} {f.roofPanelsDetected === 1 ? 'panel' : 'paneles'}</strong> en este punto. Posibles razones:
+                  Solo se detectaron <strong style={{ color: '#fff' }}>{f.roofPanelsDetected} {f.roofPanelsDetected === 1 ? 'panel' : 'paneles'}</strong> en este punto. Posibles razones:
                   <ul style={{ margin: '4px 0 0 18px', padding: 0, color: C.muted }}>
                     <li>Las coordenadas cayeron en una construcción pequeña vecina (no la tuya).</li>
                     <li>El edificio tiene muchos obstáculos (claraboyas, antenas, ductos AC).</li>
-                    <li>Calidad de imagen LOW — Google no tiene HIGH para esta zona.</li>
+                    <li>Calidad de imagen baja en esta zona.</li>
                   </ul>
                   <div style={{ marginTop: 4, color: C.text }}>
                     💡 Verifica el marker en el satélite de arriba. Si está en el edificio incorrecto, usa el botón <strong>🛰 GPS</strong> o pega coordenadas exactas (formato <code style={{ color: C.teal }}>lat, lon</code>).
@@ -1479,9 +1476,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {/* Segmentos del techo se muestran ahora DEBAJO de las imágenes (después
                   de la preview) para que el cliente tenga contexto visual del techo
                   antes de ver qué cubiertas usa el sistema. */}
-              {f.roofImagery && (
+              {f.roofImagery && (f.roofImagery.imageryDate || f.roofImagery.imageryQuality) && (
                 <div style={{ marginTop: 3 }}>
-                  Imágenes Google Solar:{' '}
+                  Imagen satelital:{' '}
                   {f.roofImagery.imageryDate && (
                     <span style={{ color: C.teal }}>
                       {[f.roofImagery.imageryDate.year, String(f.roofImagery.imageryDate.month || '').padStart(2, '0')].filter(Boolean).join('-')}
@@ -1685,7 +1682,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                 )}
                 <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, fontStyle: 'italic' }}>
-                  Tap en cualquier cubierta para incluirla / excluirla. El sistema preselecciona las mejores orientadas para cubrir tu consumo. Si Google no detectó una cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
+                  Tap en cualquier cubierta para incluirla / excluirla. El sistema preselecciona las mejores orientadas para cubrir tu consumo. Si falta alguna cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
                 </div>
                 {/* Lista clickable. Tres estados: activa (verde), disponible (gris),
                     reservada (naranja) — esta última son cubiertas con sun < 1100 h/año
@@ -1828,7 +1825,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       border: `1.5px dashed ${C.yellow}66`, borderRadius: 7,
                       color: C.yellow, fontWeight: 700, fontSize: 11,
                       cursor: 'pointer', fontFamily: 'inherit',
-                    }}>+ Añadir cubierta no detectada por Google</button>
+                    }}>+ Añadir cubierta manualmente</button>
                   ) : (
                     <div style={{ background: `${C.yellow}06`, padding: 10, borderRadius: 7, border: `1px solid ${C.yellow}33` }}>
                       <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700, marginBottom: 8 }}>+ Nueva cubierta personalizada</div>
@@ -2019,7 +2016,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>ℹ Área disponible vs área que se usará</div>
                 <div style={{ fontSize: 10, color: C.muted }}>
                   Disponible declarada: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
-                  Detectada Google: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
+                  Detectada satélite: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 imagen) ·
                   Diferencia: <strong style={{ color: userBigger ? C.orange : C.teal }}>{userBigger ? '+' : ''}{diffPct.toFixed(0)}%</strong>
                 </div>
                 {reqArea > 0 && (
@@ -2030,8 +2027,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 )}
                 <div style={{ fontSize: 10, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>
                   {userBigger
-                    ? 'Tu declaración supera lo detectado por Google (puede incluir patios cubiertos o anexos que el satélite no ve). No afecta el cálculo: el sistema dimensiona por consumo.'
-                    : 'Google detecta más techo del que declaraste. Tu área declarada es lo máximo que el sistema considerará disponible.'}
+                    ? 'Tu declaración supera lo detectado en imagen satelital (puede incluir patios cubiertos o anexos que el satélite no ve). No afecta el cálculo: el sistema dimensiona por consumo.'
+                    : 'La detección satelital reporta más techo del que declaraste. Tu área declarada es lo máximo que el sistema considerará disponible.'}
                 </div>
               </div>
             );
@@ -2294,7 +2291,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       <div style={ss.card}>
         <div style={ss.h2}>Datos de contacto</div>
         <div style={{ fontSize: 12, color: C.muted, marginTop: -8, marginBottom: 14, lineHeight: 1.5 }}>
-          Necesitamos identificarte antes de ejecutar el cálculo. Así evitamos consumo innecesario de APIs y podemos enviarte la propuesta técnica.
+          Necesitamos identificarte antes del cálculo para enviarte la propuesta técnica.
         </div>
         <div style={{ display: 'flex', gap: 10, marginBottom: 11, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Nombre *</label><input style={ss.inp} value={f.name} onChange={e => u('name', e.target.value)} placeholder="Nombre completo" autoComplete="name" /></div>
@@ -2382,7 +2379,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 </ul>
               )}
               <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-                💡 Empieza a escribir y Google sugiere direcciones reales (mismo apoyo del paso anterior).
+                💡 Empieza a escribir y se sugieren direcciones reales.
               </div>
             </div>
           )}
@@ -2465,17 +2462,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
           <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {dest.city}, {dest.dept}</div>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            {/* Badges por fuente que ejecutó cálculo real (Google Solar + PVWatts + PVGIS).
+            {/* Badges por fuente que ejecutó cálculo real (varias fuentes técnicas).
                 Si dos o más respondieron, el bestAnnualKwh es el promedio de las fuentes. */}
-            {(res.productionSources || []).map(s => {
-              const isGoogle  = s.name === 'Google Solar';
-              const isPVWatts = s.name === 'PVWatts';
-              const isPVGIS   = s.name === 'PVGIS';
-              const color = isGoogle ? C.yellow : isPVWatts ? C.green : C.teal;
-              const label = isGoogle  ? `✓ Google Solar · ${s.kwh.toLocaleString('es-CO')} kWh/año`
-                          : isPVWatts ? `✓ NREL PVWatts v8${pvwData?.solradAnnual ? ` · ${pvwData.solradAnnual} kWh/m²/año` : ''}`
-                          : isPVGIS   ? `✓ PVGIS · ${dest.city}`
-                          : `✓ ${s.name}`;
+            {(res.productionSources || []).map((s, idx) => {
+              const colors = [C.yellow, C.green, C.teal];
+              const color = colors[idx % colors.length];
+              const label = `✓ Producción estimada · ${s.kwh.toLocaleString('es-CO')} kWh/año`;
               return (
                 <span key={s.name} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${color}22`, color, border: `1px solid ${color}55` }}>
                   {label}
@@ -2484,12 +2476,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             })}
             {res.productionSource === 'PSH' && (
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: `${C.gray ?? '#555'}22`, color: C.muted, border: `1px solid #55555555` }}>
-                Estimación PSH regional (sin fuentes externas)
+                Estimación regional (sin datos satelitales del sitio)
               </span>
             )}
             {nasaData && (
               <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: `${C.yellow}22`, color: C.yellow, border: `1px solid ${C.yellow}55` }}>
-                🌡 NASA POWER · T celda {nasaData.cellTempCold}°C/{nasaData.cellTempHot}°C
+                🌡 T celda {nasaData.cellTempCold}°C / {nasaData.cellTempHot}°C
               </span>
             )}
             <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
@@ -2998,19 +2990,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {res.productionSources.length > 1 ? ' (promedio ponderado para reducir sesgo de un solo modelo).' : '.'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
-              {res.productionSources.map(s => {
-                const isGoogle = s.name === 'Google Solar';
-                const isPV = s.name === 'PVWatts';
-                const color = isGoogle ? C.yellow : isPV ? '#4ade80' : C.teal;
+              {res.productionSources.map((s, idx) => {
+                const colors = [C.yellow, '#4ade80', C.teal];
+                const labels = ['Modelo satelital', 'Modelo de producción', 'Modelo de irradiancia'];
+                const color = colors[idx % colors.length];
+                const label = labels[idx % labels.length];
                 return (
                   <div key={s.name} style={{ background: C.dark, border: `1px solid ${color}44`, borderRadius: 8, padding: '12px 14px' }}>
-                    <div style={{ fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color, textTransform: 'uppercase', marginBottom: 4 }}>{s.name}</div>
+                    <div style={{ fontSize: 9, letterSpacing: 1.2, fontWeight: 700, color, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{s.kwh.toLocaleString('es-CO')} <span style={{ fontSize: 10, color: C.muted, fontWeight: 500 }}>kWh/año</span></div>
-                    <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
-                      {isGoogle && res.googleSolarEstimate?.specificYieldKwhPerKwpYear && `${res.googleSolarEstimate.specificYieldKwhPerKwpYear} kWh/kWp · DSM + sombras hora a hora`}
-                      {isPV && 'NREL · pérdidas reales · TMY3'}
-                      {s.name === 'PVGIS' && 'JRC · TMY satelital'}
-                    </div>
                   </div>
                 );
               })}
@@ -3027,11 +3015,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
             {res.googleSolarEstimate && (
               <div style={{ marginTop: 10, fontSize: 10, color: C.muted }}>
-                <strong>Configuración óptima Google Solar:</strong>{' '}
+                <strong>Configuración óptima del techo:</strong>{' '}
                 {res.googleSolarEstimate.bestConfigPanels} paneles de {res.googleSolarEstimate.panelCapacityWatts} W
                 ({res.googleSolarEstimate.bestConfigKwp} kWp) ·
-                vida útil estimada {res.googleSolarEstimate.panelLifetimeYears} años ·
-                metodología {res.googleSolarEstimate.methodology}
+                vida útil estimada {res.googleSolarEstimate.panelLifetimeYears} años
               </div>
             )}
           </div>
