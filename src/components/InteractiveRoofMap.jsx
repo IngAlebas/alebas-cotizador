@@ -212,22 +212,21 @@ export default function InteractiveRoofMap({
     if (validCenters.length > 0) {
       const bounds = new maps.LatLngBounds();
       validCenters.forEach(s => bounds.extend({ lat: s.center.lat, lng: s.center.lng }));
-      // Expandir bounds para que las cubiertas no queden pegadas al borde
-      // y los labels HTML no se superpongan. Padding extra ~30m alrededor.
-      const expandM = 30;
+      // Expandir bounds mínimamente (~5m) — solo lo justo para no recortar
+      // los labels al borde. Queremos máximo zoom posible.
+      const expandM = 5;
       validCenters.forEach(s => {
         const dLat = expandM / 111000;
         const dLng = expandM / (111000 * Math.cos(s.center.lat * Math.PI / 180));
         bounds.extend({ lat: s.center.lat + dLat, lng: s.center.lng + dLng });
         bounds.extend({ lat: s.center.lat - dLat, lng: s.center.lng - dLng });
       });
-      mapRef.current.fitBounds(bounds, 60);
-      // Cap del zoom auto-fit a 19 — si las cubiertas están muy cerca,
-      // fitBounds zoom hasta 22 y los labels se superponen. 19 deja
-      // espacio para diferenciarlas. El cliente puede zoom manual hasta
-      // 22 (maxZoom) si quiere acercarse.
+      mapRef.current.fitBounds(bounds, 20);
+      // Forzar zoom MÁXIMO posible (21) tras fitBounds. fitBounds elige el
+      // zoom natural según los bounds, pero queremos maximizar el acerca-
+      // miento para que el cliente verifique las cubiertas con detalle.
       const listener = maps.event.addListenerOnce(mapRef.current, 'idle', () => {
-        if (mapRef.current.getZoom() > 19) mapRef.current.setZoom(19);
+        if (mapRef.current.getZoom() < 21) mapRef.current.setZoom(21);
       });
       return () => maps.event.removeListener(listener);
     }
