@@ -148,6 +148,18 @@ export default function InteractiveRoofMap({
         const ne = pickCoords(s.boundingBox.ne);
         if (sw && ne) center = { lat: (sw.lat + ne.lat) / 2, lng: (sw.lng + ne.lng) / 2 };
       }
+      // FALLBACK FINAL: si el segmento NO trae coords (n8n viejo, datos
+      // truncados, etc), generar un center cerca del pin principal con
+      // offset distribuido en círculo según índice. Mejor mostrar algo
+      // (aunque sea aproximado) que dejar el mapa vacío.
+      if (!center && Number.isFinite(Number(lat)) && Number.isFinite(Number(lon))) {
+        const baseR = 8;  // metros desde el pin
+        const angle = (i / Math.max(1, segments.length)) * 2 * Math.PI;
+        const offM = baseR + (i % 3) * 4;
+        const dLatF = (Math.cos(angle) * offM) / 111000;
+        const dLngF = (Math.sin(angle) * offM) / (111000 * Math.cos(Number(lat) * Math.PI / 180));
+        center = { lat: Number(lat) + dLatF, lng: Number(lon) + dLngF };
+      }
       if (!center) return;
       const isActive = !!s.selected;
       const col = isActive ? ACTIVE : AVAILABLE;
