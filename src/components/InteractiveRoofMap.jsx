@@ -131,18 +131,22 @@ export default function InteractiveRoofMap({
     const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
     segments.forEach((s, i) => {
       try {
-      // Defensive: validar coords numéricas antes de usar. Si alguna es NaN
-      // o faltante, intentar bbox (también con check) o saltar el segmento.
-      let center = null;
-      if (s.center && Number.isFinite(s.center.lat) && Number.isFinite(s.center.lng)) {
-        center = { lat: s.center.lat, lng: s.center.lng };
-      } else if (s.boundingBox && s.boundingBox.sw && s.boundingBox.ne
-                 && Number.isFinite(s.boundingBox.sw.lat) && Number.isFinite(s.boundingBox.sw.lng)
-                 && Number.isFinite(s.boundingBox.ne.lat) && Number.isFinite(s.boundingBox.ne.lng)) {
-        center = {
-          lat: (s.boundingBox.sw.lat + s.boundingBox.ne.lat) / 2,
-          lng: (s.boundingBox.sw.lng + s.boundingBox.ne.lng) / 2,
-        };
+      // Defensive: validar coords numéricas antes de usar. Aceptar AMBOS
+      // formatos: {lat, lng} (workflow n8n actualizado) y {latitude,
+      // longitude} (formato Google Solar API original — si n8n no fue
+      // re-importado tras la migración).
+      const pickCoords = (obj) => {
+        if (!obj) return null;
+        const lat = obj.lat ?? obj.latitude;
+        const lng = obj.lng ?? obj.longitude;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+        return null;
+      };
+      let center = pickCoords(s.center);
+      if (!center && s.boundingBox) {
+        const sw = pickCoords(s.boundingBox.sw);
+        const ne = pickCoords(s.boundingBox.ne);
+        if (sw && ne) center = { lat: (sw.lat + ne.lat) / 2, lng: (sw.lng + ne.lng) / 2 };
       }
       if (!center) return;
       const isActive = !!s.selected;
@@ -164,21 +168,16 @@ export default function InteractiveRoofMap({
       // un rectángulo rotado por azimut con dimensiones desde sqrt(area).
       let corners;
       let widthM, heightM;
-      // Defensive: validar que bbox tenga coords numéricas válidas. n8n
-      // puede tener una versión vieja del workflow donde bbox sea null o
-      // tenga el shape antiguo (latitude/longitude en lugar de lat/lng).
-      const bb = s.boundingBox;
-      const bbValid = bb
-        && bb.sw && bb.ne
-        && Number.isFinite(bb.sw.lat) && Number.isFinite(bb.sw.lng)
-        && Number.isFinite(bb.ne.lat) && Number.isFinite(bb.ne.lng);
+      // Bbox: aceptar ambos formatos (lat/lng y latitude/longitude).
+      const bbSw = pickCoords(s.boundingBox?.sw);
+      const bbNe = pickCoords(s.boundingBox?.ne);
+      const bbValid = bbSw && bbNe;
       if (bbValid && !s._custom) {
-        const { sw, ne } = bb;
         corners = [
-          { lat: sw.lat, lng: sw.lng },
-          { lat: sw.lat, lng: ne.lng },
-          { lat: ne.lat, lng: ne.lng },
-          { lat: ne.lat, lng: sw.lng },
+          { lat: bbSw.lat, lng: bbSw.lng },
+          { lat: bbSw.lat, lng: bbNe.lng },
+          { lat: bbNe.lat, lng: bbNe.lng },
+          { lat: bbNe.lat, lng: bbSw.lng },
         ];
         const baseSide = Math.sqrt(Math.max(4, areaM2));
         widthM = baseSide;
@@ -355,8 +354,14 @@ export default function InteractiveRoofMap({
       }
     });
     // Auto-fit a los círculos.
-    const validCenters = segments.filter(s => s.center
-      && Number.isFinite(s.center.lat) && Number.isFinite(s.center.lng));
+    // validCenters acepta ambos formatos (lat/lng y latitude/longitude).
+    const validCenters = segments.map(s => {
+      const c = s.center || {};
+      const lat = c.lat ?? c.latitude;
+      const lng = c.lng ?? c.longitude;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { center: { lat, lng } };
+      return null;
+    }).filter(Boolean);
     if (validCenters.length > 0) {
       // Centro = promedio de coords (centroid). Más confiable que fitBounds
       // para fijar zoom alto: fitBounds elige zoom según los bounds y el
