@@ -130,6 +130,7 @@ export default function InteractiveRoofMap({
     const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
     const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
     segments.forEach((s, i) => {
+      try {
       // Defensive: validar coords numéricas antes de usar. Si alguna es NaN
       // o faltante, intentar bbox (también con check) o saltar el segmento.
       let center = null;
@@ -346,6 +347,12 @@ export default function InteractiveRoofMap({
       label.onRemove = function () { if (labelEl.parentNode) labelEl.parentNode.removeChild(labelEl); };
       label.setMap(mapRef.current);
       labelsRef.current.push(label);
+      } catch (e) {
+        // Si un segmento malformado tira (coord NaN, bbox null, etc),
+        // saltar SOLO ese segmento sin romper el render del resto del
+        // mapa ni del step 3 entero.
+        console.warn('Segmento ' + i + ' no se pudo renderizar:', e?.message);
+      }
     });
     // Auto-fit a los círculos.
     const validCenters = segments.filter(s => s.center
