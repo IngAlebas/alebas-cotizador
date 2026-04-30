@@ -251,6 +251,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [trm, setTrm] = useState(null);
   // Lookup de techo (Google Solar + IA fallback vía n8n)
   const [roofQuery, setRoofQuery] = useState('');
+  // True cuando el cliente eligió una sugerencia de Google Places (dirección
+  // verificada por geocoder). Muestra un callout con la opción de USAR o
+  // descartar la dirección antes de gastar la llamada a Solar API.
+  const [roofQueryVerified, setRoofQueryVerified] = useState(false);
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
   // Autocomplete de direcciones (Google Places via n8n)
@@ -1335,6 +1339,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   onChange={e => {
                     const v = e.target.value;
                     setRoofQuery(v);
+                    setRoofQueryVerified(false);  // Tipear libre invalida verificación
                     setAddrSuggestOpen(true);
                     if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current);
                     if (!placesSessionRef.current) placesSessionRef.current = newPlacesSessionToken();
@@ -1412,6 +1417,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       onMouseDown={(e) => { e.preventDefault(); }}
                       onClick={() => {
                         setRoofQuery(s.description);
+                        setRoofQueryVerified(true);  // Sugerencia elegida → verificada
                         setAddrSuggestions([]);
                         setAddrSuggestOpen(false);
                       }}
@@ -1426,6 +1432,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   {addrLoading && <li style={{ padding: '6px 10px', fontSize: 10, color: C.muted }}>Buscando…</li>}
                 </ul>
               )}
+            </div>
+          )}
+          {/* Callout de verificación: aparece tras elegir sugerencia Google.
+              Permite confirmar 'usar esta dirección' o descartar para retipear. */}
+          {roofQueryVerified && roofQuery && !roofLoading && (
+            <div style={{
+              marginTop: 8, padding: '10px 12px',
+              background: `${C.green}10`, border: `1px solid ${C.green}55`,
+              borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              fontSize: 12, lineHeight: 1.4,
+            }}>
+              <span style={{ color: C.green, fontWeight: 700 }}>✓ Dirección verificada por Google</span>
+              <span style={{ color: C.muted, fontSize: 11, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                📍 {roofQuery}
+              </span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" onClick={onLookupRoof} disabled={roofLoading}
+                  style={{ ...ss.btn, padding: '6px 14px', fontSize: 11, opacity: roofLoading ? 0.6 : 1 }}>
+                  Sí, usar esta dirección
+                </button>
+                <button type="button" onClick={() => {
+                  setRoofQuery('');
+                  setRoofQueryVerified(false);
+                  setAddrSuggestions([]);
+                }} style={{ ...ss.ghost, padding: '6px 12px', fontSize: 11 }}>
+                  ✕ Cambiar
+                </button>
+              </div>
             </div>
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
