@@ -364,11 +364,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       setContactError('Completa nombre, teléfono y email.');
       return false;
     }
-    if (f.website) {
-      // Honeypot relleno — bloqueamos sin revelar el mecanismo.
-      setContactError('No fue posible validar tu identidad. Intenta de nuevo.');
-      return false;
-    }
+    // El valor del honeypot (f.website) se pasa al backend en el payload
+    // para que aplique su propia detección anti-bot. NO bloqueamos aquí
+    // porque autofill de Android/iOS rellena campos ocultos con datos
+    // del usuario y producía falsos positivos en clientes legítimos.
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim());
     if (!emailOk) {
       setContactError('Email inválido.');
@@ -2397,10 +2396,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           )}
         </div>
-        {/* Honeypot anti-bot — invisible para humanos, los bots lo llenan */}
+        {/* Honeypot anti-bot — invisible para humanos, los bots lo llenan.
+            Nombre genérico (no 'website' / 'url' / 'phone') para evitar que
+            autofill / password managers de Android/iOS lo rellenen y disparen
+            falsos positivos en clientes legítimos. */}
         <input
           type="text"
-          name="website"
+          name="al_extra_field"
           tabIndex={-1}
           autoComplete="off"
           value={f.website || ''}
