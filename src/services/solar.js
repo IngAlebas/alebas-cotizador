@@ -86,6 +86,16 @@ async function fetchDirectGoogle({ address, lat, lon }) {
       pitchDegrees: s.pitchDegrees,
       areaMeters2: s.stats?.areaMeters2,
       sunshineHoursPerYear: quantile(s.stats?.sunshineQuantiles, 5),
+      // CRITICAL: Google Solar API devuelve center y boundingBox con
+      // shape {latitude, longitude}. La app espera {lat, lng}.
+      // Transformar acá para que InteractiveRoofMap renderice los
+      // polígonos correctamente. Sin esto, segmentos sin coords →
+      // ningún polígono visible en el mapa (page sin cubiertas).
+      center: s.center ? { lat: Number(s.center.latitude), lng: Number(s.center.longitude) } : null,
+      boundingBox: s.boundingBox && s.boundingBox.sw && s.boundingBox.ne ? {
+        sw: { lat: Number(s.boundingBox.sw.latitude), lng: Number(s.boundingBox.sw.longitude) },
+        ne: { lat: Number(s.boundingBox.ne.latitude), lng: Number(s.boundingBox.ne.longitude) },
+      } : null,
     })),
     imagery: data.imageryDate ? {
       imageryDate: data.imageryDate,
