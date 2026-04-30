@@ -1893,9 +1893,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           const a = parseFloat(customSegDraft.areaMeters2);
                           const az = parseFloat(customSegDraft.azimuthDegrees);
                           const p = parseFloat(customSegDraft.pitchDegrees);
-                          if (!a || a <= 0) return;
+                          if (!a || a <= 0) {
+                            alert('Ingresa un tamaño de cubierta válido (m²).');
+                            return;
+                          }
                           // Estimar horas-sol/año basado en orientación: óptimo Sur (180°)
-                          // ≈ promedio del techo Google; resta hasta 25% para azimuts extremos.
+                          // ≈ promedio del techo; resta hasta 25% para azimuts extremos.
                           const avgSun = f.sunshineHoursYear || 1500;
                           const orientFactor = az != null ? Math.max(0.75, 1 - Math.abs(180 - az) / 720) : 0.95;
                           const newSeg = {
@@ -1905,7 +1908,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                             sunshineHoursPerYear: Math.round(avgSun * orientFactor),
                             note: customSegDraft.note || 'manual',
                           };
-                          u('customSegments', [...(f.customSegments || []), newSeg]);
+                          const newCustomSegments = [...(f.customSegments || []), newSeg];
+                          const newIdx = (f.roofSegments?.length || 0) + newCustomSegments.length - 1;
+                          u('customSegments', newCustomSegments);
+                          // Auto-incluir la nueva cubierta en la selección activa
+                          // para que el cliente la vea contar inmediatamente.
+                          setManualSegmentSelection(prev => {
+                            const base = prev || selectedSegmentIdx;
+                            const next = new Set(base);
+                            next.add(newIdx);
+                            return next;
+                          });
                           setCustomSegDraft({ areaMeters2: '', azimuthDegrees: '180', pitchDegrees: '15', note: '' });
                           setShowCustomSegmentForm(false);
                         }} style={{ ...ss.btn, padding: '7px 16px', fontSize: 11 }}>
