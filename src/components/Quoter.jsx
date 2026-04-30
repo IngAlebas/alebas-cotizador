@@ -60,6 +60,10 @@ const Q0 = {
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
   customSegments: [],  // Cubiertas añadidas manualmente por el usuario (no detectadas por Google)
+  // Índices (en f.roofSegments) que el cliente marcó como NO PERTENECIENTES
+  // al predio (ej. techo del vecino que cayó dentro del análisis). Se ocultan
+  // del mapa, lista y cálculo. Reversibles desde el panel 'mostrar descartadas'.
+  dismissedRoofSegmentIdx: [],
   googleSolarEstimate: null,  // {yearlyEnergyDcKwh, specificYieldKwhPerKwpYear, bestConfigPanels, ...}
   googleAreaM2: null,    // área detectada por Google Solar (independiente del input del cliente)
   roofConfidence: null,  // 0..1 — confidence del análisis de techo
@@ -251,6 +255,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [trm, setTrm] = useState(null);
   // Lookup de techo (Google Solar + IA fallback vía n8n)
   const [roofQuery, setRoofQuery] = useState('');
+  // True cuando el cliente eligió una sugerencia de Google Places (dirección
+  // verificada por geocoder). Muestra un callout con la opción de USAR o
+  // descartar la dirección antes de gastar la llamada a Solar API.
+  const [roofQueryVerified, setRoofQueryVerified] = useState(false);
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
   // Autocomplete de direcciones (Google Places via n8n)
@@ -559,8 +567,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
   const autoSelectedSegmentIdx = useMemo(() => {
     const sel = new Set();
+    const dismissedSet = new Set(f.dismissedRoofSegmentIdx || []);
     const allSegs = [
-      ...(f.roofSegments || []).map((s, idx) => ({ ...s, _idx: idx })),
+      ...(f.roofSegments || []).map((s, idx) => ({ ...s, _idx: idx })).filter(s => !dismissedSet.has(s._idx)),
       ...(f.customSegments || []).map((s, idx) => ({ ...s, _idx: (f.roofSegments?.length || 0) + idx })),
     ];
     if (allSegs.length === 0) return sel;
@@ -1335,6 +1344,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   onChange={e => {
                     const v = e.target.value;
                     setRoofQuery(v);
+                    setRoofQueryVerified(false);  // Tipear libre invalida verificación
                     setAddrSuggestOpen(true);
                     if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current);
                     if (!placesSessionRef.current) placesSessionRef.current = newPlacesSessionToken();
@@ -1412,6 +1422,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       onMouseDown={(e) => { e.preventDefault(); }}
                       onClick={() => {
                         setRoofQuery(s.description);
+                        setRoofQueryVerified(true);  // Sugerencia elegida → verificada
                         setAddrSuggestions([]);
                         setAddrSuggestOpen(false);
                       }}
@@ -1426,6 +1437,34 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   {addrLoading && <li style={{ padding: '6px 10px', fontSize: 10, color: C.muted }}>Buscando…</li>}
                 </ul>
               )}
+            </div>
+          )}
+          {/* Callout de verificación: aparece tras elegir sugerencia Google.
+              Permite confirmar 'usar esta dirección' o descartar para retipear. */}
+          {roofQueryVerified && roofQuery && !roofLoading && (
+            <div style={{
+              marginTop: 8, padding: '10px 12px',
+              background: `${C.green}10`, border: `1px solid ${C.green}55`,
+              borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              fontSize: 12, lineHeight: 1.4,
+            }}>
+              <span style={{ color: C.green, fontWeight: 700 }}>✓ Dirección verificada por Google</span>
+              <span style={{ color: C.muted, fontSize: 11, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                📍 {roofQuery}
+              </span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" onClick={onLookupRoof} disabled={roofLoading}
+                  style={{ ...ss.btn, padding: '6px 14px', fontSize: 11, opacity: roofLoading ? 0.6 : 1 }}>
+                  Sí, usar esta dirección
+                </button>
+                <button type="button" onClick={() => {
+                  setRoofQuery('');
+                  setRoofQueryVerified(false);
+                  setAddrSuggestions([]);
+                }} style={{ ...ss.ghost, padding: '6px 12px', fontSize: 11 }}>
+                  ✕ Cambiar
+                </button>
+              </div>
             </div>
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
@@ -1537,7 +1576,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         // Combinar Google + custom; _idx alineado con selectedSegmentIdx
                         // para que el toggle desde el mapa actualice el set correctamente.
                         const allSegs = [
-                          ...(f.roofSegments || []).map((s, i) => ({ ...s, _idx: i })),
+                          ...(f.roofSegments || [])
+                            .map((s, i) => ({ ...s, _idx: i }))
+                            .filter(s => !(f.dismissedRoofSegmentIdx || []).includes(s._idx)),
                           ...(f.customSegments || []).map((s, i) => ({
                             ...s, _idx: (f.roofSegments?.length || 0) + i, _custom: true,
                           })),
@@ -1635,8 +1676,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {(f.roofSegments?.length > 0 || (f.customSegments?.length > 0)) && (() => {
             const ACTIVE = '#4ade80';
             const AVAILABLE = '#7A9EAA';
+            const dismissedSet = new Set(f.dismissedRoofSegmentIdx || []);
             const allSegments = [
-              ...(f.roofSegments || []).map((s, idx) => ({ ...s, _idx: idx, _custom: false })),
+              ...(f.roofSegments || [])
+                .map((s, idx) => ({ ...s, _idx: idx, _custom: false }))
+                .filter(s => !dismissedSet.has(s._idx)),
               ...(f.customSegments || []).map((s, idx) => ({
                 ...s,
                 _idx: (f.roofSegments?.length || 0) + idx,
@@ -1793,6 +1837,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         <span style={{ marginLeft: 'auto', fontSize: 11, color: col, fontWeight: 700 }}>
                           {isActive ? '✓' : (isReserved ? '🚫' : '○')}
                         </span>
+                        {/* Botón descartar: solo en cubiertas Google (no _custom).
+                            Marca la cubierta como 'no es del predio' (ej. techo
+                            del vecino que cayó dentro del análisis). Reversible. */}
+                        {!s._custom && (
+                          <span
+                            role="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm('¿Descartar esta cubierta del análisis? (No es parte del predio)')) {
+                                u('dismissedRoofSegmentIdx', [...(f.dismissedRoofSegmentIdx || []), s._idx]);
+                              }
+                            }}
+                            title="Descartar — no es del predio"
+                            style={{
+                              fontSize: 14, color: C.muted, padding: '0 4px',
+                              cursor: 'pointer', userSelect: 'none', borderRadius: 4,
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = C.orange; e.currentTarget.style.background = `${C.orange}15`; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = C.muted; e.currentTarget.style.background = 'transparent'; }}
+                          >✕</span>
+                        )}
                       </button>
                     );
                   })}
