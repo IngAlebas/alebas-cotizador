@@ -1901,12 +1901,29 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           // ≈ promedio del techo; resta hasta 25% para azimuts extremos.
                           const avgSun = f.sunshineHoursYear || 1500;
                           const orientFactor = az != null ? Math.max(0.75, 1 - Math.abs(180 - az) / 720) : 0.95;
+                          // Center estimado para que la cubierta manual sea visible en
+                          // el mapa interactivo. Se ubica ligeramente offset de las
+                          // coords del pin principal hacia la dirección de su azimut
+                          // (donde el techo 'mira'), con desplazamiento progresivo
+                          // según número de cubiertas custom existentes para evitar
+                          // solapamiento.
+                          const customCount = (f.customSegments || []).length;
+                          const offsetMeters = 8 + customCount * 4;
+                          const azimuthRad = ((az || 180) * Math.PI) / 180;
+                          const dLat = (Math.cos(azimuthRad) * offsetMeters) / 111000;
+                          const dLng = f.lat
+                            ? (Math.sin(azimuthRad) * offsetMeters) / (111000 * Math.cos(Number(f.lat) * Math.PI / 180))
+                            : 0;
+                          const center = (f.lat != null && f.lon != null)
+                            ? { lat: Number(f.lat) + dLat, lng: Number(f.lon) + dLng }
+                            : null;
                           const newSeg = {
                             areaMeters2: a,
                             azimuthDegrees: az || 180,
                             pitchDegrees: p || 15,
                             sunshineHoursPerYear: Math.round(avgSun * orientFactor),
                             note: customSegDraft.note || 'manual',
+                            center,
                           };
                           const newCustomSegments = [...(f.customSegments || []), newSeg];
                           const newIdx = (f.roofSegments?.length || 0) + newCustomSegments.length - 1;
