@@ -187,7 +187,7 @@
             // desregistrar TODOS los SW existentes y borrar TODAS las caches
             // antes de re-registrar. Esto resuelve PWAs atoradas con bundles
             // cacheados desde versiones previas (ej. solarhub-v1).
-            const SW_VERSION = 'v19-2026-04-30-marker-labels';
+            const SW_VERSION = 'v20-2026-04-30-google-panels';
             const stored = localStorage.getItem('sh:sw:v');
             if (stored !== SW_VERSION) {
               const regs = await navigator.serviceWorker.getRegistrations();

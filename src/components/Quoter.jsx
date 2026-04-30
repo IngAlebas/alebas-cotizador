@@ -59,6 +59,8 @@ const Q0 = {
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
+  // Fase 2 Google Solar — paneles individuales con coords exactas
+  solarPanels: [], panelHeightMeters: null, panelWidthMeters: null,
   customSegments: [],  // Cubiertas añadidas manualmente por el usuario (no detectadas por Google)
   // Índices (en f.roofSegments) que el cliente marcó como NO PERTENECIENTES
   // al predio (ej. techo del vecino que cayó dentro del análisis). Se ocultan
@@ -473,6 +475,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (r.sunshineHoursYear != null) u('sunshineHoursYear', r.sunshineHoursYear);
     if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
     if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
+    if (Array.isArray(r.solarPanels)) u('solarPanels', r.solarPanels);
+    if (r.panelHeightMeters != null) u('panelHeightMeters', Number(r.panelHeightMeters));
+    if (r.panelWidthMeters != null) u('panelWidthMeters', Number(r.panelWidthMeters));
     if (r.imagery) u('roofImagery', r.imagery);
     if (r.googleSolarEstimate) u('googleSolarEstimate', r.googleSolarEstimate);
     if (r.staticMapUrl) u('roofStaticMapUrl', r.staticMapUrl);
@@ -1624,8 +1629,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         u('customSegments', updated);
                       }}
                       showSunPath={true}
-                      panelW={panel?.widthMm ? panel.widthMm / 1000 : 1.0}
-                      panelH={panel?.lengthMm ? panel.lengthMm / 1000 : 2.0}
+                      panelW={f.panelWidthMeters || (panel?.widthMm ? panel.widthMm / 1000 : 1.0)}
+                      panelH={f.panelHeightMeters || (panel?.lengthMm ? panel.lengthMm / 1000 : 2.0)}
+                      googlePanels={f.solarPanels || []}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
                         setRoofError(null); setRoofLoading(true);

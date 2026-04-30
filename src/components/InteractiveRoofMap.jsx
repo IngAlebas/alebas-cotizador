@@ -14,6 +14,7 @@ export default function InteractiveRoofMap({
   onSegmentMove = null,   // (idx, {lat, lng}) => void — drag de cubiertas custom
   panelW = 1.0,           // ancho del panel (m) — para renderizar grid sintético
   panelH = 2.0,           // alto del panel (m)
+  googlePanels = [],      // paneles reales de Google Solar API [{center, orientation, segmentIndex, ...}]
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -481,6 +482,68 @@ export default function InteractiveRoofMap({
       mapRef.current.setZoom(22);
     }
   }, [segments, ready]);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FASE 2 GOOGLE SOLAR: render PANELES REALES con sus coords exactas.
+  // Cada panel viene del endpoint buildingInsights:findClosest con su
+  // center.latitude/longitude y orientation. Renderiza un Polygon azul
+  // por cada panel, rotado al azimut del segmento padre.
+  // ═══════════════════════════════════════════════════════════════════════
+  const googlePanelsRef = useRef([]);
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    googlePanelsRef.current.forEach(p => p.setMap(null));
+    googlePanelsRef.current = [];
+    if (!Array.isArray(googlePanels) || googlePanels.length === 0) return;
+    // Mapa segmentIndex → azimuthDegrees para rotar paneles al lomo del techo.
+    const segAzMap = new Map();
+    if (Array.isArray(segments)) {
+      segments.forEach((s, idx) => {
+        if (s && Number.isFinite(Number(s.azimuthDegrees))) {
+          segAzMap.set(idx, Number(s.azimuthDegrees));
+        }
+      });
+    }
+    googlePanels.forEach(p => {
+      try {
+        const c = p.center;
+        const cLat = c?.lat ?? c?.latitude;
+        const cLng = c?.lng ?? c?.longitude;
+        if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return;
+        // Dimensiones según orientación del panel
+        const isLandscape = p.orientation === 'LANDSCAPE';
+        const w = isLandscape ? panelH : panelW;  // perpendicular al azimut
+        const h = isLandscape ? panelW : panelH;  // paralelo al azimut
+        const azDeg = segAzMap.get(p.segmentIndex) ?? 180;
+        const azRad = (azDeg * Math.PI) / 180;
+        const cosA = Math.cos(azRad), sinA = Math.sin(azRad);
+        const latM = 1 / 111000;
+        const lngM = 1 / (111000 * Math.cos(cLat * Math.PI / 180));
+        const halfW = w / 2 * 0.92;  // 92% para gap visual entre paneles
+        const halfH = h / 2 * 0.92;
+        const corners = [
+          [-halfW, -halfH], [halfW, -halfH], [halfW, halfH], [-halfW, halfH]
+        ].map(([lx, ly]) => {
+          const dx = lx * cosA - ly * sinA;
+          const dy = lx * sinA + ly * cosA;
+          return { lat: cLat + dy * latM, lng: cLng + dx * lngM };
+        });
+        const panelPoly = new maps.Polygon({
+          map: mapRef.current,
+          paths: corners,
+          strokeColor: '#1e3a8a',
+          strokeOpacity: 0.85,
+          strokeWeight: 0.8,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.85,
+          clickable: false,
+          zIndex: 10,
+        });
+        googlePanelsRef.current.push(panelPoly);
+      } catch (_) {}
+    });
+  }, [googlePanels, segments, panelW, panelH, ready]);
 
   // Ruta del sol DELGADA sobre el mapa — arco de E (oriente) → cenit → O
   // (poniente). Diseño minimal: línea amarilla 1.5px con sun emoji 🌞 en
