@@ -444,6 +444,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   };
 
   const applyRoofLookup = (r) => {
+    // Marcar la dirección como verificada en cuanto Solar API resuelve
+    // coords válidas — esto activa el callout 'usar para modelado' en el
+    // formulario y el badge de validación en el step de contacto, aunque
+    // el cliente haya tipeado manualmente sin elegir sugerencia.
+    if (r.lat != null && r.lon != null) {
+      setRoofQueryVerified(true);
+    }
     if (r.areaM2 != null && !Number.isNaN(r.areaM2)) {
       // Siempre sobrescribimos con la última medición de Google: el usuario puede
       // arrastrar el pin varias veces antes de confirmar, y el área debe reflejar
@@ -1439,8 +1446,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               )}
             </div>
           )}
-          {/* Callout de verificación: aparece tras elegir sugerencia Google.
-              Permite confirmar 'usar esta dirección' o descartar para retipear. */}
+          {/* Callout de verificación: aparece tras elegir sugerencia o tras
+              Estimar área exitoso. Dos estados:
+                A. Dirección verificada PERO aún no se usó (no hay lat/lon)
+                   → muestra "Usar esta dirección para el modelado" como CTA.
+                B. Dirección verificada Y modelada (lat/lon disponible)
+                   → muestra "Ya se usa para el modelado" + opción cambiar. */}
           {roofQueryVerified && roofQuery && !roofLoading && (
             <div style={{
               marginTop: 8, padding: '10px 12px',
@@ -1448,15 +1459,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               fontSize: 12, lineHeight: 1.4,
             }}>
-              <span style={{ color: C.green, fontWeight: 700 }}>✓ Dirección verificada por Google</span>
+              <span style={{ color: C.green, fontWeight: 700 }}>
+                ✓ {(f.lat != null && f.lon != null)
+                  ? 'Dirección usada para el modelado'
+                  : 'Dirección verificada por Google'}
+              </span>
               <span style={{ color: C.muted, fontSize: 11, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 📍 {roofQuery}
+                {f.lat != null && f.lon != null && <> · <strong style={{ color: C.text }}>{Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</strong></>}
               </span>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" onClick={onLookupRoof} disabled={roofLoading}
-                  style={{ ...ss.btn, padding: '6px 14px', fontSize: 11, opacity: roofLoading ? 0.6 : 1 }}>
-                  Sí, usar esta dirección
-                </button>
+                {(f.lat == null || f.lon == null) && (
+                  <button type="button" onClick={onLookupRoof} disabled={roofLoading}
+                    style={{ ...ss.btn, padding: '6px 14px', fontSize: 11, opacity: roofLoading ? 0.6 : 1 }}>
+                    🚀 Usar para el modelado
+                  </button>
+                )}
                 <button type="button" onClick={() => {
                   setRoofQuery('');
                   setRoofQueryVerified(false);
