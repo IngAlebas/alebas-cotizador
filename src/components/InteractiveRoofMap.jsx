@@ -184,10 +184,10 @@ export default function InteractiveRoofMap({
         map: mapRef.current,
         paths: corners,
         strokeColor: col,
-        strokeOpacity: isActive ? 0.85 : 0.4,
-        strokeWeight: isActive ? 2 : 1.2,
+        strokeOpacity: isActive ? 0.95 : 0.5,
+        strokeWeight: isActive ? 2.5 : 1.4,
         fillColor: col,
-        fillOpacity: isActive ? 0.22 : 0.08,
+        fillOpacity: isActive ? 0.30 : 0.10,
         clickable: isClickable || isDraggable,
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
@@ -301,36 +301,46 @@ export default function InteractiveRoofMap({
       sunPathRef.current = null;
     }
     if (!showSunPath || lat == null || lon == null) return;
-    const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.6 : 15;
+    // RUTA DEL SOL: compacta y DESPLAZADA al norte del techo para que no
+    // atraviese ninguna cubierta. Antes el arco pasaba por encima del
+    // edificio; ahora se ubica como referencia compacta arriba del pin
+    // (en dirección norte = lat positivo) y nunca sobre el techo.
+    const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.4 : 12;
     const dLat = r / 111000;
     const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
+    // Offset constante hacia el NORTE para alejar el arco del edificio.
+    // ~r metros encima del pin (típicamente arriba del límite superior
+    // del techo en la mayoría de las orientaciones).
+    const northOffset = 1.4;  // múltiplo de r (radio del techo)
     const points = [];
-    for (let h = -90; h <= 90; h += 18) {
+    for (let h = -90; h <= 90; h += 15) {
       const rad = h * Math.PI / 180;
-      const x = Math.sin(rad);
-      const y = -Math.cos(rad) * 0.18;
+      const x = Math.sin(rad) * 0.7;        // ancho del arco (más estrecho)
+      const y = -(Math.cos(rad) * 0.25 + northOffset);  // arco arriba + offset N
       points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
     }
-    // Línea DELGADA con FLECHA en el medio indicando dirección del sol E→O.
+    // Línea muy DELGADA con FLECHA prominente en el medio indicando
+    // dirección del sol E→O. Sobre el satellite el amarillo destaca bien
+    // pero la línea queda discreta para no robar foco a las cubiertas.
     const line = new maps.Polyline({
       map: mapRef.current,
       path: points,
       geodesic: false,
       strokeColor: '#FFD93D',
-      strokeOpacity: 0.9,
+      strokeOpacity: 0.85,
       strokeWeight: 1,
       clickable: false,
       zIndex: 4,
       icons: [{
         icon: {
           path: maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 2.4,
+          scale: 3,
           fillColor: '#FF8C00',
           fillOpacity: 1,
-          strokeColor: '#FF8C00',
+          strokeColor: '#fff',
           strokeWeight: 1,
         },
-        offset: '60%',
+        offset: '50%',
       }],
     });
     // Helper para overlays HTML.
