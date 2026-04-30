@@ -233,20 +233,20 @@ export default function InteractiveRoofMap({
       const y = -Math.cos(rad) * 0.18;
       points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
     }
-    // Línea con FLECHA en el medio indicando dirección del sol E→O.
+    // Línea DELGADA con FLECHA en el medio indicando dirección del sol E→O.
     const line = new maps.Polyline({
       map: mapRef.current,
       path: points,
       geodesic: false,
       strokeColor: '#FFD93D',
-      strokeOpacity: 0.85,
-      strokeWeight: 1.8,
+      strokeOpacity: 0.9,
+      strokeWeight: 1,
       clickable: false,
       zIndex: 4,
       icons: [{
         icon: {
           path: maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 3,
+          scale: 2.4,
           fillColor: '#FF8C00',
           fillOpacity: 1,
           strokeColor: '#FF8C00',
@@ -276,19 +276,51 @@ export default function InteractiveRoofMap({
       ov.setMap(mapRef.current);
       return ov;
     };
-    // Sol GRANDE amarillo al INICIO de la ruta (Este, donde sale el sol).
-    // Letras 'E' y 'O' en los extremos para indicar coordenadas/dirección.
+    // Logo SolarHub (sol + 6 rayos + 6 nodos) como icono al INICIO/FIN de la
+    // ruta. Inicio = Este (sale el sol) = grande, opaco. Fin = Oeste (cae) =
+    // pequeño, semi-transparente. Construido con la misma geometría del logo
+    // de la navbar (App.jsx:150) — viewBox 40, sol radio 9, rayos en r=10..18.
+    const solarHubLogo = (size, opacity = 1) => {
+      const rays = [0, 60, 120, 180, 240, 300].map((deg, i) => {
+        const rad = (deg - 90) * Math.PI / 180;
+        const x1 = 20 + 10 * Math.cos(rad), y1 = 20 + 10 * Math.sin(rad);
+        const x2 = 20 + 18 * Math.cos(rad), y2 = 20 + 18 * Math.sin(rad);
+        const color = i % 2 === 0 ? '#FF8C00' : '#FFB800';
+        return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+      }).join('');
+      const nodes = [0, 60, 120, 180, 240, 300].map((deg, i) => {
+        const rad = (deg - 90) * Math.PI / 180;
+        const x = 20 + 18.5 * Math.cos(rad), y = 20 + 18.5 * Math.sin(rad);
+        const color = i % 2 === 0 ? '#FF8C00' : '#FFB800';
+        return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.2" fill="${color}"/>`;
+      }).join('');
+      const gradId = `shGrad${size}`;
+      return `
+        <svg viewBox="0 0 40 40" width="${size}" height="${size}" style="filter: drop-shadow(0 0 5px rgba(255,140,0,0.85)); opacity:${opacity};">
+          <defs>
+            <radialGradient id="${gradId}" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#FFD93D"/>
+              <stop offset="100%" stop-color="#FF8C00"/>
+            </radialGradient>
+          </defs>
+          ${rays}
+          ${nodes}
+          <circle cx="20" cy="20" r="9" fill="url(#${gradId})"/>
+          <circle cx="20" cy="20" r="4.5" fill="#08131f"/>
+          <circle cx="20" cy="20" r="2.2" fill="#FFD93D"/>
+        </svg>`;
+    };
     const eastPos = points[0];
     const westPos = points[points.length - 1];
     const sunStart = makeOverlay(eastPos, `
       <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
-        <div style="font-size:24px; filter: drop-shadow(0 0 6px rgba(255,140,0,0.9)); text-shadow: 0 1px 2px rgba(0,0,0,0.5);">☀</div>
+        ${solarHubLogo(28, 1)}
         <div style="font-size:10px; font-weight:800; color:#FFD93D; background:rgba(7,9,15,0.7); padding:1px 6px; border-radius:9px; letter-spacing:1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6);">E · sale</div>
       </div>
     `);
     const sunEnd = makeOverlay(westPos, `
       <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
-        <div style="font-size:14px; filter: drop-shadow(0 0 4px rgba(255,140,0,0.7)); text-shadow: 0 1px 2px rgba(0,0,0,0.5); opacity:0.7;">☀</div>
+        ${solarHubLogo(16, 0.6)}
         <div style="font-size:10px; font-weight:800; color:#FFD93D; background:rgba(7,9,15,0.7); padding:1px 6px; border-radius:9px; letter-spacing:1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6);">O · cae</div>
       </div>
     `);
