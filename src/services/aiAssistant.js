@@ -35,7 +35,7 @@ export async function aiRecommend(context, payload) {
   // ~100s en el peor caso (rate-limit en los gratuitos + Mistral/Claude con
   // max_tokens=4096 + per-provider 25s timeout en backend = 4×25 = 100s).
   const data = await n8nPost('ai-recommend', { context, payload }, { timeoutMs: 120000 });
-  if (!data || typeof data !== 'object') throw new Error('Respuesta inválida de n8n (ai-recommend)');
+  if (!data || typeof data !== 'object') throw new Error('Recomendación inteligente no disponible. Intenta de nuevo.');
   const allowed = new Set(APPLYABLE_FIELDS);
   const rawActions = Array.isArray(data.actions) ? data.actions : [];
   const actions = rawActions

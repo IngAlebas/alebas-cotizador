@@ -274,14 +274,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (!f.addressSameAsInstall) return;
     if (roofQuery && roofQuery !== f.address) u('address', roofQuery);
   }, [f.addressSameAsInstall, roofQuery, f.address]);
-  // Sincronización inversa: si el cliente tipea la dirección en step 2 SIN
-  // haber estimado área en step 1 (roofQuery vacío), alimentar roofQuery
-  // para que al volver a step 1 y darle 'Estimar área' Google Solar use esa
-  // dirección. Solo cuando el toggle 'misma dirección' está activo.
-  useEffect(() => {
-    if (!f.addressSameAsInstall) return;
-    if (f.address && f.address !== roofQuery) setRoofQuery(f.address);
-  }, [f.addressSameAsInstall, f.address]);  // eslint-disable-line
+  // NOTA: la sincronización inversa (step 2 → step 1) NO se hace en cada
+  // keystroke porque cambiaría el condicional de visibilidad del input mid-
+  // typing y el input se ocultaría perdiendo el cursor. En su lugar se hace
+  // bajo demanda en el onBlur del input de step 2 (ver más abajo).
   const contactPlacesSessionRef = React.useRef(null);
   const contactAddrDebounceRef = React.useRef(null);
   // Recomendación IA post-cálculo
@@ -1897,9 +1893,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           const a = parseFloat(customSegDraft.areaMeters2);
                           const az = parseFloat(customSegDraft.azimuthDegrees);
                           const p = parseFloat(customSegDraft.pitchDegrees);
-                          if (!a || a <= 0) return;
+                          if (!a || a <= 0) {
+                            alert('Ingresa un tamaño de cubierta válido (m²).');
+                            return;
+                          }
                           // Estimar horas-sol/año basado en orientación: óptimo Sur (180°)
-                          // ≈ promedio del techo Google; resta hasta 25% para azimuts extremos.
+                          // ≈ promedio del techo; resta hasta 25% para azimuts extremos.
                           const avgSun = f.sunshineHoursYear || 1500;
                           const orientFactor = az != null ? Math.max(0.75, 1 - Math.abs(180 - az) / 720) : 0.95;
                           const newSeg = {
@@ -1909,7 +1908,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                             sunshineHoursPerYear: Math.round(avgSun * orientFactor),
                             note: customSegDraft.note || 'manual',
                           };
-                          u('customSegments', [...(f.customSegments || []), newSeg]);
+                          const newCustomSegments = [...(f.customSegments || []), newSeg];
+                          const newIdx = (f.roofSegments?.length || 0) + newCustomSegments.length - 1;
+                          u('customSegments', newCustomSegments);
+                          // Auto-incluir la nueva cubierta en la selección activa
+                          // para que el cliente la vea contar inmediatamente.
+                          setManualSegmentSelection(prev => {
+                            const base = prev || selectedSegmentIdx;
+                            const next = new Set(base);
+                            next.add(newIdx);
+                            return next;
+                          });
                           setCustomSegDraft({ areaMeters2: '', azimuthDegrees: '180', pitchDegrees: '15', note: '' });
                           setShowCustomSegmentForm(false);
                         }} style={{ ...ss.btn, padding: '7px 16px', fontSize: 11 }}>
@@ -2359,7 +2368,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   }, 350);
                 }}
                 onFocus={() => setContactAddrSuggestOpen(true)}
-                onBlur={() => setTimeout(() => setContactAddrSuggestOpen(false), 200)}
+                onBlur={() => {
+                  setTimeout(() => setContactAddrSuggestOpen(false), 200);
+                  // Sync inverso al perder foco — si el toggle 'misma del
+                  // install' está activo y roofQuery está vacío, alimentar
+                  // step 1 con la dirección que acaba de tipear.
+                  if (f.addressSameAsInstall && f.address && f.address !== roofQuery) {
+                    setRoofQuery(f.address);
+                  }
+                }}
                 placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
                 autoComplete="street-address"
               />

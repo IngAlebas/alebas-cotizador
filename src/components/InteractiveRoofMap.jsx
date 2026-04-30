@@ -146,10 +146,10 @@ export default function InteractiveRoofMap({
         center,
         radius,
         strokeColor: col,
-        strokeOpacity: isActive ? 0.95 : 0.5,
-        strokeWeight: isActive ? 2.5 : 1.5,
+        strokeOpacity: isActive ? 0.7 : 0.35,
+        strokeWeight: isActive ? 2 : 1.2,
         fillColor: col,
-        fillOpacity: isActive ? 0.35 : 0.12,
+        fillOpacity: isActive ? 0.18 : 0.07,
         clickable: isClickable,
         zIndex: isActive ? 6 : 5,
       });
@@ -200,11 +200,9 @@ export default function InteractiveRoofMap({
         bounds.extend({ lat: s.center.lat + dLat, lng: s.center.lng + dLng });
         bounds.extend({ lat: s.center.lat - dLat, lng: s.center.lng - dLng });
       }
-      mapRef.current.fitBounds(bounds, 60);
-      const listener = maps.event.addListenerOnce(mapRef.current, 'idle', () => {
-        if (mapRef.current.getZoom() > 20) mapRef.current.setZoom(20);
-      });
-      return () => maps.event.removeListener(listener);
+      mapRef.current.fitBounds(bounds, 40);
+      // Permite zoom natural hasta 22 (Google max). Antes se forzaba a 20
+      // pero el cliente necesita acercarse para verificar las cubiertas.
     }
   }, [segments, ready]);
 
