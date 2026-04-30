@@ -181,11 +181,29 @@
     <!-- Service Worker Registration -->
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker
-            .register('/sw.js', { scope: '/' })
-            .then(reg => console.log('SolarHub SW registered:', reg.scope))
-            .catch(err => console.warn('SW registration failed:', err));
+        window.addEventListener('load', async () => {
+          try {
+            // KILL-SWITCH: si la versión almacenada no coincide con la actual,
+            // desregistrar TODOS los SW existentes y borrar TODAS las caches
+            // antes de re-registrar. Esto resuelve PWAs atoradas con bundles
+            // cacheados desde versiones previas (ej. solarhub-v1).
+            const SW_VERSION = 'v2-2026-04-30';
+            const stored = localStorage.getItem('sh:sw:v');
+            if (stored !== SW_VERSION) {
+              const regs = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(regs.map(r => r.unregister()));
+              if ('caches' in window) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(k => caches.delete(k)));
+              }
+              localStorage.setItem('sh:sw:v', SW_VERSION);
+              console.log('SolarHub SW: cleared old caches and registrations');
+            }
+            const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            console.log('SolarHub SW registered:', reg.scope);
+          } catch (err) {
+            console.warn('SW registration failed:', err);
+          }
         });
       }
     </script>
