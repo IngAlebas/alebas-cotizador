@@ -1624,6 +1624,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         u('customSegments', updated);
                       }}
                       showSunPath={true}
+                      panelW={panel?.widthMm ? panel.widthMm / 1000 : 1.0}
+                      panelH={panel?.lengthMm ? panel.lengthMm / 1000 : 2.0}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
                         setRoofError(null); setRoofLoading(true);
