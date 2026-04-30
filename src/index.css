@@ -573,6 +573,27 @@ button:active { transform: scale(0.97); }
      Android Chrome standalone. */
   html { max-width: 100vw; overflow-x: hidden; }
   body { max-width: 100vw; }
+  /* Refuerzo crítico: NINGÚN elemento puede desbordar el viewport horizontal.
+     Bug visto en screenshot: cards 2-col se cortaban al borde derecho en
+     pantallas <420px. La causa más común son grids con minmax o repeat sin
+     ancho mínimo controlado. */
+  body * { max-width: 100%; }
+  /* Grids de KPI/stats: asegurar que las celdas no excedan ancho asignado */
+  .al-stats-grid > *,
+  .al-excedente-grid > *,
+  div[style*="repeat(3, 1fr)"] > *,
+  div[style*="repeat(2, 1fr)"] > * {
+    min-width: 0 !important;
+    overflow: hidden;
+  }
+  /* Texto largo en cards no debe forzar overflow */
+  .al-stats-grid strong,
+  .al-excedente-grid strong,
+  div[style*="repeat(3, 1fr)"] strong,
+  div[style*="repeat(2, 1fr)"] strong {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
 
   /* Cards principales: padding reducido y margen lateral consistente */
   body main, body .al-card,
