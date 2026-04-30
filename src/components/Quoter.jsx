@@ -2216,7 +2216,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
           <button style={ss.ghost} onClick={() => setStep(2)}>← Atrás</button>
           <button
-            style={{ ...ss.btn, opacity: !f.monthlyKwh ? 0.4 : 1, cursor: !f.monthlyKwh ? 'not-allowed' : 'pointer' }}
+            style={{
+              ...ss.btn,
+              ...(!f.monthlyKwh ? { background: '#94a3b8', color: '#fff', cursor: 'not-allowed' } : {}),
+            }}
             title={!f.monthlyKwh ? 'Ingresa el consumo mensual arriba para continuar' : ''}
             onClick={() => {
               if (f.monthlyKwh) { setStep(4); return; }
@@ -2327,8 +2330,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </span>
             </label>
           )}
-          {/* Input: si la dirección NO es la misma, autocomplete Google Places */}
-          {!f.addressSameAsInstall && (
+          {/* Input autocomplete: visible si no hay roofQuery (no hizo Estimar área)
+              o si el usuario desmarcó el toggle 'misma dirección'. */}
+          {(!roofQuery || !f.addressSameAsInstall) && (
             <div style={{ position: 'relative' }}>
               <input
                 style={ss.inp}
@@ -2404,16 +2408,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.</div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
-          <button
-            style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || validatingContact) ? 0.4 : 1 }}
-            disabled={validatingContact}
-            onClick={async () => {
-              const ok = await validateContact();
-              if (ok) setStep(3);
-            }}
-          >
-            {validatingContact ? 'Validando…' : 'Siguiente →'}
-          </button>
+          {(() => {
+            const disabled = !f.name || !f.phone || !f.email || validatingContact;
+            return (
+              <button
+                style={{
+                  ...ss.btn,
+                  ...(disabled ? { background: '#94a3b8', color: '#fff', cursor: 'not-allowed' } : {}),
+                }}
+                disabled={validatingContact}
+                onClick={async () => {
+                  const ok = await validateContact();
+                  if (ok) setStep(3);
+                }}
+              >
+                {validatingContact ? 'Validando…' : 'Siguiente →'}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>
