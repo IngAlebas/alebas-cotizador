@@ -35,7 +35,7 @@ function AdminLogin({ onSuccess }) {
         </div>
         {err&&<div style={{fontSize:11,color:'#f87171',background:'#f8717115',border:'1px solid #f8717133',borderRadius:6,padding:'7px 12px',marginBottom:14}}>Contraseña incorrecta.</div>}
         <button onClick={check} style={{width:'100%',background:C.teal,color:'#fff',border:'none',borderRadius:8,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',opacity:!pwd?0.5:1}}>Ingresar al panel →</button>
-        <div style={{marginTop:18,fontSize:10,color:'#2a4050',fontFamily:'monospace'}}>Solo personal autorizado de ALEBAS Ingeniería SAS</div>
+        <div style={{marginTop:18,fontSize:10,color:'#2a4050',fontFamily:'monospace'}}>Solo personal autorizado</div>
       </div>
     </div>
   );

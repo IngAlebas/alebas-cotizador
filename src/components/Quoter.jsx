@@ -824,7 +824,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         padding: '20px 24px', marginBottom: 18,
         display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       }}>
-        <img src={logo} alt="SolarHub by ALEBAS" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+        <img src={logo} alt="SolarHub" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
         <div className="al-mini-hero-txt" style={{ flex: '1 1 260px', minWidth: 0 }}>
           <div style={{ fontSize: 11, letterSpacing: 2.6, fontWeight: 700, color: C.teal, marginBottom: 3 }}>SOLARHUB BY ALEBAS</div>
           <div className="al-mini-hero-title" style={{ fontSize: 19, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
@@ -1469,7 +1469,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </a>
                   </div>
                 </div>
-                <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
+                <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1, background: C.border }}>
                   <div>
                     <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Satelital · zoom 20 · arrastra el pin</span>
@@ -1510,14 +1510,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       }}
                     />
                   </div>
-                  {f.roofStaticMapRoadUrl && (
-                    <div>
-                      <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark }}>Calles · zoom 16 (contexto)</div>
-                      <img src={f.roofStaticMapRoadUrl} alt="Vista de calles"
-                        style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                    </div>
-                  )}
+                  {/* Streets map MOVIDO al final del bloque de techo, después
+                      de las cubiertas — para que la lista de cubiertas quede
+                      pegada al mapa interactivo (mejor UX). */}
                 </div>
                 {/* Quick-access a cubiertas: shortcut visible para ir a la lista
                     de toggle. La lista completa está más abajo pero el cliente
@@ -1897,6 +1892,20 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             );
           })()}
+
+          {/* Mapa de UBICACIÓN (calles) — debajo de las cubiertas para no
+              interrumpir el flujo entre el mapa interactivo y el selector. */}
+          {f.roofStaticMapRoadUrl && (
+            <div style={{ marginTop: 12, background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9, overflow: 'hidden' }}>
+              <div style={{ fontSize: 9, padding: '6px 10px', color: C.muted, background: `${C.teal}10`, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>📍</span>
+                <span><strong style={{ color: C.teal }}>Ubicación · contexto urbano</strong> · calles cercanas (zoom 16)</span>
+              </div>
+              <img src={f.roofStaticMapRoadUrl} alt="Mapa de calles cercanas"
+                style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            </div>
+          )}
 
           {(f.lat != null || f.availableArea) && (
             <div style={{ marginTop: 10 }}>
@@ -3768,7 +3777,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div className="al-pdf-summary">
           {/* Cabecera con marca */}
           <div className="al-pdf-header">
-            <img src={logo} alt="SolarHub by ALEBAS" />
+            <img src={logo} alt="SolarHub" />
             <div>
               <h1>Cotización Solar Fotovoltaica</h1>
               <p>El ecosistema solar de Colombia</p>
@@ -4273,7 +4282,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {/* Footer */}
           <div className="al-pdf-footer">
             <div>
-              <strong>SolarHub by ALEBAS Ingeniería SAS</strong><br />
+              <strong>SolarHub</strong><br />
               info@alebas.co · solar-hub.co<br />
               Villavicencio, Meta · Colombia
             </div>

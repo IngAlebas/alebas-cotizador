@@ -977,7 +977,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
           </div>
         ))}
         <div style={{ padding: '20px 8px 0', fontSize: 9, color: C.muted, lineHeight: 2 }}>
-          <div style={{ fontWeight: 600, color: C.teal, marginBottom: 1 }}>ALEBAS Ingeniería SAS</div>
+          <div style={{ fontWeight: 600, color: C.teal, marginBottom: 1 }}>SolarHub Admin</div>
           <div>NIT 901.992.450-5</div>
           <div style={{ color: C.teal }}>info@alebas.co</div>
           <div>Villavicencio, Meta</div>
