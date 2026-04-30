@@ -486,8 +486,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     u('roofLocationConfirmed', false);
   };
 
-  const onLookupRoof = async () => {
-    const q = (roofQuery || '').trim();
+  const onLookupRoof = async (overrideAddress = null) => {
+    // Si se pasa override (ej. desde step 2 con f.address), usa esa
+    // dirección y sincroniza roofQuery + verified para que la UI quede
+    // consistente al regresar a step 1.
+    if (overrideAddress && typeof overrideAddress === 'string') {
+      setRoofQuery(overrideAddress);
+      setRoofQueryVerified(true);
+    }
+    const q = (overrideAddress || roofQuery || '').trim();
     // Soportar input "lat, lon" directo además de dirección textual.
     const gpsMatch = q.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
     if (gpsMatch) {
@@ -1369,7 +1376,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 />
                 <button
                   type="button"
-                  onClick={onLookupRoof}
+                  onClick={() => onLookupRoof()}
                   disabled={roofLoading}
                   style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
                 >
@@ -1470,7 +1477,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </span>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {(f.lat == null || f.lon == null) && (
-                  <button type="button" onClick={onLookupRoof} disabled={roofLoading}
+                  <button type="button" onClick={() => onLookupRoof()} disabled={roofLoading}
                     style={{ ...ss.btn, padding: '6px 14px', fontSize: 11, opacity: roofLoading ? 0.6 : 1 }}>
                     🚀 Usar para el modelado
                   </button>
@@ -2526,6 +2533,37 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
                 💡 Empieza a escribir y se sugieren direcciones reales.
               </div>
+            </div>
+          )}
+          {/* CTA: si hay dirección pero aún no se modeló el techo (no hay
+              lat/lon), ofrecer botón para usarla en los cálculos del techo
+              sin tener que regresar a step 1. Esto resuelve el caso en que
+              el cliente saltó al contacto antes de Estimar área. */}
+          {f.address && (f.lat == null || f.lon == null) && !roofLoading && (
+            <div style={{
+              marginTop: 8, padding: '10px 12px',
+              background: `${C.teal}10`, border: `1px solid ${C.teal}55`,
+              borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              fontSize: 12, lineHeight: 1.4,
+            }}>
+              <span style={{ color: C.teal, fontWeight: 700 }}>📐 Esta dirección aún no se ha usado para los cálculos de techo.</span>
+              <button
+                type="button"
+                onClick={() => onLookupRoof(f.address)}
+                disabled={roofLoading}
+                style={{ ...ss.btn, padding: '6px 14px', fontSize: 11, opacity: roofLoading ? 0.6 : 1 }}>
+                🚀 Usar para cálculos de techo
+              </button>
+            </div>
+          )}
+          {/* Estado: dirección ya modelada (coords disponibles) */}
+          {f.address && f.lat != null && f.lon != null && (
+            <div style={{
+              marginTop: 8, padding: '8px 10px',
+              background: `${C.green}10`, border: `1px solid ${C.green}55`,
+              borderRadius: 7, fontSize: 11, lineHeight: 1.4, color: C.green, fontWeight: 600,
+            }}>
+              ✓ Dirección usada para los cálculos de techo · <span style={{ color: C.muted, fontWeight: 400 }}>coords {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</span>
             </div>
           )}
         </div>
