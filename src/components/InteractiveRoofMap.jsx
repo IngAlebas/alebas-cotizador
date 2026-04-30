@@ -156,24 +156,27 @@ export default function InteractiveRoofMap({
       // un rectángulo rotado por azimut con dimensiones desde sqrt(area).
       let corners;
       let widthM, heightM;
-      if (s.boundingBox && s.boundingBox.sw && s.boundingBox.ne && !s._custom) {
-        // BoundingBox de Google: 4 esquinas exactas en lat/lng. Esto es
-        // lo que Google detectó como extensión del segmento (axis-aligned
-        // pero la posición y tamaño son los reales reportados por Solar API).
-        const { sw, ne } = s.boundingBox;
+      // Defensive: validar que bbox tenga coords numéricas válidas. n8n
+      // puede tener una versión vieja del workflow donde bbox sea null o
+      // tenga el shape antiguo (latitude/longitude en lugar de lat/lng).
+      const bb = s.boundingBox;
+      const bbValid = bb
+        && bb.sw && bb.ne
+        && Number.isFinite(bb.sw.lat) && Number.isFinite(bb.sw.lng)
+        && Number.isFinite(bb.ne.lat) && Number.isFinite(bb.ne.lng);
+      if (bbValid && !s._custom) {
+        const { sw, ne } = bb;
         corners = [
           { lat: sw.lat, lng: sw.lng },
           { lat: sw.lat, lng: ne.lng },
           { lat: ne.lat, lng: ne.lng },
           { lat: ne.lat, lng: sw.lng },
         ];
-        // Para la flecha de orientación: usar sqrt(area) sin rotación
-        // adicional ya que el bbox no rota.
         const baseSide = Math.sqrt(Math.max(4, areaM2));
         widthM = baseSide;
         heightM = baseSide;
       } else {
-        // Fallback: rectángulo rotado por azimut (custom segments o sin bbox).
+        // Fallback: rectángulo rotado por azimut.
         const baseSide = Math.sqrt(Math.max(4, areaM2));
         widthM = baseSide * 1.18;
         heightM = baseSide * 0.85;
