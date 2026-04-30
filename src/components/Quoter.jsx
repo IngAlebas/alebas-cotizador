@@ -26,6 +26,10 @@ const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
   panelId: '', battId: '', battQty: 2,
   destId: 'villavicencio', address: '',
+  // Por defecto, la dirección de contacto del cliente es la misma del lugar
+  // de instalación (caso típico residencial). En step 2 hay un toggle para
+  // distinguirlas si el cliente coordina por una dirección distinta.
+  addressSameAsInstall: true,
   availableArea: '', wantsExcedentes: false,
   name: '', company: '', phone: '', email: '',
   // Acometida / fase de la carga — RETIE Sección 240 (clasificación usuario final):
@@ -218,6 +222,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   }, [f.systemType, loadMonthlyKwh]);
 
+  // Sincroniza la dirección de contacto con la del lugar de instalación cuando
+  // el cliente marca el toggle 'misma dirección' (default true). Evita que el
+  // cliente vuelva a tipear lo mismo en step 2 y mantiene los datos coherentes
+  // si vuelve a step 1 a corregir la dirección de instalación.
+  useEffect(() => {
+    if (!f.addressSameAsInstall) return;
+    if (roofQuery && roofQuery !== f.address) u('address', roofQuery);
+  }, [f.addressSameAsInstall, roofQuery]);
+
   // Auto-sugerencia de acometida (RETIE 240) según el consumo. Si el usuario
   // la fija manualmente (phaseManual) no tocamos su elección.
   const suggestedAcometida = suggestAcometida(f.monthlyKwh, f.systemType);
@@ -255,6 +268,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [addrLoading, setAddrLoading] = useState(false);
   const placesSessionRef = React.useRef(null);
   const addrDebounceRef = React.useRef(null);
+  // Autocomplete específico para la dirección de contacto del cliente (step 2).
+  // Independiente del de step 1 para no colisionar suggestions/debounce.
+  const [contactAddrSuggestions, setContactAddrSuggestions] = useState([]);
+  const [contactAddrSuggestOpen, setContactAddrSuggestOpen] = useState(false);
+  const [contactAddrLoading, setContactAddrLoading] = useState(false);
+  const contactPlacesSessionRef = React.useRef(null);
+  const contactAddrDebounceRef = React.useRef(null);
   // Recomendación IA post-cálculo
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
@@ -2284,7 +2304,89 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Teléfono / WhatsApp *</label><input style={ss.inp} value={f.phone} onChange={e => u('phone', e.target.value)} placeholder="300 000 0000" autoComplete="tel" inputMode="tel" /></div>
           <div style={{ flex: '1 1 180px', minWidth: 0 }}><label style={ss.lbl}>Email *</label><input style={ss.inp} value={f.email} onChange={e => u('email', e.target.value)} placeholder="tu@email.com" autoComplete="email" inputMode="email" /></div>
         </div>
-        <div style={{ marginBottom: 14 }}><label style={ss.lbl}>Dirección / Municipio</label><input style={ss.inp} value={f.address} onChange={e => u('address', e.target.value)} placeholder="Municipio o dirección exacta" autoComplete="street-address" /></div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={ss.lbl}>Dirección de contacto</label>
+          {/* Toggle: ¿es la misma dirección del lugar de instalación? */}
+          {roofQuery && (
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              padding: '10px 12px',
+              background: f.addressSameAsInstall ? `${C.green}10` : `${C.teal}08`,
+              border: `1px solid ${f.addressSameAsInstall ? C.green : C.teal}55`,
+              borderRadius: 7, marginBottom: 8, cursor: 'pointer', fontSize: 12, lineHeight: 1.5,
+            }}>
+              <input
+                type="checkbox"
+                checked={!!f.addressSameAsInstall}
+                onChange={e => u('addressSameAsInstall', e.target.checked)}
+                style={{ marginTop: 2, accentColor: C.teal, flexShrink: 0 }}
+              />
+              <span style={{ color: f.addressSameAsInstall ? C.green : C.text }}>
+                <strong>Es la misma dirección del lugar de instalación</strong>
+                <span style={{ display: 'block', color: C.muted, fontSize: 10, marginTop: 3 }}>
+                  📍 {roofQuery}
+                </span>
+              </span>
+            </label>
+          )}
+          {/* Input: si la dirección NO es la misma, autocomplete Google Places */}
+          {!f.addressSameAsInstall && (
+            <div style={{ position: 'relative' }}>
+              <input
+                style={ss.inp}
+                value={f.address}
+                onChange={e => {
+                  const v = e.target.value;
+                  u('address', v);
+                  setContactAddrSuggestOpen(true);
+                  if (contactAddrDebounceRef.current) clearTimeout(contactAddrDebounceRef.current);
+                  if (!contactPlacesSessionRef.current) contactPlacesSessionRef.current = newPlacesSessionToken();
+                  contactAddrDebounceRef.current = setTimeout(async () => {
+                    if (v.trim().length < 3) { setContactAddrSuggestions([]); return; }
+                    setContactAddrLoading(true);
+                    const r = await autocompleteAddress(v.trim(), contactPlacesSessionRef.current);
+                    setContactAddrLoading(false);
+                    if (r.ok) setContactAddrSuggestions(r.suggestions || []);
+                  }, 350);
+                }}
+                onFocus={() => setContactAddrSuggestOpen(true)}
+                onBlur={() => setTimeout(() => setContactAddrSuggestOpen(false), 200)}
+                placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
+                autoComplete="street-address"
+              />
+              {contactAddrSuggestOpen && contactAddrSuggestions.length > 0 && (
+                <ul style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                  background: C.card, border: `1px solid ${C.teal}55`, borderRadius: 8,
+                  listStyle: 'none', padding: 4, zIndex: 50, maxHeight: 280, overflowY: 'auto',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+                }}>
+                  {contactAddrSuggestions.map(s => (
+                    <li
+                      key={s.placeId}
+                      onMouseDown={(e) => { e.preventDefault(); }}
+                      onClick={() => {
+                        u('address', s.description);
+                        setContactAddrSuggestions([]);
+                        setContactAddrSuggestOpen(false);
+                      }}
+                      style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 6, fontSize: 12, lineHeight: 1.3 }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = `${C.teal}18`}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{ color: '#fff', fontWeight: 600 }}>{s.main}</div>
+                      {s.secondary && <div style={{ color: C.muted, fontSize: 10, marginTop: 1 }}>{s.secondary}</div>}
+                    </li>
+                  ))}
+                  {contactAddrLoading && <li style={{ padding: '6px 10px', fontSize: 10, color: C.muted }}>Buscando…</li>}
+                </ul>
+              )}
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                💡 Empieza a escribir y Google sugiere direcciones reales (mismo apoyo del paso anterior).
+              </div>
+            </div>
+          )}
+        </div>
         {/* Honeypot anti-bot — invisible para humanos, los bots lo llenan */}
         <input
           type="text"
