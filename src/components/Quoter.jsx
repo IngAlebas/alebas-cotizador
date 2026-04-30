@@ -824,7 +824,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         padding: '20px 24px', marginBottom: 18,
         display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       }}>
-        <img src={logo} alt="SolarHub by ALEBAS" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
+        <img src={logo} alt="SolarHub" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
         <div className="al-mini-hero-txt" style={{ flex: '1 1 260px', minWidth: 0 }}>
           <div style={{ fontSize: 11, letterSpacing: 2.6, fontWeight: 700, color: C.teal, marginBottom: 3 }}>SOLARHUB BY ALEBAS</div>
           <div className="al-mini-hero-title" style={{ fontSize: 19, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
@@ -1469,7 +1469,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     </a>
                   </div>
                 </div>
-                <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: f.roofStaticMapRoadUrl ? '1fr 1fr' : '1fr', gap: 1, background: C.border }}>
+                <div className="al-roof-preview-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1, background: C.border }}>
                   <div>
                     <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Satelital · zoom 20 · arrastra el pin</span>
@@ -1510,14 +1510,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       }}
                     />
                   </div>
-                  {f.roofStaticMapRoadUrl && (
-                    <div>
-                      <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark }}>Calles · zoom 16 (contexto)</div>
-                      <img src={f.roofStaticMapRoadUrl} alt="Vista de calles"
-                        style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                    </div>
-                  )}
+                  {/* Streets map MOVIDO al final del bloque de techo, después
+                      de las cubiertas — para que la lista de cubiertas quede
+                      pegada al mapa interactivo (mejor UX). */}
                 </div>
                 {/* Quick-access a cubiertas: shortcut visible para ir a la lista
                     de toggle. La lista completa está más abajo pero el cliente
@@ -1898,6 +1893,20 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             );
           })()}
 
+          {/* Mapa de UBICACIÓN (calles) — debajo de las cubiertas para no
+              interrumpir el flujo entre el mapa interactivo y el selector. */}
+          {f.roofStaticMapRoadUrl && (
+            <div style={{ marginTop: 12, background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9, overflow: 'hidden' }}>
+              <div style={{ fontSize: 9, padding: '6px 10px', color: C.muted, background: `${C.teal}10`, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>📍</span>
+                <span><strong style={{ color: C.teal }}>Ubicación · contexto urbano</strong> · calles cercanas (zoom 16)</span>
+              </div>
+              <img src={f.roofStaticMapRoadUrl} alt="Mapa de calles cercanas"
+                style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            </div>
+          )}
+
           {(f.lat != null || f.availableArea) && (
             <div style={{ marginTop: 10 }}>
               <label style={ss.lbl}>Material del techo (RETIE NTC 2050)</label>
@@ -1945,21 +1954,31 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             const significant = Math.abs(diffPct) >= 30;
             if (!significant) return null;
             const userBigger = diffPct > 0;
+            // Área que el sistema realmente USARÁ — la mínima necesaria para
+            // cubrir 100% del consumo, no la declarada total. Aclarar al cliente
+            // que la declaración es 'área disponible' pero el sistema dimensiona
+            // por consumo, NO usa todo el techo.
+            const reqKwp = consumptionKwp * 1.15;  // +15% buffer real-world yield
+            const reqPanels = panel?.wp ? Math.ceil(reqKwp * 1000 / panel.wp) : 0;
+            const reqArea = Math.round(reqPanels * m2PerPanel);
             return (
               <div style={{ marginTop: 8, padding: '10px 12px', background: `${C.yellow}10`, border: `1px solid ${C.yellow}55`, borderRadius: 8, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
-                <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>⚠ Discrepancia área declarada vs Google Solar</div>
+                <div style={{ fontWeight: 700, color: C.yellow, marginBottom: 4 }}>ℹ Área disponible vs área que se usará</div>
                 <div style={{ fontSize: 10, color: C.muted }}>
-                  Tu declaración: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
-                  Google detectó: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
+                  Disponible declarada: <strong style={{ color: '#fff' }}>{userArea} m²</strong> (✏ manual) ·
+                  Detectada Google: <strong style={{ color: '#fff' }}>{Math.round(googleArea)} m²</strong> (🛰 satélite) ·
                   Diferencia: <strong style={{ color: userBigger ? C.orange : C.teal }}>{userBigger ? '+' : ''}{diffPct.toFixed(0)}%</strong>
                 </div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                {reqArea > 0 && (
+                  <div style={{ fontSize: 11, color: C.text, marginTop: 6, padding: '6px 10px', background: `${C.green}15`, border: `1px solid ${C.green}55`, borderRadius: 6 }}>
+                    <strong style={{ color: '#4ade80' }}>✓ El sistema solo usará ~{reqArea} m²</strong>{' '}
+                    ({reqPanels} paneles de {panel?.wp || 0} W) — la porción mínima del techo necesaria para cubrir el 100% de tu consumo. El resto del área queda libre.
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>
                   {userBigger
-                    ? `Tu área supera lo detectado por Google. Verifica si estás incluyendo patios cubiertos, anexos no contiguos, o áreas con obstáculos (ductos AC, antenas, claraboyas) que satélite no descuenta.`
-                    : `Google detecta más techo del que declaraste. Puede haber área aprovechable adicional — confirma si la limitación es voluntaria (paneles existentes, vista preservada, arrendamiento).`}
-                </div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-                  El cotizador usa <strong style={{ color: '#fff' }}>tu declaración</strong> ({userArea} m²) — el cliente sabe qué porción del techo va a usar.
+                    ? 'Tu declaración supera lo detectado por Google (puede incluir patios cubiertos o anexos que el satélite no ve). No afecta el cálculo: el sistema dimensiona por consumo.'
+                    : 'Google detecta más techo del que declaraste. Tu área declarada es lo máximo que el sistema considerará disponible.'}
                 </div>
               </div>
             );
@@ -3768,7 +3787,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div className="al-pdf-summary">
           {/* Cabecera con marca */}
           <div className="al-pdf-header">
-            <img src={logo} alt="SolarHub by ALEBAS" />
+            <img src={logo} alt="SolarHub" />
             <div>
               <h1>Cotización Solar Fotovoltaica</h1>
               <p>El ecosistema solar de Colombia</p>
@@ -4273,7 +4292,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {/* Footer */}
           <div className="al-pdf-footer">
             <div>
-              <strong>SolarHub by ALEBAS Ingeniería SAS</strong><br />
+              <strong>SolarHub</strong><br />
               info@alebas.co · solar-hub.co<br />
               Villavicencio, Meta · Colombia
             </div>
