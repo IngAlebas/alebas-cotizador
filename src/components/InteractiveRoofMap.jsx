@@ -12,6 +12,8 @@ export default function InteractiveRoofMap({
   showSunPath = true,     // arco azimutal del sol (oriente → cenit → poniente)
   onSegmentToggle = null, // (idx) => void — tap en círculo o label toggle inclusión
   onSegmentMove = null,   // (idx, {lat, lng}) => void — drag de cubiertas custom
+  panelW = 1.0,           // ancho del panel (m) — para renderizar grid sintético
+  panelH = 2.0,           // alto del panel (m)
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
