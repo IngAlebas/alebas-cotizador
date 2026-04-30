@@ -11,6 +11,7 @@ export default function InteractiveRoofMap({
   segments = null,        // [{ azimuthDegrees, areaMeters2, center, boundingBox, _idx, ... }]
   showSunPath = true,     // arco azimutal del sol (oriente → cenit → poniente)
   onSegmentToggle = null, // (idx) => void — tap en círculo o label toggle inclusión
+  onSegmentMove = null,   // (idx, {lat, lng}) => void — drag de cubiertas custom
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -141,6 +142,9 @@ export default function InteractiveRoofMap({
       const areaM2 = s.areaMeters2 || 0;
       const radius = Math.max(1.5, Math.min(8, Math.sqrt(areaM2 / Math.PI)));
       const isClickable = !!onSegmentToggle && s._idx != null;
+      // Solo las cubiertas CUSTOM (_custom: true) son arrastrables. Las
+      // detectadas por Google Solar tienen posición fija.
+      const isDraggable = !!onSegmentMove && s._custom && s._idx != null;
       const circle = new maps.Circle({
         map: mapRef.current,
         center,
@@ -150,10 +154,21 @@ export default function InteractiveRoofMap({
         strokeWeight: isActive ? 1.8 : 1,
         fillColor: col,
         fillOpacity: isActive ? 0.10 : 0.04,
-        clickable: isClickable,
+        clickable: isClickable || isDraggable,
+        draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
       });
       if (isClickable) circle.addListener('click', () => onSegmentToggle(s._idx));
+      if (isDraggable) {
+        // Al terminar el drag, emitir el nuevo center al padre para que
+        // actualice f.customSegments. El label flotante se reposiciona
+        // automáticamente en el próximo render del effect (dependencia
+        // 'segments' cambia y redraws).
+        circle.addListener('dragend', () => {
+          const c = circle.getCenter();
+          if (c) onSegmentMove(s._idx, { lat: c.lat(), lng: c.lng() });
+        });
+      }
       polygonsRef.current.push(circle);
       // Label flotante clickable con número + área.
       const labelEl = document.createElement('div');
@@ -168,7 +183,11 @@ export default function InteractiveRoofMap({
         border: 1px solid ${col};
         transition: transform 0.12s, opacity 0.12s;
       `;
-      labelEl.textContent = `${isActive ? '✓ ' : '○ '}${i + 1} · ${areaM2.toFixed(0)} m²`;
+      // Prefijo 'M' (manual) en cubiertas custom para distinguirlas + ícono
+      // ✥ que sugiere arrastrabilidad.
+      const prefix = s._custom ? 'M' : (i + 1);
+      const dragIcon = isDraggable ? ' ✥' : '';
+      labelEl.textContent = `${isActive ? '✓ ' : '○ '}${prefix} · ${areaM2.toFixed(0)} m²${dragIcon}`;
       if (isClickable) {
         const onTap = (e) => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); onSegmentToggle(s._idx); };
         labelEl.addEventListener('click', onTap);

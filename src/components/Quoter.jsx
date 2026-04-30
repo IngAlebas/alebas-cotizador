@@ -1547,6 +1547,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           : null;
                       })()}
                       onSegmentToggle={toggleSegment}
+                      onSegmentMove={(idx, newCenter) => {
+                        // El idx llega como _idx combinado: roofSegments primero,
+                        // customSegments después. Calcular el índice local en
+                        // customSegments restando la longitud de roofSegments.
+                        const customIdx = idx - (f.roofSegments?.length || 0);
+                        if (customIdx < 0 || !f.customSegments?.[customIdx]) return;
+                        const updated = [...f.customSegments];
+                        updated[customIdx] = { ...updated[customIdx], center: newCenter };
+                        u('customSegments', updated);
+                      }}
                       showSunPath={true}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
