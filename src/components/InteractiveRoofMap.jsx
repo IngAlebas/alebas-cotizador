@@ -233,7 +233,7 @@ export default function InteractiveRoofMap({
       const y = -Math.cos(rad) * 0.18;
       points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
     }
-    // Línea con FLECHA al final indicando dirección del sol E→O.
+    // Línea con FLECHA en el medio indicando dirección del sol E→O.
     const line = new maps.Polyline({
       map: mapRef.current,
       path: points,
@@ -252,20 +252,18 @@ export default function InteractiveRoofMap({
           strokeColor: '#FF8C00',
           strokeWeight: 1,
         },
-        offset: '100%',
+        offset: '60%',
       }],
     });
-    // ☀ HTML overlay en E (amanecer), cenit (mediodía), O (atardecer).
-    const makeSunOverlay = (pos, size, title) => {
+    // Helper para overlays HTML.
+    const makeOverlay = (pos, html, extraCss = '') => {
       const el = document.createElement('div');
+      el.innerHTML = html;
       el.style.cssText = `
-        font-size: ${size}px; line-height: 1; pointer-events: none;
+        line-height: 1; pointer-events: none;
         transform: translate(-50%, -50%); user-select: none;
-        filter: drop-shadow(0 0 4px rgba(255,140,0,0.8));
-        text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+        ${extraCss}
       `;
-      el.textContent = '☀';
-      el.title = title;
       const ov = new maps.OverlayView();
       ov.onAdd = function () { this.getPanes().overlayMouseTarget.appendChild(el); };
       ov.draw = function () {
@@ -278,12 +276,23 @@ export default function InteractiveRoofMap({
       ov.setMap(mapRef.current);
       return ov;
     };
-    sunPathRef.current = {
-      line,
-      east:   makeSunOverlay(points[0], 14, '☀ Salida del sol (Este, ~6 AM)'),
-      zenith: makeSunOverlay(points[Math.floor(points.length / 2)], 22, '☀ Cenit (mediodía)'),
-      west:   makeSunOverlay(points[points.length - 1], 14, '☀ Puesta del sol (Oeste, ~6 PM)'),
-    };
+    // Sol GRANDE amarillo al INICIO de la ruta (Este, donde sale el sol).
+    // Letras 'E' y 'O' en los extremos para indicar coordenadas/dirección.
+    const eastPos = points[0];
+    const westPos = points[points.length - 1];
+    const sunStart = makeOverlay(eastPos, `
+      <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+        <div style="font-size:24px; filter: drop-shadow(0 0 6px rgba(255,140,0,0.9)); text-shadow: 0 1px 2px rgba(0,0,0,0.5);">☀</div>
+        <div style="font-size:10px; font-weight:800; color:#FFD93D; background:rgba(7,9,15,0.7); padding:1px 6px; border-radius:9px; letter-spacing:1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6);">E · sale</div>
+      </div>
+    `);
+    const sunEnd = makeOverlay(westPos, `
+      <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+        <div style="font-size:14px; filter: drop-shadow(0 0 4px rgba(255,140,0,0.7)); text-shadow: 0 1px 2px rgba(0,0,0,0.5); opacity:0.7;">☀</div>
+        <div style="font-size:10px; font-weight:800; color:#FFD93D; background:rgba(7,9,15,0.7); padding:1px 6px; border-radius:9px; letter-spacing:1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6);">O · cae</div>
+      </div>
+    `);
+    sunPathRef.current = { line, east: sunStart, west: sunEnd };
   }, [showSunPath, lat, lon, areaM2, ready]);
 
   // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
