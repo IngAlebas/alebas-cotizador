@@ -1547,6 +1547,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                           : null;
                       })()}
                       onSegmentToggle={toggleSegment}
+                      onSegmentMove={(idx, newCenter) => {
+                        // El idx llega como _idx combinado: roofSegments primero,
+                        // customSegments después. Calcular el índice local en
+                        // customSegments restando la longitud de roofSegments.
+                        const customIdx = idx - (f.roofSegments?.length || 0);
+                        if (customIdx < 0 || !f.customSegments?.[customIdx]) return;
+                        const updated = [...f.customSegments];
+                        updated[customIdx] = { ...updated[customIdx], center: newCenter };
+                        u('customSegments', updated);
+                      }}
                       showSunPath={true}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
@@ -2385,15 +2395,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   }, 350);
                 }}
                 onFocus={() => setContactAddrSuggestOpen(true)}
-                onBlur={() => {
-                  setTimeout(() => setContactAddrSuggestOpen(false), 200);
-                  // Sync inverso al perder foco — si el toggle 'misma del
-                  // install' está activo y roofQuery está vacío, alimentar
-                  // step 1 con la dirección que acaba de tipear.
-                  if (f.addressSameAsInstall && f.address && f.address !== roofQuery) {
-                    setRoofQuery(f.address);
-                  }
-                }}
+                onBlur={() => setTimeout(() => setContactAddrSuggestOpen(false), 200)}
                 placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
                 autoComplete="street-address"
               />

@@ -11,6 +11,7 @@ export default function InteractiveRoofMap({
   segments = null,        // [{ azimuthDegrees, areaMeters2, center, boundingBox, _idx, ... }]
   showSunPath = true,     // arco azimutal del sol (oriente → cenit → poniente)
   onSegmentToggle = null, // (idx) => void — tap en círculo o label toggle inclusión
+  onSegmentMove = null,   // (idx, {lat, lng}) => void — drag de cubiertas custom
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -141,34 +142,52 @@ export default function InteractiveRoofMap({
       const areaM2 = s.areaMeters2 || 0;
       const radius = Math.max(1.5, Math.min(8, Math.sqrt(areaM2 / Math.PI)));
       const isClickable = !!onSegmentToggle && s._idx != null;
+      // Solo las cubiertas CUSTOM (_custom: true) son arrastrables. Las
+      // detectadas por Google Solar tienen posición fija.
+      const isDraggable = !!onSegmentMove && s._custom && s._idx != null;
       const circle = new maps.Circle({
         map: mapRef.current,
         center,
         radius,
         strokeColor: col,
-        strokeOpacity: isActive ? 0.7 : 0.35,
-        strokeWeight: isActive ? 2 : 1.2,
+        strokeOpacity: isActive ? 0.55 : 0.25,
+        strokeWeight: isActive ? 1.8 : 1,
         fillColor: col,
-        fillOpacity: isActive ? 0.18 : 0.07,
-        clickable: isClickable,
+        fillOpacity: isActive ? 0.10 : 0.04,
+        clickable: isClickable || isDraggable,
+        draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
       });
       if (isClickable) circle.addListener('click', () => onSegmentToggle(s._idx));
+      if (isDraggable) {
+        // Al terminar el drag, emitir el nuevo center al padre para que
+        // actualice f.customSegments. El label flotante se reposiciona
+        // automáticamente en el próximo render del effect (dependencia
+        // 'segments' cambia y redraws).
+        circle.addListener('dragend', () => {
+          const c = circle.getCenter();
+          if (c) onSegmentMove(s._idx, { lat: c.lat(), lng: c.lng() });
+        });
+      }
       polygonsRef.current.push(circle);
       // Label flotante clickable con número + área.
       const labelEl = document.createElement('div');
       labelEl.style.cssText = `
-        background: ${col}; color: #fff; padding: 3px 9px; border-radius: 14px;
-        font-size: 11px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        background: rgba(7, 9, 15, 0.78); color: ${col}; padding: 2px 8px; border-radius: 12px;
+        font-size: 10.5px; font-weight: 800; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
         white-space: nowrap; transform: translate(-50%, -50%);
         pointer-events: ${isClickable ? 'auto' : 'none'};
         cursor: ${isClickable ? 'pointer' : 'default'};
         user-select: none;
-        opacity: ${isActive ? '1' : '0.75'};
-        border: 1.5px solid ${isActive ? '#16a34a' : 'transparent'};
+        opacity: ${isActive ? '0.95' : '0.65'};
+        border: 1px solid ${col};
         transition: transform 0.12s, opacity 0.12s;
       `;
-      labelEl.textContent = `${isActive ? '✓ ' : '○ '}${i + 1} · ${areaM2.toFixed(0)} m²`;
+      // Prefijo 'M' (manual) en cubiertas custom para distinguirlas + ícono
+      // ✥ que sugiere arrastrabilidad.
+      const prefix = s._custom ? 'M' : (i + 1);
+      const dragIcon = isDraggable ? ' ✥' : '';
+      labelEl.textContent = `${isActive ? '✓ ' : '○ '}${prefix} · ${areaM2.toFixed(0)} m²${dragIcon}`;
       if (isClickable) {
         const onTap = (e) => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); onSegmentToggle(s._idx); };
         labelEl.addEventListener('click', onTap);
@@ -193,16 +212,24 @@ export default function InteractiveRoofMap({
     if (validCenters.length > 0) {
       const bounds = new maps.LatLngBounds();
       validCenters.forEach(s => bounds.extend({ lat: s.center.lat, lng: s.center.lng }));
-      // Si solo 1 segmento, expandir bounds artificialmente para dar contexto.
-      if (validCenters.length === 1) {
-        const s = validCenters[0];
-        const dLat = 0.0003, dLng = 0.0003;
+      // Expandir bounds para que las cubiertas no queden pegadas al borde
+      // y los labels HTML no se superpongan. Padding extra ~30m alrededor.
+      const expandM = 30;
+      validCenters.forEach(s => {
+        const dLat = expandM / 111000;
+        const dLng = expandM / (111000 * Math.cos(s.center.lat * Math.PI / 180));
         bounds.extend({ lat: s.center.lat + dLat, lng: s.center.lng + dLng });
         bounds.extend({ lat: s.center.lat - dLat, lng: s.center.lng - dLng });
-      }
-      mapRef.current.fitBounds(bounds, 40);
-      // Permite zoom natural hasta 22 (Google max). Antes se forzaba a 20
-      // pero el cliente necesita acercarse para verificar las cubiertas.
+      });
+      mapRef.current.fitBounds(bounds, 60);
+      // Cap del zoom auto-fit a 19 — si las cubiertas están muy cerca,
+      // fitBounds zoom hasta 22 y los labels se superponen. 19 deja
+      // espacio para diferenciarlas. El cliente puede zoom manual hasta
+      // 22 (maxZoom) si quiere acercarse.
+      const listener = maps.event.addListenerOnce(mapRef.current, 'idle', () => {
+        if (mapRef.current.getZoom() > 19) mapRef.current.setZoom(19);
+      });
+      return () => maps.event.removeListener(listener);
     }
   }, [segments, ready]);
 
