@@ -176,6 +176,20 @@
 [data-theme="light"] .al-loading-screen {
   background: #07090F;
 }
+
+/* Cuando se muestra la pantalla de carga, ocultar el footer (en light theme
+   es blanco y rompe visualmente el card dark del loading; en dark también
+   simplifica la vista). El loading-screen pasa a ocupar todo el espacio
+   entre navbar y bottom-nav. */
+body:has(.al-loading-screen) .al-footer { display: none !important; }
+.al-loading-screen {
+  min-height: calc(100vh - 56px) !important;
+}
+@media (max-width: 600px) {
+  .al-loading-screen {
+    min-height: calc(100vh - 52px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
 [data-theme="light"] .al-loading-screen [style*="color: rgb(255, 255, 255)"],
 [data-theme="light"] .al-loading-screen [style*="color: white"],
 [data-theme="light"] .al-loading-screen [style*="color:#fff" i],
