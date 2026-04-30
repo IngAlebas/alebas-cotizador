@@ -222,15 +222,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   }, [f.systemType, loadMonthlyKwh]);
 
-  // Sincroniza la dirección de contacto con la del lugar de instalación cuando
-  // el cliente marca el toggle 'misma dirección' (default true). Evita que el
-  // cliente vuelva a tipear lo mismo en step 2 y mantiene los datos coherentes
-  // si vuelve a step 1 a corregir la dirección de instalación.
-  useEffect(() => {
-    if (!f.addressSameAsInstall) return;
-    if (roofQuery && roofQuery !== f.address) u('address', roofQuery);
-  }, [f.addressSameAsInstall, roofQuery]);
-
   // Auto-sugerencia de acometida (RETIE 240) según el consumo. Si el usuario
   // la fija manualmente (phaseManual) no tocamos su elección.
   const suggestedAcometida = suggestAcometida(f.monthlyKwh, f.systemType);
@@ -273,6 +264,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [contactAddrSuggestions, setContactAddrSuggestions] = useState([]);
   const [contactAddrSuggestOpen, setContactAddrSuggestOpen] = useState(false);
   const [contactAddrLoading, setContactAddrLoading] = useState(false);
+
+  // Sincroniza la dirección de contacto con la del lugar de instalación cuando
+  // el cliente marca el toggle 'misma dirección' (default true). DEBE estar
+  // DESPUÉS de la declaración de roofQuery para evitar ReferenceError TDZ:
+  // el array de dependencias se evalúa síncrono en cada render y referencia
+  // un binding aún no inicializado si el useEffect va antes del useState.
+  useEffect(() => {
+    if (!f.addressSameAsInstall) return;
+    if (roofQuery && roofQuery !== f.address) u('address', roofQuery);
+  }, [f.addressSameAsInstall, roofQuery, f.address]);
   const contactPlacesSessionRef = React.useRef(null);
   const contactAddrDebounceRef = React.useRef(null);
   // Recomendación IA post-cálculo
