@@ -144,42 +144,53 @@ export default function InteractiveRoofMap({
       // Solo las cubiertas CUSTOM (_custom: true) son arrastrables. Las
       // detectadas por Google Solar tienen posición fija.
       const isDraggable = !!onSegmentMove && s._custom && s._idx != null;
-      // POLÍGONO RECTANGULAR ROTADO POR AZIMUT — visualiza la orientación
-      // real del techo (el lado largo va paralelo al lomo, perpendicular
-      // al azimut). Reemplaza al círculo simple por una representación
-      // más fiel a la geometría del techo.
       const azDegSeg = s.azimuthDegrees != null ? Number(s.azimuthDegrees) : 180;
-      // Lado del cuadrado equivalente al área del segmento. Aspecto 1.4:1
-      // (más ancho a lo largo del lomo, más estrecho en sentido de la
-      // pendiente — típico de techos a 1 agua).
-      const baseSide = Math.sqrt(Math.max(4, areaM2));
-      const widthM = baseSide * 1.18;   // perpendicular al azimut (lomo)
-      const heightM = baseSide * 0.85;  // a lo largo del azimut (pendiente)
-      // Rotación: el azimut indica DOWN-slope. El lado largo (width) va
-      // perpendicular = paralelo al lomo. Convertir a coords lat/lng.
       const azRadSeg = (azDegSeg * Math.PI) / 180;
       const cosA = Math.cos(azRadSeg), sinA = Math.sin(azRadSeg);
       const latM = 1 / 111000;
       const lngM = 1 / (111000 * Math.cos(center.lat * Math.PI / 180));
-      // Esquinas en sistema local (x = perpendicular al azimut, y = a lo
-      // largo del azimut), luego rotadas y traducidas a lat/lng.
-      const corners = [
-        [-widthM / 2, -heightM / 2],
-        [ widthM / 2, -heightM / 2],
-        [ widthM / 2,  heightM / 2],
-        [-widthM / 2,  heightM / 2],
-      ].map(([lx, ly]) => {
-        // Rotación 2D: x' = x cos - y sin, y' = x sin + y cos
-        // PERO el azimut es bearing desde Norte; tenemos que mapear:
-        //   eje x local (perpendicular al azimut) = dirección del lomo
-        //   eje y local (a lo largo del azimut) = dirección de la pendiente
-        const dx = lx * cosA - ly * sinA;   // delta este (m)
-        const dy = lx * sinA + ly * cosA;   // delta norte (m)
-        return {
-          lat: center.lat + dy * latM,
-          lng: center.lng + dx * lngM,
-        };
-      });
+      // POLÍGONO QUE GOOGLE DETECTÓ
+      // Si Google dio boundingBox real → uso esos 4 corners (axis-aligned
+      // pero EXACTOS — la extensión real que Google identificó como techo).
+      // Si solo hay center + areaMeters2 (custom o sin bbox) → fallback a
+      // un rectángulo rotado por azimut con dimensiones desde sqrt(area).
+      let corners;
+      let widthM, heightM;
+      if (s.boundingBox && s.boundingBox.sw && s.boundingBox.ne && !s._custom) {
+        // BoundingBox de Google: 4 esquinas exactas en lat/lng. Esto es
+        // lo que Google detectó como extensión del segmento (axis-aligned
+        // pero la posición y tamaño son los reales reportados por Solar API).
+        const { sw, ne } = s.boundingBox;
+        corners = [
+          { lat: sw.lat, lng: sw.lng },
+          { lat: sw.lat, lng: ne.lng },
+          { lat: ne.lat, lng: ne.lng },
+          { lat: ne.lat, lng: sw.lng },
+        ];
+        // Para la flecha de orientación: usar sqrt(area) sin rotación
+        // adicional ya que el bbox no rota.
+        const baseSide = Math.sqrt(Math.max(4, areaM2));
+        widthM = baseSide;
+        heightM = baseSide;
+      } else {
+        // Fallback: rectángulo rotado por azimut (custom segments o sin bbox).
+        const baseSide = Math.sqrt(Math.max(4, areaM2));
+        widthM = baseSide * 1.18;
+        heightM = baseSide * 0.85;
+        corners = [
+          [-widthM / 2, -heightM / 2],
+          [ widthM / 2, -heightM / 2],
+          [ widthM / 2,  heightM / 2],
+          [-widthM / 2,  heightM / 2],
+        ].map(([lx, ly]) => {
+          const dx = lx * cosA - ly * sinA;
+          const dy = lx * sinA + ly * cosA;
+          return {
+            lat: center.lat + dy * latM,
+            lng: center.lng + dx * lngM,
+          };
+        });
+      }
       const polygon = new maps.Polygon({
         map: mapRef.current,
         paths: corners,
