@@ -1560,17 +1560,6 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             );
           })()}
 
-          {/* Diagrama de trayectoria solar — debajo del mapa para evitar overlap.
-              Muestra arco semicircular E→cenit→O con horas, posición actual del
-              sol y orientación principal del techo. */}
-          {f.roofAzimuthDeg != null && (
-            <SunPathDiagram
-              azimuthDeg={f.roofAzimuthDeg}
-              sunshineHoursYear={f.sunshineHoursYear}
-              latitude={f.lat || 4}
-            />
-          )}
-
           {/* ═══════════════════════════════════════════════════════════════
               CUBIERTAS DEL TECHO — interactivas, debajo de las imágenes para
               que el cliente tenga contexto visual antes de elegir.
@@ -1893,8 +1882,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             );
           })()}
 
-          {/* Mapa de UBICACIÓN (calles) — debajo de las cubiertas para no
-              interrumpir el flujo entre el mapa interactivo y el selector. */}
+          {/* Diagrama de trayectoria solar — debajo de cubiertas para que el
+              mapa interactivo quede pegado a la lista de cubiertas (mejora UX
+              de tap-to-toggle). Muestra arco E→cenit→O, horas y orientación. */}
+          {f.roofAzimuthDeg != null && (
+            <SunPathDiagram
+              azimuthDeg={f.roofAzimuthDeg}
+              sunshineHoursYear={f.sunshineHoursYear}
+              latitude={f.lat || 4}
+            />
+          )}
+
+          {/* Mapa de UBICACIÓN (calles) — al final, contexto urbano. */}
           {f.roofStaticMapRoadUrl && (
             <div style={{ marginTop: 12, background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9, overflow: 'hidden' }}>
               <div style={{ fontSize: 9, padding: '6px 10px', color: C.muted, background: `${C.teal}10`, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
