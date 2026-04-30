@@ -183,11 +183,11 @@ export default function InteractiveRoofMap({
       const polygon = new maps.Polygon({
         map: mapRef.current,
         paths: corners,
-        strokeColor: col,
-        strokeOpacity: isActive ? 0.95 : 0.5,
-        strokeWeight: isActive ? 2.5 : 1.4,
+        strokeColor: isActive ? '#ffffff' : col,  // borde BLANCO para activos: máximo contraste sobre satellite
+        strokeOpacity: isActive ? 1 : 0.6,
+        strokeWeight: isActive ? 3 : 1.5,
         fillColor: col,
-        fillOpacity: isActive ? 0.30 : 0.10,
+        fillOpacity: isActive ? 0.45 : 0.12,
         clickable: isClickable || isDraggable,
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
@@ -205,6 +205,22 @@ export default function InteractiveRoofMap({
         });
       }
       polygonsRef.current.push(polygon);
+      // Para activos: agregar un borde interno en color (sobre el blanco)
+      // para reforzar el contraste contra el satellite. Doble borde =
+      // halo blanco + outline verde, máxima visibilidad sin ocultar techo.
+      if (isActive) {
+        const innerOutline = new maps.Polygon({
+          map: mapRef.current,
+          paths: corners,
+          strokeColor: col,
+          strokeOpacity: 0.95,
+          strokeWeight: 1.5,
+          fillOpacity: 0,
+          clickable: false,
+          zIndex: 7,
+        });
+        polygonsRef.current.push(innerOutline);
+      }
       // Label flotante clickable con número + área.
       const labelEl = document.createElement('div');
       labelEl.style.cssText = `
@@ -301,22 +317,20 @@ export default function InteractiveRoofMap({
       sunPathRef.current = null;
     }
     if (!showSunPath || lat == null || lon == null) return;
-    // RUTA DEL SOL: compacta y DESPLAZADA al norte del techo para que no
-    // atraviese ninguna cubierta. Antes el arco pasaba por encima del
-    // edificio; ahora se ubica como referencia compacta arriba del pin
-    // (en dirección norte = lat positivo) y nunca sobre el techo.
+    // RUTA DEL SOL: arco LARGO y bien arriba del techo. Ancho extendido
+    // para que el cliente perciba claramente la trayectoria E→cenit→O,
+    // y desplazado al norte lo suficiente para nunca atravesar cubiertas.
     const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.4 : 12;
     const dLat = r / 111000;
     const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
-    // Offset constante hacia el NORTE para alejar el arco del edificio.
-    // ~r metros encima del pin (típicamente arriba del límite superior
-    // del techo en la mayoría de las orientaciones).
-    const northOffset = 1.4;  // múltiplo de r (radio del techo)
+    const northOffset = 2.5;       // múltiplo de r — bien arriba del techo
+    const arcWidth = 2.2;          // ancho del arco — LARGO
+    const arcHeight = 0.55;        // altura del arco — visible curvatura
     const points = [];
-    for (let h = -90; h <= 90; h += 15) {
+    for (let h = -90; h <= 90; h += 10) {
       const rad = h * Math.PI / 180;
-      const x = Math.sin(rad) * 0.7;        // ancho del arco (más estrecho)
-      const y = -(Math.cos(rad) * 0.25 + northOffset);  // arco arriba + offset N
+      const x = Math.sin(rad) * arcWidth;
+      const y = -(Math.cos(rad) * arcHeight + northOffset);
       points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
     }
     // Línea muy DELGADA con FLECHA prominente en el medio indicando
