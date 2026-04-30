@@ -2435,6 +2435,20 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <span style={{ display: 'block', color: C.muted, fontSize: 10, marginTop: 3 }}>
                   📍 {roofQuery}
                 </span>
+                {/* Indicador de validación: si la dirección fue elegida del
+                    autocomplete Google (verificada) o si Solar API resolvió
+                    coords (lat/lon disponible), mostramos badge verde. Esto
+                    le da confianza al cliente de que la dirección que se
+                    usará para modelar el sistema está validada. */}
+                {(roofQueryVerified || (f.lat != null && f.lon != null)) && (
+                  <span style={{
+                    display: 'inline-block', marginTop: 5, fontSize: 10, fontWeight: 700,
+                    color: C.green, background: `${C.green}15`,
+                    padding: '2px 7px', borderRadius: 10, border: `1px solid ${C.green}55`,
+                  }}>
+                    ✓ Validada por Google {f.lat != null ? '· coords ' + Number(f.lat).toFixed(4) + ', ' + Number(f.lon).toFixed(4) : ''}
+                  </span>
+                )}
               </span>
             </label>
           )}

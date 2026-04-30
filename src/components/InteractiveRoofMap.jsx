@@ -210,25 +210,16 @@ export default function InteractiveRoofMap({
     // Auto-fit a los círculos.
     const validCenters = segments.filter(s => s.center && s.center.lat && s.center.lng);
     if (validCenters.length > 0) {
-      const bounds = new maps.LatLngBounds();
-      validCenters.forEach(s => bounds.extend({ lat: s.center.lat, lng: s.center.lng }));
-      // Expandir bounds mínimamente (~5m) — solo lo justo para no recortar
-      // los labels al borde. Queremos máximo zoom posible.
-      const expandM = 5;
-      validCenters.forEach(s => {
-        const dLat = expandM / 111000;
-        const dLng = expandM / (111000 * Math.cos(s.center.lat * Math.PI / 180));
-        bounds.extend({ lat: s.center.lat + dLat, lng: s.center.lng + dLng });
-        bounds.extend({ lat: s.center.lat - dLat, lng: s.center.lng - dLng });
-      });
-      mapRef.current.fitBounds(bounds, 20);
-      // Forzar zoom MÁXIMO posible (21) tras fitBounds. fitBounds elige el
-      // zoom natural según los bounds, pero queremos maximizar el acerca-
-      // miento para que el cliente verifique las cubiertas con detalle.
-      const listener = maps.event.addListenerOnce(mapRef.current, 'idle', () => {
-        if (mapRef.current.getZoom() < 21) mapRef.current.setZoom(21);
-      });
-      return () => maps.event.removeListener(listener);
+      // Centro = promedio de coords (centroid). Más confiable que fitBounds
+      // para fijar zoom alto: fitBounds elige zoom según los bounds y el
+      // listener 'idle' a veces no dispara o se descarta antes de fire.
+      const avgLat = validCenters.reduce((a, s) => a + s.center.lat, 0) / validCenters.length;
+      const avgLng = validCenters.reduce((a, s) => a + s.center.lng, 0) / validCenters.length;
+      mapRef.current.setCenter({ lat: avgLat, lng: avgLng });
+      // Zoom 21 = máximo útil (max=22 reservado para zoom manual). Da el
+      // mayor acercamiento posible sobre las cubiertas detectadas por
+      // Google sin perder contexto del techo.
+      mapRef.current.setZoom(21);
     }
   }, [segments, ready]);
 
