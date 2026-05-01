@@ -1,0 +1,195 @@
+{
+  "name": "ALEBAS — solar-cache",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "solar-roof-cached",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "alebas-solar-roof-cached"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Construye la cache key a partir de lat/lon o address.\n// Política de claves:\n//   - Si lat+lon presentes: 'geo:<lat5>,<lon5>' (5 decimales ≈ 1.1 m de resolución).\n//     Suficiente para distinguir techos vecinos sin fragmentar el cache por jitter\n//     submétrico de pines de mapa.\n//   - Else if address: 'addr:<lowercase-trim-collapse>' tras normalizar abreviaturas.\n//   - Else: error de input.\n//\n// El Postgres node siguiente busca esta key. Si Postgres falla (ej: conexión),\n// marcamos cacheError y dejamos pasar al Solar API directo (degradación).\n\nconst src = $input.first().json;\nconst body = src.body || src;\nconst address = (body.address || '').toString().trim();\nconst lat = body.lat != null ? Number(body.lat) : null;\nconst lon = body.lon != null ? Number(body.lon) : null;\n\nif (!address && (lat == null || lon == null || Number.isNaN(lat) || Number.isNaN(lon))) {\n  return [{ json: { ok: false, reason: 'invalid_input', detail: 'address o lat/lon requeridos' } }];\n}\n\nlet cacheKey;\nif (lat != null && lon != null && !Number.isNaN(lat) && !Number.isNaN(lon)) {\n  cacheKey = 'geo:' + lat.toFixed(5) + ',' + lon.toFixed(5);\n} else {\n  // Normalización mínima del address para colisión consistente en el cache.\n  const normalized = address\n    .toLowerCase()\n    .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')\n    .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace(/ñ/g, 'n')\n    .replace(/[.,#]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n  cacheKey = 'addr:' + normalized;\n}\n\nreturn [{ json: { cacheKey, address, lat, lon, body } }];"
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000002",
+      "name": "Build cache key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT response, source, confidence, created_at, expires_at, hit_count FROM solar_cache WHERE cache_key = $1 AND expires_at > NOW() LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.cacheKey] }}"
+        }
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000003",
+      "name": "Lookup cache",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [600, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } },
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide HIT vs MISS. Tolerante a fallos del Postgres node (continueOnFail=true):\n// si la consulta no devolvió nada o devolvió un error, tratamos como MISS y dejamos\n// que el flujo descargue desde Google. Así el cache nunca degrada el servicio.\n\nconst meta = $('Build cache key').first().json;\nconst lookup = $input.all();\nconst row = (lookup && lookup.length > 0 && lookup[0].json && lookup[0].json.response) ? lookup[0].json : null;\n\nif (row && row.response) {\n  return [{ json: {\n    cacheKey: meta.cacheKey,\n    address: meta.address,\n    lat: meta.lat,\n    lon: meta.lon,\n    body: meta.body,\n    cacheHit: true,\n    cacheAgeSec: row.created_at ? Math.floor((Date.now() - new Date(row.created_at).getTime()) / 1000) : null,\n    cacheExpiresAt: row.expires_at || null,\n    cacheHitCount: row.hit_count || 0,\n    cachedResponse: row.response,\n    cachedSource: row.source,\n    cachedConfidence: row.confidence,\n  }, pairedItem: { item: 0 } }];\n}\nreturn [{ json: {\n  cacheKey: meta.cacheKey,\n  address: meta.address,\n  lat: meta.lat,\n  lon: meta.lon,\n  body: meta.body,\n  cacheHit: false,\n}, pairedItem: { item: 0 } }];"
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000004",
+      "name": "Hit or miss",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.cacheHit }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000005",
+      "name": "If cache hit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE solar_cache SET hit_count = hit_count + 1, last_hit_at = NOW() WHERE cache_key = $1 RETURNING hit_count;",
+        "options": {
+          "queryReplacement": "={{ [$json.cacheKey] }}"
+        }
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000006",
+      "name": "Bump hit counter",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1200, 200],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } },
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Devuelve la respuesta cacheada con metadata de cache (cacheHit, cacheAgeSec).\n// El frontend puede usar estos campos para mostrar 'datos guardados hace 12d'.\nconst meta = $('Hit or miss').first().json;\nconst body = meta.cachedResponse || {};\nreturn [{ json: {\n  ...body,\n  cacheHit: true,\n  cacheAgeSec: meta.cacheAgeSec,\n  cacheExpiresAt: meta.cacheExpiresAt,\n  cacheHitCount: (meta.cacheHitCount || 0) + 1,\n} }];"
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000007",
+      "name": "Format hit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_INTERNAL_BASE_URL || 'http://localhost:5678' }}/webhook/solar-roof",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 30000,
+          "response": { "response": { "neverError": true, "responseFormat": "autodetect" } }
+        }
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000008",
+      "name": "Call solar-roof",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara INSERT a solar_cache solo si la respuesta es válida (ok != false).\n// Pasa al siguiente nodo dos campos: la respuesta (para devolver) y un flag\n// shouldCache que el Postgres node usa para decidir si insertar.\n//\n// Respuestas con ok:false (geocode_no_results, missing_env, etc.) NO se cachean —\n// queremos que se reintenten en la siguiente request por si el problema fue\n// transitorio o el usuario corrige el input.\n\nconst meta = $('Hit or miss').first().json;\nconst response = $input.first().json;\nconst isValid = response && typeof response === 'object' && response.ok !== false;\n\nreturn [{ json: {\n  cacheKey: meta.cacheKey,\n  address: meta.address,\n  lat: meta.lat,\n  lon: meta.lon,\n  response,\n  source: response?.source || null,\n  confidence: response?.confidence != null ? Number(response.confidence) : null,\n  shouldCache: isValid,\n} }];"
+      },
+      "id": "f6c1c2c1-0001-4000-9000-000000000009",
+      "name": "Prepare cache insert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO solar_cache (cache_key, address, lat, lon, response, source, confidence)\nSELECT $1, $2, $3, $4, $5::jsonb, $6, $7\nWHERE $8::boolean = true\nON CONFLICT (cache_key) DO UPDATE SET\n  response = EXCLUDED.response,\n  source = EXCLUDED.source,\n  confidence = EXCLUDED.confidence,\n  created_at = NOW(),\n  expires_at = NOW() + INTERVAL '90 days',\n  hit_count = 0,\n  last_hit_at = NULL\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$json.cacheKey, $json.address, $json.lat, $json.lon, JSON.stringify($json.response), $json.source, $json.confidence, $json.shouldCache] }}"
+        }
+      },
+      "id": "f6c1c2c1-0001-4000-9000-00000000000a",
+      "name": "Upsert cache",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1600, 400],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } },
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Devuelve la respuesta fresca de solar-roof con metadata cacheHit:false.\n// Si la respuesta era inválida (ok:false), se propaga sin alterar — el frontend\n// ya sabe manejarla.\nconst prep = $('Prepare cache insert').first().json;\nconst body = prep.response || {};\nreturn [{ json: {\n  ...body,\n  cacheHit: false,\n  cacheStored: prep.shouldCache === true,\n} }];"
+      },
+      "id": "f6c1c2c1-0001-4000-9000-00000000000b",
+      "name": "Format miss",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1800, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "f6c1c2c1-0001-4000-9000-00000000000c",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Build cache key", "type": "main", "index": 0 }]] },
+    "Build cache key": { "main": [[{ "node": "Lookup cache", "type": "main", "index": 0 }]] },
+    "Lookup cache": { "main": [[{ "node": "Hit or miss", "type": "main", "index": 0 }]] },
+    "Hit or miss": { "main": [[{ "node": "If cache hit", "type": "main", "index": 0 }]] },
+    "If cache hit": {
+      "main": [
+        [{ "node": "Bump hit counter", "type": "main", "index": 0 }],
+        [{ "node": "Call solar-roof", "type": "main", "index": 0 }]
+      ]
+    },
+    "Bump hit counter": { "main": [[{ "node": "Format hit", "type": "main", "index": 0 }]] },
+    "Format hit": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+    "Call solar-roof": { "main": [[{ "node": "Prepare cache insert", "type": "main", "index": 0 }]] },
+    "Prepare cache insert": { "main": [[{ "node": "Upsert cache", "type": "main", "index": 0 }]] },
+    "Upsert cache": { "main": [[{ "node": "Format miss", "type": "main", "index": 0 }]] },
+    "Format miss": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}
