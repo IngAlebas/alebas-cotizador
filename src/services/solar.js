@@ -118,7 +118,7 @@ export async function lookupRoof({ address, lat, lon } = {}) {
   let norm;
   if (n8nConfigured()) {
     try {
-      const data = await n8nPost('solar-roof', { address, lat, lon });
+      const data = await n8nPost('solar-roof-cached', { address, lat, lon });
       if (!data || typeof data !== 'object') throw new Error('Servicio de análisis de techo no disponible. Intenta de nuevo en unos minutos.');
       // El workflow puede devolver {ok:false, reason, detail} cuando geocoding falla,
       // input es inválido, o falta GOOGLE_API_KEY. Sin este check los Number(undefined)
