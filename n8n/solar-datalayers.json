@@ -1,0 +1,125 @@
+{
+  "name": "ALEBAS — solar-datalayers",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "solar-datalayers",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d3000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-solar-datalayers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida input y construye params para dataLayers:get.\n// Input: { lat, lon, radiusMeters? }\nconst src = $input.first().json;\nconst body = src.body || src;\nconst lat = body.lat != null ? Number(body.lat) : null;\nconst lon = body.lon != null ? Number(body.lon) : null;\nif (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) {\n  return [{ json: { ok: false, reason: 'invalid_input', detail: 'lat y lon requeridos' } }];\n}\nconst radiusMeters = body.radiusMeters != null ? Math.min(100, Math.max(10, Number(body.radiusMeters))) : 50;\nconst safeEnv = (k) => { try { return $env[k]; } catch (_) { return null; } };\nconst GKEY = safeEnv('GOOGLE_API_KEY');\nif (!GKEY) {\n  return [{ json: { ok: false, reason: 'missing_env', detail: 'GOOGLE_API_KEY no configurada' } }];\n}\nreturn [{ json: { lat, lon, radiusMeters, gkey: GKEY } }];"
+      },
+      "id": "d3000000-0001-4000-9000-000000000002",
+      "name": "Validate input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Chequea si el nodo anterior devolvió error (ok:false).\nconst d = $input.first().json;\nreturn [{ json: { isError: d.ok === false, ...d } }];"
+      },
+      "id": "d3000000-0001-4000-9000-000000000003",
+      "name": "Check error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-is-error",
+              "leftValue": "={{ $json.isError }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d3000000-0001-4000-9000-000000000004",
+      "name": "If error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://solar.googleapis.com/v1/dataLayers:get?location.latitude=' + $json.lat + '&location.longitude=' + $json.lon + '&radiusMeters=' + $json.radiusMeters + '&view=FULL_LAYERS&requiredQuality=LOW&pixelSizeMeters=0.5&key=' + $json.gkey }}",
+        "options": { "timeout": 20000 }
+      },
+      "id": "d3000000-0001-4000-9000-000000000005",
+      "name": "Call dataLayers API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrae URLs firmadas + bounds del response de dataLayers:get.\n// Devuelve solo lo que el frontend necesita para renderizar el heatmap.\nconst d = $input.first().json;\nif (!d || d.error) {\n  const msg = d?.error?.message || 'dataLayers API error';\n  return [{ json: { ok: false, reason: 'api_error', detail: msg } }];\n}\nconst bb = d.boundingBox;\nif (!bb || !bb.sw || !bb.ne) {\n  return [{ json: { ok: false, reason: 'no_bounds', detail: 'dataLayers no devolvió boundingBox' } }];\n}\nreturn [{ json: {\n  ok: true,\n  annualFluxUrl: d.annualFluxUrl || null,\n  dsmUrl: d.dsmUrl || null,\n  maskUrl: d.maskUrl || null,\n  imageryUrl: d.imageryUrl || null,\n  monthlyFluxUrls: Array.isArray(d.monthlyFluxUrl) ? d.monthlyFluxUrl : [],\n  bounds: {\n    sw: { lat: Number(bb.sw.latitude), lng: Number(bb.sw.longitude) },\n    ne: { lat: Number(bb.ne.latitude), lng: Number(bb.ne.longitude) },\n  },\n  imageryDate: d.imageryDate || null,\n  imageryProcessedDate: d.imageryProcessedDate || null,\n} }];"
+      },
+      "id": "d3000000-0001-4000-9000-000000000006",
+      "name": "Parse response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "d3000000-0001-4000-9000-000000000007",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "d3000000-0001-4000-9000-000000000008",
+      "name": "Respond error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 180]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Validate input", "type": "main", "index": 0 }]] },
+    "Validate input": { "main": [[{ "node": "Check error", "type": "main", "index": 0 }]] },
+    "Check error": { "main": [[{ "node": "If error", "type": "main", "index": 0 }]] },
+    "If error": {
+      "main": [
+        [{ "node": "Respond error", "type": "main", "index": 0 }],
+        [{ "node": "Call dataLayers API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call dataLayers API": { "main": [[{ "node": "Parse response", "type": "main", "index": 0 }]] },
+    "Parse response": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}

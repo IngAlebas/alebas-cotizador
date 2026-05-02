@@ -14,6 +14,8 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
+import { fetchDataLayerUrls, geotiffToPngDataUrl, fetchMonthlyProduction } from '../services/solarLayers';
+import MonthlyProductionChart from './MonthlyProductionChart';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import InteractiveRoofMap from './InteractiveRoofMap';
@@ -59,6 +61,7 @@ const Q0 = {
   // Google Solar — orientación, insolación, segmentos de techo e imágenes (dataLayers)
   roofTiltDeg: null, roofAzimuthDeg: null, sunshineHoursYear: null,
   googleMaxPanels: null, roofSegments: [], roofImagery: null, roofStaticMapUrl: null,
+  solarPanels: [], panelHeightMeters: null, panelWidthMeters: null,
   customSegments: [],  // Cubiertas añadidas manualmente por el usuario (no detectadas por Google)
   // Índices (en f.roofSegments) que el cliente marcó como NO PERTENECIENTES
   // al predio (ej. techo del vecino que cayó dentro del análisis). Se ocultan
@@ -261,6 +264,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [roofQueryVerified, setRoofQueryVerified] = useState(false);
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
+  const [heatmapLayer, setHeatmapLayer] = useState(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [heatmapError, setHeatmapError] = useState(null);
+  const [panelSlider, setPanelSlider] = useState(null); // null = sin override (usa res.numPanels)
+  const [monthlyReal, setMonthlyReal] = useState(null);   // array[12] kWh/mes reales Google Solar
+  const [monthlyRealLoading, setMonthlyRealLoading] = useState(false);
+  const [monthlyRealError, setMonthlyRealError] = useState(null);
+  const [dataLayerUrls, setDataLayerUrls] = useState(null); // URLs firmadas del último fetch
   // Autocomplete de direcciones (Google Places via n8n)
   const [addrSuggestions, setAddrSuggestions] = useState([]);
   const [addrSuggestOpen, setAddrSuggestOpen] = useState(false);
@@ -473,6 +484,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (r.sunshineHoursYear != null) u('sunshineHoursYear', r.sunshineHoursYear);
     if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
     if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
+    if (Array.isArray(r.solarPanels) && r.solarPanels.length > 0) u('solarPanels', r.solarPanels);
+    if (r.panelHeightMeters != null) u('panelHeightMeters', Number(r.panelHeightMeters));
+    if (r.panelWidthMeters != null) u('panelWidthMeters', Number(r.panelWidthMeters));
     if (r.imagery) u('roofImagery', r.imagery);
     if (r.googleSolarEstimate) u('googleSolarEstimate', r.googleSolarEstimate);
     if (r.staticMapUrl) u('roofStaticMapUrl', r.staticMapUrl);
@@ -484,6 +498,56 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (r.coordinatesPrecisionHint) u('roofPrecisionHint', r.coordinatesPrecisionHint);
     // Resetear confirmación al re-buscar — el cliente debe re-confirmar la nueva ubicación.
     u('roofLocationConfirmed', false);
+  };
+
+  const loadHeatmap = async () => {
+    if (!f.lat || !f.lon) return;
+    setHeatmapLoading(true);
+    setHeatmapError(null);
+    try {
+      const layerData = await fetchDataLayerUrls({ lat: f.lat, lon: f.lon });
+      if (!layerData.annualFluxUrl) throw new Error('No hay datos de irradiancia para esta ubicación');
+      setDataLayerUrls(layerData); // guardar para uso en monthly
+      const { dataUrl, minVal, maxVal } = await geotiffToPngDataUrl(layerData.annualFluxUrl, layerData.bounds);
+      setHeatmapLayer({ dataUrl, bounds: layerData.bounds, minVal, maxVal, imageryDate: layerData.imageryDate });
+    } catch (e) {
+      setHeatmapError(e?.message || 'No se pudo cargar el heatmap de irradiancia');
+    } finally {
+      setHeatmapLoading(false);
+    }
+  };
+
+  const loadMonthlyReal = async () => {
+    const urls = dataLayerUrls?.monthlyFluxUrls;
+    if (!urls?.length) {
+      // Si no tenemos las URLs todavía, fetching primero
+      setMonthlyRealLoading(true);
+      setMonthlyRealError(null);
+      try {
+        const layerData = await fetchDataLayerUrls({ lat: f.lat, lon: f.lon });
+        setDataLayerUrls(layerData);
+        if (!layerData.monthlyFluxUrls?.length) throw new Error('No hay datos mensuales para esta ubicación');
+        const areaM2 = f.googleAreaM2 || f.availableArea || 30;
+        const monthly = await fetchMonthlyProduction(layerData.monthlyFluxUrls, Number(areaM2));
+        setMonthlyReal(monthly);
+      } catch (e) {
+        setMonthlyRealError(e?.message || 'No se pudieron cargar datos mensuales');
+      } finally {
+        setMonthlyRealLoading(false);
+      }
+      return;
+    }
+    setMonthlyRealLoading(true);
+    setMonthlyRealError(null);
+    try {
+      const areaM2 = f.googleAreaM2 || f.availableArea || 30;
+      const monthly = await fetchMonthlyProduction(urls, Number(areaM2));
+      setMonthlyReal(monthly);
+    } catch (e) {
+      setMonthlyRealError(e?.message || 'No se pudieron cargar datos mensuales');
+    } finally {
+      setMonthlyRealLoading(false);
+    }
   };
 
   const onLookupRoof = async (overrideAddress = null) => {
@@ -1592,8 +1656,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   <div>
                     <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Satelital · arrastra el pin · zoom con pellizco</span>
-                      <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {f.lat && f.lon && (
+                          <button
+                            onClick={() => heatmapLayer ? setHeatmapLayer(null) : loadHeatmap()}
+                            disabled={heatmapLoading}
+                            style={{ fontSize: 9, padding: '2px 8px', borderRadius: 10, border: 'none', cursor: heatmapLoading ? 'wait' : 'pointer', fontWeight: 700, background: heatmapLayer ? '#FF8C00' : C.teal, color: '#fff', letterSpacing: 0.3 }}
+                          >
+                            {heatmapLoading ? '⟳ Cargando…' : heatmapLayer ? '✕ Ocultar irradiancia' : '🌡 Ver irradiancia'}
+                          </button>
+                        )}
+                        <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
+                      </div>
                     </div>
+                    {heatmapError && (
+                      <div style={{ fontSize: 9, padding: '3px 8px', background: '#2a0d0d', color: '#ff8a80' }}>
+                        ⚠ {heatmapError}
+                      </div>
+                    )}
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
@@ -1624,8 +1704,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         u('customSegments', updated);
                       }}
                       showSunPath={true}
-                      panelW={panel?.widthMm ? panel.widthMm / 1000 : 1.0}
-                      panelH={panel?.lengthMm ? panel.lengthMm / 1000 : 2.0}
+                      panelW={f.panelWidthMeters || (panel?.widthMm ? panel.widthMm / 1000 : 1.0)}
+                      panelH={f.panelHeightMeters || (panel?.lengthMm ? panel.lengthMm / 1000 : 2.0)}
+                      googlePanels={f.solarPanels?.length > 0
+                        ? (panelSlider != null
+                            ? [...f.solarPanels].sort((a,b) => (b.yearlyEnergyDcKwh||0)-(a.yearlyEnergyDcKwh||0)).slice(0, panelSlider)
+                            : f.solarPanels)
+                        : []}
+                      heatmapLayer={heatmapLayer}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
                         setRoofError(null); setRoofLoading(true);
@@ -1643,6 +1729,59 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       }}
                     />
                   </div>
+                  {/* Slider de paneles Google Solar — solo visible si hay paneles reales */}
+                  {f.solarPanels?.length > 0 && f.googleMaxPanels > 0 && (() => {
+                    const maxP = f.googleMaxPanels;
+                    const currentP = panelSlider ?? f.solarPanels.length;
+                    const gEst = f.googleSolarEstimate;
+                    const bestP = gEst?.bestConfigPanels || maxP;
+                    const bestKwh = gEst?.yearlyEnergyDcKwh || 0;
+                    const estKwh = bestKwh > 0 ? Math.round(bestKwh * (currentP / bestP)) : null;
+                    const estKwp = gEst?.panelCapacityWatts ? +(currentP * gEst.panelCapacityWatts / 1000).toFixed(1) : null;
+                    return (
+                      <div style={{ background: 'rgba(7,9,15,0.92)', borderTop: `1px solid ${C.border}`, padding: '10px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5 }}>CONFIGURACIÓN DE PANELES</span>
+                          {panelSlider != null && (
+                            <button onClick={() => setPanelSlider(null)} style={{ fontSize: 9, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                              Restablecer
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={maxP}
+                          value={currentP}
+                          onChange={e => setPanelSlider(Number(e.target.value))}
+                          style={{ width: '100%', accentColor: C.orange, cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                          <span style={{ fontSize: 11, color: C.text }}>
+                            <strong style={{ color: C.orange, fontSize: 14 }}>{currentP}</strong> paneles
+                            {estKwp && <span style={{ color: C.muted }}> · {estKwp} kWp</span>}
+                          </span>
+                          {estKwh > 0 && (
+                            <span style={{ fontSize: 11, color: '#4ade80' }}>
+                              ~{estKwh.toLocaleString('es-CO')} kWh/año
+                            </span>
+                          )}
+                          <span style={{ fontSize: 9, color: C.muted }}>máx {maxP}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {/* Gráfico de producción mensual — visible si hay estimación anual */}
+                  {(res?.ap > 0 || f.googleSolarEstimate?.yearlyEnergyDcKwh > 0) && (
+                    <MonthlyProductionChart
+                      annualKwh={f.googleSolarEstimate?.yearlyEnergyDcKwh || res?.ap || 0}
+                      monthlyKwhReal={monthlyReal}
+                      onLoadReal={loadMonthlyReal}
+                      loadingReal={monthlyRealLoading}
+                      loadError={monthlyRealError}
+                      monthlyConsumption={f.monthlyKwh ? Number(f.monthlyKwh) : null}
+                    />
+                  )}
                   {/* Streets map MOVIDO al final del bloque de techo, después
                       de las cubiertas — para que la lista de cubiertas quede
                       pegada al mapa interactivo (mejor UX). */}
