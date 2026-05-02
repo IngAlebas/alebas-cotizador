@@ -1,6 +1,6 @@
 # SOLARHUB — Handoff Claude Chat → Claude Code
 
-> **Estado verificado:** 26 abril 2026  
+> **Estado verificado:** 02 mayo 2026  
 > **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`  
 > **Versión:** v1.0.0 (tag)  
 > **Deploy:** `solar-hub.co` via Vercel (auto-deploy en push a main)
@@ -89,6 +89,7 @@ alebas-cotizador/
     ├── xm-spot.json       ← XM spot price
     ├── cec.json           ← POST /webhook/cec
     ├── solar-roof.json    ← POST /webhook/solar-roof
+    ├── solar-cache.json   ← POST /webhook/solar-roof-cached (Fase 6 — wrapper Postgres TTL 90d)
     ├── ai-recommend.json  ← POST /webhook/ai-recommend
     ├── validate-contact.json ← POST /webhook/validate-contact
     ├── save-quote.json    ← POST /webhook/save-quote
@@ -207,14 +208,15 @@ Shortcuts configurados:
 | Integración | Archivo frontend | Workflow n8n | Estado |
 |---|---|---|---|
 | Google Solar API | `services/solar.js` | `solar-roof.json` | ✅ |
+| Google Solar (cache 90d) | `services/solar.js` (opt-in) | `solar-cache.json` → `/webhook/solar-roof-cached` | 🆕 PR #118 — import + switch frontend pendiente |
 | PVGIS | `services/pvgis.js` | `pvgis.json` | ✅ |
 | PVWatts | `services/pvwatts.js` | `pvwatts.json` | ✅ |
 | NASA POWER | `services/nasaPower.js` | `nasa-power.json` | ✅ |
 | XM Colombia | `services/xm.js` | `xm-agents.json` | ✅ |
 | TRM | `services/trm.js` | `trm.json` | ✅ |
 | CEC Database | `services/cec.js` | `cec.json` | ✅ |
-| Save/List quotes | `services/quotes.js` | `save-quote.json` + `list-quotes.json` | 🔲 n8n pendiente activar |
-| AI cascade (Groq/Gemini/Claude) | `services/aiAssistant.js` | `ai-recommend.json` | 🔲 pendiente keys |
+| Save/List quotes | `services/quotes.js` | `save-quote.json` v2 (+ `solar_panels JSONB`) + `list-quotes.json` | 🔲 n8n pendiente import/activar |
+| AI cascade (Groq/Gemini/Claude) | `services/aiAssistant.js` | `ai-recommend.json` v22 (+ `panelLayout` stats) | 🔲 pendiente keys |
 | Push notifications | `public/sw.js` | — | 🔲 falta backend |
 
 ---
@@ -253,12 +255,24 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 ## Próximos pasos verificados (de DEPLOY.md)
 
 1. **Vincular PostgreSQL con n8n** en Railway (ver `DEPLOY.md`)
-2. **Importar y activar** los 14 workflows en `n8n/` → `api.solar-hub.co`
+2. **Importar y activar** los 15 workflows en `n8n/` → `api.solar-hub.co`
 3. **Configurar** `REACT_APP_N8N_BASE_URL` en Vercel → Environment Variables
 4. **Poblar DB** con catálogo CEC: `node n8n/seed/load-cec.js`
 5. **Agregar keys** en n8n: Google Maps, Google Solar, Groq, Gemini
 6. **Activar** `save-quote` + `list-quotes` → persistencia de cotizaciones
 7. **Push notifications** → backend suscripciones
+
+### Fase 6 (PR #118 — mergeado a main 2026-05-02)
+
+Activación pendiente en n8n productivo (`api.solar-hub.co`):
+
+1. Correr DDL idempotente: `psql $DATABASE_URL -f n8n/schema.sql` — añade `solar_panels JSONB`, `panel_height/width_meters`, `area_m2`, `whole_roof_area_m2`, `imagery_quality`, `google_yearly_kwh`, `ai_provider` a `quotes`, y crea tabla `solar_cache` (cache key + TTL 90 días).
+2. Import workflows actualizados:
+   - `solar-cache.json` (NUEVO v1) → `POST /webhook/solar-roof-cached` — wrapper Postgres del solar-roof, dedupe por `geo:<lat5>,<lon5>` o por dirección normalizada. Reduce costo Google ($0.04 USD por hit).
+   - `save-quote.json` v1 → v2 — persiste `solarPanels[]` y dimensiones en columnas dedicadas.
+   - `ai-recommend.json` v21 → v22 — nuevo `buildPanelLayoutStats()` (min/p10/median/p90/max yield por panel, dispersionPct, lowYieldPanelsCount) + bloque [T-4b] del prompt.
+3. (Opcional) `N8N_INTERNAL_BASE_URL` env var en Railway si n8n no escucha en `localhost:5678`.
+4. (Opcional, frontend) Switch `n8nPost('solar-roof', ...)` → `n8nPost('solar-roof-cached', ...)` en `src/services/solar.js`.
 
 ---
 
@@ -277,4 +291,4 @@ npm start
 
 *Claude Chat (claude.ai) — construcción inicial PWA, branding SolarHub, responsive mobile*  
 *Claude Code — workflows n8n, API integrations, DEPLOY.md, arquitectura backend*  
-*Última actualización: 26 abril 2026*
+*Última actualización: 02 mayo 2026 — PR #118 (Fase 6: solar-cache + solarPanels[] + AI panel-layout)*
