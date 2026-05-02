@@ -252,6 +252,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [loadingPVGIS, setLoadingPVGIS] = useState(false);
   const [pvgisError, setPvgisError] = useState(null);
   const [xmError, setXmError] = useState(null);
+  const [calcError, setCalcError] = useState(null);
   const [agpe, setAgpe] = useState(null);
   const [nasaData, setNasaData] = useState(null);
   const [pvwData, setPvwData] = useState(null);
@@ -749,8 +750,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   }, [aiLoading]);
 
   const calculate = async () => {
+    setCalcError(null);
     const kwh = parseFloat(f.monthlyKwh);
     if (!kwh) return;
+    try {
 
     // Fase 1 — sizing rápido con temperaturas default para determinar actKwp.
     const sizingKwp = targetKwp || consumptionKwp;
@@ -895,6 +898,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       trmDate: trmData?.date,
     });
     setAgpe({ ...benefit, spotSource: spot, tariffCU: cuFull, cuSplit });
+    } catch (e) {
+      setCalcError(e?.message || 'Error inesperado al calcular el sistema');
+    }
   };
 
   const submit = async () => {
@@ -1771,17 +1777,23 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       </div>
                     );
                   })()}
-                  {/* Gráfico de producción mensual — visible si hay estimación anual */}
-                  {(res?.ap > 0 || f.googleSolarEstimate?.yearlyEnergyDcKwh > 0) && (
-                    <MonthlyProductionChart
-                      annualKwh={f.googleSolarEstimate?.yearlyEnergyDcKwh || res?.ap || 0}
-                      monthlyKwhReal={monthlyReal}
-                      onLoadReal={loadMonthlyReal}
-                      loadingReal={monthlyRealLoading}
-                      loadError={monthlyRealError}
-                      monthlyConsumption={f.monthlyKwh ? Number(f.monthlyKwh) : null}
-                    />
-                  )}
+                  {/* Gráfico de producción mensual — visible si hay estimación anual o Google Solar corrió */}
+                  {(() => {
+                    const annualKwhForChart = f.googleSolarEstimate?.yearlyEnergyDcKwh
+                      || res?.ap
+                      || (f.sunshineHoursYear > 0 && f.monthlyKwh ? parseFloat(f.monthlyKwh) * 12 : 0);
+                    if (!(annualKwhForChart > 0)) return null;
+                    return (
+                      <MonthlyProductionChart
+                        annualKwh={annualKwhForChart}
+                        monthlyKwhReal={monthlyReal}
+                        onLoadReal={loadMonthlyReal}
+                        loadingReal={monthlyRealLoading}
+                        loadError={monthlyRealError}
+                        monthlyConsumption={f.monthlyKwh ? Number(f.monthlyKwh) : null}
+                      />
+                    );
+                  })()}
                   {/* Streets map MOVIDO al final del bloque de techo, después
                       de las cubiertas — para que la lista de cubiertas quede
                       pegada al mapa interactivo (mejor UX). */}
@@ -1910,10 +1922,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ fontSize: 10, color: C.muted, marginBottom: 8, fontStyle: 'italic' }}>
                   Tap en cualquier cubierta para incluirla / excluirla. El sistema preselecciona las mejores orientadas para cubrir tu consumo. Si falta alguna cubierta (ej. parqueadero, anexo), añádela manualmente abajo.
                 </div>
-                {/* Lista clickable. Tres estados: activa (verde), disponible (gris),
-                    reservada (naranja) — esta última son cubiertas con sun < 1100 h/año
-                    que NO se incluyen automáticamente por baja productividad. */}
-                <div>
+                {/* Lista clickable + compás lado a lado */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
                   {allSegments.map((s, listIdx) => {
                     const isActive = selectedSegmentIdx.has(s._idx);
                     const isReserved = !isActive && (s.sunshineHoursPerYear || 0) < MIN_VIABLE_SUN;
@@ -2030,9 +2041,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     );
                   })}
                 </div>
-                {/* Compás visual */}
-                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
-                  <svg viewBox="-120 -120 240 240" width="180" height="180" aria-label="Compás">
+                {/* Compás visual — columna derecha */}
+                <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4 }}>
+                  <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>Orientación</div>
+                  <svg viewBox="-120 -120 240 240" width="160" height="160" aria-label="Compás">
                     <circle cx="0" cy="0" r="100" fill="none" stroke={`${C.teal}22`} strokeWidth="1" />
                     <circle cx="0" cy="0" r="60"  fill="none" stroke={`${C.teal}15`} strokeWidth="0.7" />
                     <text x="0" y="-105" textAnchor="middle" fill={C.muted} fontSize="11" fontWeight="700">N</text>
@@ -2064,6 +2076,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     <circle cx="0" cy="0" r="4" fill={C.text} />
                   </svg>
                 </div>
+                </div>{/* end flex row lista+compás */}
                 {/* Toggle: añadir cubierta custom */}
                 <div style={{ marginTop: 8, paddingTop: 10, borderTop: `1px dashed ${C.border}` }}>
                   {!showCustomSegmentForm ? (
@@ -2756,7 +2769,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   );
 
   // STEP 5: Results — pantalla de carga dinámica con orquestación de herramientas
-  if (step === 5 && (!res || !bgt)) return <LoadingSystem C={C} ss={ss} logo={logo} f={f} operator={operator} needsB={needsB} dest={dest} />;
+  if (step === 5 && (!res || !bgt)) {
+    if (calcError) return (
+      <div style={ss.wrap}>
+        <div style={{ ...ss.card, textAlign: 'center', padding: '40px 24px' }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>⚠</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Error al calcular</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 20, maxWidth: 360, margin: '0 auto 20px', lineHeight: 1.6 }}>{calcError}</div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button style={ss.btn} onClick={async () => { setCalcError(null); setRes(null); setBgt(null); await calculate(); }}>↺ Reintentar</button>
+            <button style={ss.ghost} onClick={() => { setStep(4); setCalcError(null); }}>← Volver</button>
+          </div>
+        </div>
+      </div>
+    );
+    return <LoadingSystem C={C} ss={ss} logo={logo} f={f} operator={operator} needsB={needsB} dest={dest} />;
+  }
 
   if (step === 5 && res && bgt) {
     if (done) return (
