@@ -632,7 +632,17 @@ export default function InteractiveRoofMap({
     if (!Array.isArray(googlePanels) || googlePanels.length === 0) return;
 
     const latM = 1 / 111000;
-    const panels = googlePanels.filter(p => p.center?.lat != null && p.center?.lng != null);
+    // Aceptar centers en cualquiera de las dos formas (lat/lng frontend o
+    // latitude/longitude raw Google) — n8n a veces pasa raw.
+    const normCenter = (c) => {
+      if (!c) return null;
+      const la = c.lat ?? c.latitude;
+      const lo = c.lng ?? c.longitude;
+      return Number.isFinite(la) && Number.isFinite(lo) ? { lat: Number(la), lng: Number(lo) } : null;
+    };
+    const panels = googlePanels
+      .map(p => ({ ...p, center: normCenter(p.center) }))
+      .filter(p => p.center);
     if (panels.length === 0) return;
 
     // Limpiar SOLO el grid sintético azul (los paneles reales lo reemplazan).

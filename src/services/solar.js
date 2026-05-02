@@ -152,7 +152,22 @@ export async function lookupRoof({ address, lat, lon } = {}) {
         shadeIndex: data.shadeIndex != null ? Number(data.shadeIndex) : null,
         shadeSource: data.shadeSource || null,
         roofSegments: Array.isArray(data.roofSegments) ? data.roofSegments : [],
-        solarPanels: Array.isArray(data.solarPanels) ? data.solarPanels : [],
+        // Normalizar shape de center: aceptar {lat, lng} (frontend) y
+        // {latitude, longitude} (raw Google API) — n8n a veces pasa raw.
+        solarPanels: Array.isArray(data.solarPanels)
+          ? data.solarPanels.map(p => ({
+              ...p,
+              center: p.center
+                ? {
+                    lat: Number(p.center.lat ?? p.center.latitude),
+                    lng: Number(p.center.lng ?? p.center.longitude),
+                  }
+                : null,
+              orientation: p.orientation || 'LANDSCAPE',
+              yearlyEnergyDcKwh: p.yearlyEnergyDcKwh != null ? Number(p.yearlyEnergyDcKwh) : null,
+              segmentIndex: p.segmentIndex != null ? Number(p.segmentIndex) : null,
+            }))
+          : [],
         panelHeightMeters: data.panelHeightMeters != null ? Number(data.panelHeightMeters) : null,
         panelWidthMeters: data.panelWidthMeters != null ? Number(data.panelWidthMeters) : null,
         imagery: data.imagery || null,
