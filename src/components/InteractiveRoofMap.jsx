@@ -15,6 +15,7 @@ export default function InteractiveRoofMap({
   panelW = 1.0,           // ancho del panel (m) — para renderizar grid sintético
   panelH = 2.0,           // alto del panel (m)
   googlePanels = [],      // paneles reales Google Solar API [{center:{lat,lng}, orientation, yearlyEnergyDcKwh, segmentIndex}]
+  heatmapLayer = null,   // { dataUrl, bounds:{sw:{lat,lng},ne:{lat,lng}}, minVal, maxVal } — PNG irradiancia
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -23,6 +24,7 @@ export default function InteractiveRoofMap({
   const polygonsRef = useRef([]);       // Polígonos de cada segmento
   const labelsRef = useRef([]);         // Labels con área de cada segmento
   const googlePanelsRef = useRef([]);   // Polígonos de paneles reales Google Solar
+  const heatmapOverlayRef = useRef(null); // GroundOverlay de irradiancia
   const sunPathRef = useRef(null); // Polyline del arco solar
   const lastEmittedRef = useRef({ lat, lon });
   const [error, setError] = useState(null);
@@ -667,6 +669,28 @@ export default function InteractiveRoofMap({
     });
   }, [googlePanels, ready, panelW, panelH]);
 
+  // Heatmap de irradiancia solar (dataLayers GeoTIFF procesado como PNG).
+  // Renderiza un GroundOverlay semi-transparente sobre el satellite con la
+  // escala azul→verde→rojo que muestra flujo solar por m².
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    if (heatmapOverlayRef.current) {
+      try { heatmapOverlayRef.current.setMap(null); } catch (_) {}
+      heatmapOverlayRef.current = null;
+    }
+    if (!heatmapLayer?.dataUrl || !heatmapLayer?.bounds) return;
+    const { dataUrl, bounds } = heatmapLayer;
+    const sw = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
+    const ne = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
+    const overlayBounds = new maps.LatLngBounds(sw, ne);
+    heatmapOverlayRef.current = new maps.GroundOverlay(dataUrl, overlayBounds, {
+      opacity: 0.72,
+      clickable: false,
+      map: mapRef.current,
+    });
+  }, [heatmapLayer, ready]);
+
   // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
   // mapa. Aquí solo va una indicación delgada visible.
 
@@ -694,6 +718,23 @@ export default function InteractiveRoofMap({
       {ready && (
         <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'rgba(7,9,15,0.85)', color: moved ? '#4ade80' : '#E8F0F7', fontSize: 10, padding: '5px 10px', borderRadius: 6, lineHeight: 1.35 }}>
           {moved ? '✓ Ubicación ajustada — el cálculo se actualizó' : '✋ Arrastra el pin (o haz click) para afinar la ubicación exacta sobre el techo'}
+        </div>
+      )}
+      {heatmapLayer?.dataUrl && (
+        <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(7,9,15,0.88)', borderRadius: 8, padding: '6px 10px', fontSize: 9.5, color: '#E8F0F7', boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 4, color: '#FFB800', letterSpacing: 0.5 }}>IRRADIANCIA SOLAR</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 80, height: 8, borderRadius: 4, background: 'linear-gradient(to right, #0000ff, #0080ff, #00dcb4, #00dc3c, #c8e60a, #ffb400, #ff0000)' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2, color: '#7A9EAA' }}>
+            <span>{heatmapLayer.minVal != null ? Math.round(heatmapLayer.minVal) + ' kWh/m²' : 'bajo'}</span>
+            <span>{heatmapLayer.maxVal != null ? Math.round(heatmapLayer.maxVal) + ' kWh/m²' : 'alto'}</span>
+          </div>
+          {heatmapLayer.imageryDate && (
+            <div style={{ marginTop: 3, color: '#7A9EAA' }}>
+              Imagen: {heatmapLayer.imageryDate.year}/{String(heatmapLayer.imageryDate.month).padStart(2,'0')}
+            </div>
+          )}
         </div>
       )}
     </div>

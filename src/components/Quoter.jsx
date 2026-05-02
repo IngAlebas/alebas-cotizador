@@ -14,6 +14,7 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
+import { fetchDataLayerUrls, geotiffToPngDataUrl } from '../services/solarLayers';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import InteractiveRoofMap from './InteractiveRoofMap';
@@ -262,6 +263,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [roofQueryVerified, setRoofQueryVerified] = useState(false);
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
+  const [heatmapLayer, setHeatmapLayer] = useState(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [heatmapError, setHeatmapError] = useState(null);
   // Autocomplete de direcciones (Google Places via n8n)
   const [addrSuggestions, setAddrSuggestions] = useState([]);
   const [addrSuggestOpen, setAddrSuggestOpen] = useState(false);
@@ -488,6 +492,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (r.coordinatesPrecisionHint) u('roofPrecisionHint', r.coordinatesPrecisionHint);
     // Resetear confirmación al re-buscar — el cliente debe re-confirmar la nueva ubicación.
     u('roofLocationConfirmed', false);
+  };
+
+  const loadHeatmap = async () => {
+    if (!f.lat || !f.lon) return;
+    setHeatmapLoading(true);
+    setHeatmapError(null);
+    try {
+      const layerData = await fetchDataLayerUrls({ lat: f.lat, lon: f.lon });
+      if (!layerData.annualFluxUrl) throw new Error('No hay datos de irradiancia para esta ubicación');
+      const { dataUrl, minVal, maxVal } = await geotiffToPngDataUrl(layerData.annualFluxUrl, layerData.bounds);
+      setHeatmapLayer({ dataUrl, bounds: layerData.bounds, minVal, maxVal, imageryDate: layerData.imageryDate });
+    } catch (e) {
+      setHeatmapError(e?.message || 'No se pudo cargar el heatmap de irradiancia');
+    } finally {
+      setHeatmapLoading(false);
+    }
   };
 
   const onLookupRoof = async (overrideAddress = null) => {
@@ -1596,8 +1616,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   <div>
                     <div style={{ fontSize: 9, padding: '4px 8px', color: C.muted, background: C.dark, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Satelital · arrastra el pin · zoom con pellizco</span>
-                      <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {f.lat && f.lon && (
+                          <button
+                            onClick={() => heatmapLayer ? setHeatmapLayer(null) : loadHeatmap()}
+                            disabled={heatmapLoading}
+                            style={{ fontSize: 9, padding: '2px 8px', borderRadius: 10, border: 'none', cursor: heatmapLoading ? 'wait' : 'pointer', fontWeight: 700, background: heatmapLayer ? '#FF8C00' : C.teal, color: '#fff', letterSpacing: 0.3 }}
+                          >
+                            {heatmapLoading ? '⟳ Cargando…' : heatmapLayer ? '✕ Ocultar irradiancia' : '🌡 Ver irradiancia'}
+                          </button>
+                        )}
+                        <span style={{ color: C.teal, fontWeight: 600 }}>INTERACTIVO</span>
+                      </div>
                     </div>
+                    {heatmapError && (
+                      <div style={{ fontSize: 9, padding: '3px 8px', background: '#2a0d0d', color: '#ff8a80' }}>
+                        ⚠ {heatmapError}
+                      </div>
+                    )}
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
@@ -1631,6 +1667,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       panelW={f.panelWidthMeters || (panel?.widthMm ? panel.widthMm / 1000 : 1.0)}
                       panelH={f.panelHeightMeters || (panel?.lengthMm ? panel.lengthMm / 1000 : 2.0)}
                       googlePanels={f.solarPanels || []}
+                      heatmapLayer={heatmapLayer}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
                         setRoofError(null); setRoofLoading(true);
