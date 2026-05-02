@@ -266,6 +266,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [heatmapLayer, setHeatmapLayer] = useState(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [heatmapError, setHeatmapError] = useState(null);
+  const [panelSlider, setPanelSlider] = useState(null); // null = sin override (usa res.numPanels)
   // Autocomplete de direcciones (Google Places via n8n)
   const [addrSuggestions, setAddrSuggestions] = useState([]);
   const [addrSuggestOpen, setAddrSuggestOpen] = useState(false);
@@ -1666,7 +1667,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       showSunPath={true}
                       panelW={f.panelWidthMeters || (panel?.widthMm ? panel.widthMm / 1000 : 1.0)}
                       panelH={f.panelHeightMeters || (panel?.lengthMm ? panel.lengthMm / 1000 : 2.0)}
-                      googlePanels={f.solarPanels || []}
+                      googlePanels={f.solarPanels?.length > 0
+                        ? (panelSlider != null
+                            ? [...f.solarPanels].sort((a,b) => (b.yearlyEnergyDcKwh||0)-(a.yearlyEnergyDcKwh||0)).slice(0, panelSlider)
+                            : f.solarPanels)
+                        : []}
                       heatmapLayer={heatmapLayer}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
@@ -1685,6 +1690,48 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       }}
                     />
                   </div>
+                  {/* Slider de paneles Google Solar — solo visible si hay paneles reales */}
+                  {f.solarPanels?.length > 0 && f.googleMaxPanels > 0 && (() => {
+                    const maxP = f.googleMaxPanels;
+                    const currentP = panelSlider ?? f.solarPanels.length;
+                    const gEst = f.googleSolarEstimate;
+                    const bestP = gEst?.bestConfigPanels || maxP;
+                    const bestKwh = gEst?.yearlyEnergyDcKwh || 0;
+                    const estKwh = bestKwh > 0 ? Math.round(bestKwh * (currentP / bestP)) : null;
+                    const estKwp = gEst?.panelCapacityWatts ? +(currentP * gEst.panelCapacityWatts / 1000).toFixed(1) : null;
+                    return (
+                      <div style={{ background: 'rgba(7,9,15,0.92)', borderTop: `1px solid ${C.border}`, padding: '10px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5 }}>CONFIGURACIÓN DE PANELES</span>
+                          {panelSlider != null && (
+                            <button onClick={() => setPanelSlider(null)} style={{ fontSize: 9, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                              Restablecer
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={maxP}
+                          value={currentP}
+                          onChange={e => setPanelSlider(Number(e.target.value))}
+                          style={{ width: '100%', accentColor: C.orange, cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                          <span style={{ fontSize: 11, color: C.text }}>
+                            <strong style={{ color: C.orange, fontSize: 14 }}>{currentP}</strong> paneles
+                            {estKwp && <span style={{ color: C.muted }}> · {estKwp} kWp</span>}
+                          </span>
+                          {estKwh > 0 && (
+                            <span style={{ fontSize: 11, color: '#4ade80' }}>
+                              ~{estKwh.toLocaleString('es-CO')} kWh/año
+                            </span>
+                          )}
+                          <span style={{ fontSize: 9, color: C.muted }}>máx {maxP}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Streets map MOVIDO al final del bloque de techo, después
                       de las cubiertas — para que la lista de cubiertas quede
                       pegada al mapa interactivo (mejor UX). */}
