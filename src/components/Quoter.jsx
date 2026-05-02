@@ -399,13 +399,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         website: f.website || '',
       });
       if (r?.offline) return true; // n8n sin configurar (dev local)
-      if (!r?.ok) {
-        const msg = r?.message || (r?.reason === 'rate_limit'
-          ? 'Has solicitado muchas cotizaciones recientemente. Un ingeniero te contactará pronto.'
-          : r?.reason === 'blocked'
-          ? 'Contacto bloqueado. Escríbenos a info@alebas.co.'
-          : 'No fue posible validar tus datos. Revisa email y teléfono.');
-        setContactError(msg);
+      // Solo bloquear por razones EXPLÍCITAS conocidas (anti-spam real).
+      // Si n8n responde ok:false sin razón clara, asumimos falso positivo
+      // y dejamos pasar — save-quote hará la persistencia final con sus
+      // propias validaciones si corresponde.
+      if (r?.reason === 'rate_limit') {
+        setContactError('Has solicitado muchas cotizaciones recientemente. Un ingeniero te contactará pronto.');
+        return false;
+      }
+      if (r?.reason === 'blocked') {
+        setContactError('Contacto bloqueado. Escríbenos a info@alebas.co.');
         return false;
       }
       return true;
