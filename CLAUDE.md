@@ -1,6 +1,6 @@
 # SOLARHUB — Handoff Claude Chat → Claude Code
 
-> **Estado verificado:** 26 abril 2026  
+> **Estado verificado:** 05 mayo 2026  
 > **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`  
 > **Versión:** v1.0.0 (tag)  
 > **Deploy:** `solar-hub.co` via Vercel (auto-deploy en push a main)
@@ -89,6 +89,7 @@ alebas-cotizador/
     ├── xm-spot.json       ← XM spot price
     ├── cec.json           ← POST /webhook/cec
     ├── solar-roof.json    ← POST /webhook/solar-roof
+    ├── solar-cache.json   ← POST /webhook/solar-roof-cached (Fase 6 — wrapper Postgres TTL 90d)
     ├── ai-recommend.json  ← POST /webhook/ai-recommend
     ├── validate-contact.json ← POST /webhook/validate-contact
     ├── save-quote.json    ← POST /webhook/save-quote
@@ -207,14 +208,15 @@ Shortcuts configurados:
 | Integración | Archivo frontend | Workflow n8n | Estado |
 |---|---|---|---|
 | Google Solar API | `services/solar.js` | `solar-roof.json` | ✅ |
+| Google Solar (cache 90d) | `services/solar.js` → `solar-roof-cached` | `solar-cache.json` → `/webhook/solar-roof-cached` | ✅ Fase 6 — activo (TTL 90d, ~$0.04 USD/hit ahorrado) |
 | PVGIS | `services/pvgis.js` | `pvgis.json` | ✅ |
 | PVWatts | `services/pvwatts.js` | `pvwatts.json` | ✅ |
 | NASA POWER | `services/nasaPower.js` | `nasa-power.json` | ✅ |
 | XM Colombia | `services/xm.js` | `xm-agents.json` | ✅ |
 | TRM | `services/trm.js` | `trm.json` | ✅ |
 | CEC Database | `services/cec.js` | `cec.json` | ✅ |
-| Save/List quotes | `services/quotes.js` | `save-quote.json` + `list-quotes.json` | 🔲 n8n pendiente activar |
-| AI cascade (Groq/Gemini/Claude) | `services/aiAssistant.js` | `ai-recommend.json` | 🔲 pendiente keys |
+| Save/List quotes | `services/quotes.js` | `save-quote.json` v2 (+ `solar_panels JSONB`) + `list-quotes.json` | ✅ Fase 6 — activo |
+| AI cascade (Groq/Gemini/Claude) | `services/aiAssistant.js` | `ai-recommend.json` v22 (+ `panelLayout` stats) | ✅ Fase 6 — activo (🔲 pendiente keys Groq/Gemini) |
 | Push notifications | `public/sw.js` | — | 🔲 falta backend |
 
 ---
@@ -253,12 +255,24 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 ## Próximos pasos verificados (de DEPLOY.md)
 
 1. **Vincular PostgreSQL con n8n** en Railway (ver `DEPLOY.md`)
-2. **Importar y activar** los 14 workflows en `n8n/` → `api.solar-hub.co`
+2. **Importar y activar** los 15 workflows en `n8n/` → `api.solar-hub.co`
 3. **Configurar** `REACT_APP_N8N_BASE_URL` en Vercel → Environment Variables
 4. **Poblar DB** con catálogo CEC: `node n8n/seed/load-cec.js`
 5. **Agregar keys** en n8n: Google Maps, Google Solar, Groq, Gemini
 6. **Activar** `save-quote` + `list-quotes` → persistencia de cotizaciones
 7. **Push notifications** → backend suscripciones
+
+### Fase 6 (PR #118 — mergeado a main 2026-05-02) ✅ COMPLETADA 2026-05-05
+
+Todo activado en `api.solar-hub.co`:
+
+- ✅ `schema.sql` ejecutado — `solar_panels JSONB`, `panel_height/width_meters`, `area_m2`, `whole_roof_area_m2`, `imagery_quality`, `google_yearly_kwh`, `ai_provider` en `quotes`; tabla `solar_cache` creada.
+- ✅ `solar-cache.json` v1 importado y activo → `POST /webhook/solar-roof-cached`
+- ✅ `save-quote.json` v2 importado y activo — persiste `solarPanels[]`
+- ✅ `ai-recommend.json` v22 importado y activo — `buildPanelLayoutStats()` + bloque [T-4b]
+- ✅ `src/services/solar.js` → usa `solar-roof-cached` (PR #119)
+
+Pendiente: agregar keys Groq/Gemini en n8n para activar el cascade de IA.
 
 ---
 
@@ -275,6 +289,14 @@ npm start
 
 ---
 
+## Herramientas de desarrollo
+
+| Herramienta | Descripción | Estado |
+|---|---|---|
+| `claude-mem` v12.4.9 | Memoria persistente entre sesiones de Claude Code (SQLite + Chroma, puerto 37700) | ✅ instalado — `npx claude-mem start` |
+
+---
+
 *Claude Chat (claude.ai) — construcción inicial PWA, branding SolarHub, responsive mobile*  
 *Claude Code — workflows n8n, API integrations, DEPLOY.md, arquitectura backend*  
-*Última actualización: 26 abril 2026*
+*Última actualización: 05 mayo 2026 — Fase 6 completada (schema.sql, solar-cache, save-quote v2, ai-recommend v22, solar-roof-cached activo); claude-mem instalado*
