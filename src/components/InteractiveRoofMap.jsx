@@ -14,13 +14,15 @@ export default function InteractiveRoofMap({
   onSegmentMove = null,   // (idx, {lat, lng}) => void — drag de cubiertas custom
   panelW = 1.0,           // ancho del panel (m) — para renderizar grid sintético
   panelH = 2.0,           // alto del panel (m)
+  googlePanels = [],      // paneles reales Google Solar API [{center:{lat,lng}, orientation, yearlyEnergyDcKwh, segmentIndex}]
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
   const circleRef = useRef(null);
-  const polygonsRef = useRef([]);  // Polígonos de cada segmento
-  const labelsRef = useRef([]);    // Labels con área de cada segmento
+  const polygonsRef = useRef([]);       // Polígonos de cada segmento
+  const labelsRef = useRef([]);         // Labels con área de cada segmento
+  const googlePanelsRef = useRef([]);   // Polígonos de paneles reales Google Solar
   const sunPathRef = useRef(null); // Polyline del arco solar
   const lastEmittedRef = useRef({ lat, lon });
   const [error, setError] = useState(null);
@@ -608,6 +610,62 @@ export default function InteractiveRoofMap({
     `);
     sunPathRef.current = { line, east: sunStart, west: sunEnd };
   }, [showSunPath, lat, lon, areaM2, ready]);
+
+  // Paneles reales de Google Solar API — dibujados encima del grid sintético.
+  // Cuando googlePanels[] viene del API, reemplaza visualmente el grid sintético
+  // con rectángulos exactos en las coordenadas reales de cada panel.
+  // Si googlePanels está vacío, este efecto no toca nada → el grid sintético
+  // generado en el efecto de segmentos queda visible como fallback.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    // Limpiar paneles reales anteriores
+    googlePanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    googlePanelsRef.current = [];
+    if (!Array.isArray(googlePanels) || googlePanels.length === 0) return;
+
+    const latM = 1 / 111000;
+    const panels = googlePanels.filter(p => p.center?.lat != null && p.center?.lng != null);
+    if (panels.length === 0) return;
+
+    // Primero limpiar el grid sintético para que no se superponga
+    polygonsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    polygonsRef.current = [];
+
+    const halfH = (panelH * 0.46) / 2;
+    const halfW = (panelW * 0.46) / 2;
+
+    panels.forEach(panel => {
+      const cLat = Number(panel.center.lat);
+      const cLng = Number(panel.center.lng);
+      if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return;
+      const lngM = 1 / (111000 * Math.cos(cLat * Math.PI / 180));
+      // PORTRAIT: panel más alto que ancho → rotar 90°
+      const isPortrait = panel.orientation === 'PORTRAIT';
+      const hw = isPortrait ? halfH : halfW;
+      const hh = isPortrait ? halfW : halfH;
+      const corners = [
+        { lat: cLat - hh * latM, lng: cLng - hw * lngM },
+        { lat: cLat - hh * latM, lng: cLng + hw * lngM },
+        { lat: cLat + hh * latM, lng: cLng + hw * lngM },
+        { lat: cLat + hh * latM, lng: cLng - hw * lngM },
+      ];
+      // Color por yield relativo — los paneles sin dato usan azul estándar.
+      // Con dato: verde (>p75) → azul (normal) → naranja (<p25) para detectar sombra.
+      const poly = new maps.Polygon({
+        map: mapRef.current,
+        paths: corners,
+        strokeColor: '#1e3a8a',
+        strokeOpacity: 0.7,
+        strokeWeight: 0.5,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.88,
+        clickable: false,
+        zIndex: 10,
+      });
+      googlePanelsRef.current.push(poly);
+    });
+  }, [googlePanels, ready, panelW, panelH]);
 
   // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
   // mapa. Aquí solo va una indicación delgada visible.
