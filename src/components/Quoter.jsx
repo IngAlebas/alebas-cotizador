@@ -514,7 +514,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       if (!resolvedBounds) throw new Error('No se pudieron determinar los límites del mapa de irradiancia');
       setHeatmapLayer({ dataUrl, bounds: resolvedBounds, minVal, maxVal, imageryDate: layerData.imageryDate });
     } catch (e) {
-      setHeatmapError(e?.message || 'No se pudo cargar el heatmap de irradiancia');
+      const msg = e?.message || 'No se pudo cargar el heatmap de irradiancia';
+      // Mensaje específico cuando el workflow n8n viejo aún rechaza por boundingBox.
+      const friendly = /boundingBox|no_bounds/i.test(msg)
+        ? 'Servicio de irradiancia desactualizado. Reintenta en unos minutos.'
+        : msg;
+      setHeatmapError(friendly);
     } finally {
       setHeatmapLoading(false);
     }
@@ -1779,9 +1784,25 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       </div>
                     );
                   })()}
-                  {/* Gráfico de producción mensual — visible si hay estimación anual o Google Solar corrió */}
+                  {/* Gráfico de producción mensual — visible si hay estimación anual o Google Solar corrió.
+                      Cascada de fuentes ordenadas por precisión:
+                        1) Google Solar yearlyEnergyDcKwh (best config exacta)
+                        2) specificYield × bestConfigKwp (Google Solar derivado)
+                        3) specificYield × (panels seleccionados × panelKwp) — escala según slider
+                        4) res.ap (cálculo final hecho)
+                        5) consumo × 12 (fallback genérico, no varía con ubicación) */}
                   {(() => {
-                    const annualKwhForChart = f.googleSolarEstimate?.yearlyEnergyDcKwh
+                    const gse = f.googleSolarEstimate;
+                    const sliderPanels = panelSlider != null ? panelSlider : (gse?.bestConfigPanels || f.googleMaxPanels || 0);
+                    const panelKwp = gse?.panelCapacityWatts ? gse.panelCapacityWatts / 1000 : null;
+                    const sliderKwp = panelKwp ? sliderPanels * panelKwp : null;
+                    const fromGoogleYield = gse?.specificYieldKwhPerKwpYear && sliderKwp
+                      ? Math.round(gse.specificYieldKwhPerKwpYear * sliderKwp)
+                      : (gse?.specificYieldKwhPerKwpYear && gse?.bestConfigKwp
+                          ? Math.round(gse.specificYieldKwhPerKwpYear * gse.bestConfigKwp)
+                          : null);
+                    const annualKwhForChart = gse?.yearlyEnergyDcKwh
+                      || fromGoogleYield
                       || res?.ap
                       || (f.sunshineHoursYear > 0 && f.monthlyKwh ? parseFloat(f.monthlyKwh) * 12 : 0);
                     if (!(annualKwhForChart > 0)) return null;
@@ -2803,7 +2824,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ fontSize: 12, color: C.teal, marginTop: 2, fontWeight: 600 }}>Inversión aprox: {fmtCOP(bgt.tot)}</div>
           </div>
           <br />
-          <button style={ss.btn} onClick={() => { setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0); setPvgisError(null); setXmError(null); setAgpe(null); setResultTab('resumen'); }}>Nueva cotización</button>
+          <button style={ss.btn} onClick={() => {
+            // Reset COMPLETO — limpia todo el estado para evitar que datos cacheados
+            // de la cotización anterior contaminen la nueva (heatmap, monthly real,
+            // dataLayerUrls, errores, etc).
+            setStep(0); setDone(false); setRes(null); setBgt(null); setF(Q0);
+            setPvgisError(null); setXmError(null); setCalcError(null); setAgpe(null);
+            setNasaData(null); setPvwData(null); setTrm(null);
+            setHeatmapLayer(null); setHeatmapLoading(false); setHeatmapError(null);
+            setMonthlyReal(null); setMonthlyRealLoading(false); setMonthlyRealError(null);
+            setDataLayerUrls(null); setPanelSlider(null);
+            setManualSegmentSelection(null); setShowCustomSegmentForm(false);
+            setRoofError(null); setRoofLoading(false); setRoofQuery(''); setRoofQueryVerified(false);
+            setAiData(null); setAiError(null); setAiApplied(null); setAiStep(0);
+            setContactError(null); setValidatingContact(false);
+            setResultTab('resumen');
+          }}>Nueva cotización</button>
         </div>
       </div>
     );

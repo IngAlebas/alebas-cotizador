@@ -260,7 +260,9 @@ export default function InteractiveRoofMap({
         strokeOpacity: isActive ? 1 : 0.85,
         strokeWeight: isActive ? 3 : 2,
         fillColor: col,
-        fillOpacity: isActive ? 0.45 : 0.25,
+        // Activos transparentes para que el grid de paneles azules sea visible
+        // arriba; inactivos un poco más opacos para distinguirlos.
+        fillOpacity: isActive ? 0.18 : 0.25,
         clickable: isClickable || isDraggable,
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
@@ -333,13 +335,13 @@ export default function InteractiveRoofMap({
               const panelPoly = new maps.Polygon({
                 map: mapRef.current,
                 paths: panelCorners,
-                strokeColor: '#1e3a8a',  // borde azul oscuro
-                strokeOpacity: 0.7,
-                strokeWeight: 0.5,
+                strokeColor: '#0b1d4f',  // borde azul muy oscuro para contraste
+                strokeOpacity: 1,
+                strokeWeight: 1,
                 fillColor: PANEL_COLOR,
-                fillOpacity: 0.85,
+                fillOpacity: 0.95,
                 clickable: false,
-                zIndex: 9,
+                zIndex: 12,  // bien arriba del polígono del segmento
               });
               polygonsRef.current.push(panelPoly);
               drawn++;
