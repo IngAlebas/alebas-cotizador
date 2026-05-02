@@ -1,6 +1,6 @@
 # SOLARHUB — Handoff Claude Chat → Claude Code
 
-> **Estado verificado:** 05 mayo 2026  
+> **Estado verificado:** 05 mayo 2026 (PR #120)  
 > **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`  
 > **Versión:** v1.0.0 (tag)  
 > **Deploy:** `solar-hub.co` via Vercel (auto-deploy en push a main)
@@ -90,6 +90,7 @@ alebas-cotizador/
     ├── cec.json           ← POST /webhook/cec
     ├── solar-roof.json    ← POST /webhook/solar-roof
     ├── solar-cache.json   ← POST /webhook/solar-roof-cached (Fase 6 — wrapper Postgres TTL 90d)
+    ├── solar-datalayers.json ← POST /webhook/solar-datalayers (Fase 3 — URLs firmadas GeoTIFF irradiancia)
     ├── ai-recommend.json  ← POST /webhook/ai-recommend
     ├── validate-contact.json ← POST /webhook/validate-contact
     ├── save-quote.json    ← POST /webhook/save-quote
@@ -209,6 +210,7 @@ Shortcuts configurados:
 |---|---|---|---|
 | Google Solar API | `services/solar.js` | `solar-roof.json` | ✅ |
 | Google Solar (cache 90d) | `services/solar.js` → `solar-roof-cached` | `solar-cache.json` → `/webhook/solar-roof-cached` | ✅ Fase 6 — activo (TTL 90d, ~$0.04 USD/hit ahorrado) |
+| Google Solar Platform (Fases 2-5) | `InteractiveRoofMap`, `MonthlyProductionChart`, `solarLayers.js` | `solar-datalayers.json` → `/webhook/solar-datalayers` | ✅ PR #120 — paneles reales + heatmap + slider + gráfico mensual (🔲 importar solar-datalayers.json en n8n) |
 | PVGIS | `services/pvgis.js` | `pvgis.json` | ✅ |
 | PVWatts | `services/pvwatts.js` | `pvwatts.json` | ✅ |
 | NASA POWER | `services/nasaPower.js` | `nasa-power.json` | ✅ |
@@ -299,4 +301,4 @@ npm start
 
 *Claude Chat (claude.ai) — construcción inicial PWA, branding SolarHub, responsive mobile*  
 *Claude Code — workflows n8n, API integrations, DEPLOY.md, arquitectura backend*  
-*Última actualización: 05 mayo 2026 — Fase 6 completada (schema.sql, solar-cache, save-quote v2, ai-recommend v22, solar-roof-cached activo); claude-mem instalado*
+*Última actualización: 05 mayo 2026 — PR #120: Google Solar Platform Fases 2-5 (paneles reales en mapa, heatmap irradiancia GeoTIFF, slider de paneles, gráfico mensual Ene-Dic); geotiff@3.0.5; solar-datalayers.json workflow*
