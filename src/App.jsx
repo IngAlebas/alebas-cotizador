@@ -301,7 +301,24 @@ export default function App() {
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>Solar<span style={{ color: C.yellow }}>Hub</span></span>
                   <span style={{ color: C.teal, fontWeight: 600, marginLeft: 5 }}>by ALEBAS Ingeniería SAS</span>
                 </div>
-                <div className="al-foot-legal">NIT 901.992.450-5 · Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()}</div>
+                <div className="al-foot-legal">NIT 901.992.450-5 · Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()} · <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if ('serviceWorker' in navigator) {
+                        const regs = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(regs.map(r => r.unregister()));
+                      }
+                      if ('caches' in window) {
+                        const keys = await caches.keys();
+                        await Promise.all(keys.map(k => caches.delete(k)));
+                      }
+                    } catch (_) {}
+                    window.location.reload();
+                  }}
+                  style={{ background: 'none', border: 'none', color: C.teal, fontSize: 9, padding: 0, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}
+                  title="Borra caché del navegador y recarga la app con la versión más reciente"
+                >🔄 Actualizar app</button></div>
               </div>
             </div>
 

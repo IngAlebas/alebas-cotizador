@@ -27,6 +27,7 @@ export default function InteractiveRoofMap({
   const googlePanelsRef = useRef([]);   // Polígonos de paneles reales Google Solar
   const heatmapOverlayRef = useRef(null); // GroundOverlay de irradiancia
   const sunPathRef = useRef(null); // Polyline del arco solar
+  const zoomLockedRef = useRef(false); // true tras primer setZoom — preserva pinch del usuario
   const lastEmittedRef = useRef({ lat, lon });
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
@@ -320,7 +321,9 @@ export default function InteractiveRoofMap({
             for (let c = 0; c < cols && drawn < panelsCount; c++) {
               const lx = startX + c * panelW + panelW / 2;
               const ly = startY + r * panelH + panelH / 2;
-              const halfW = panelW * 0.45, halfH = panelH * 0.45;
+              // Paneles a tamaño casi completo (94%) para máxima visibilidad
+              // — antes 0.45 (= 90%) los hacía invisibles a zooms < 21.
+              const halfW = panelW * 0.47, halfH = panelH * 0.47;
               const localCorners = [
                 [lx - halfW, ly - halfH],
                 [lx + halfW, ly - halfH],
@@ -475,11 +478,13 @@ export default function InteractiveRoofMap({
       const avgLat = validCenters.reduce((a, s) => a + s.center.lat, 0) / validCenters.length;
       const avgLng = validCenters.reduce((a, s) => a + s.center.lng, 0) / validCenters.length;
       mapRef.current.setCenter({ lat: avgLat, lng: avgLng });
-      // Zoom 22 = MÁXIMO de Google Maps. Antes era 21 'reservando' un nivel
-      // para zoom manual, pero el cliente reporta que no puede acercar más.
-      // Arrancando en 22 garantizamos el max possible inmediatamente. Si
-      // no hay imagery a ese nivel, Google fallback a 21 automáticamente.
-      mapRef.current.setZoom(22);
+      // Solo forzar zoom 22 la PRIMERA VEZ (cuando el usuario aún no ha
+      // ajustado el mapa). Si ya hay polígonos previos, asumimos que el
+      // usuario hizo pinch-zoom o pan y respetamos su nivel actual.
+      if (renderedCount === 0 || !zoomLockedRef.current) {
+        mapRef.current.setZoom(22);
+        zoomLockedRef.current = true;
+      }
     }
   }, [segments, ready]);
 
