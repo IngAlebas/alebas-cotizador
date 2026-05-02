@@ -23,6 +23,7 @@ export default function InteractiveRoofMap({
   const circleRef = useRef(null);
   const polygonsRef = useRef([]);       // Polígonos de cada segmento
   const labelsRef = useRef([]);         // Labels con área de cada segmento
+  const syntheticPanelsRef = useRef([]);// Grid azul sintético — clearable sin tocar segmentos
   const googlePanelsRef = useRef([]);   // Polígonos de paneles reales Google Solar
   const heatmapOverlayRef = useRef(null); // GroundOverlay de irradiancia
   const sunPathRef = useRef(null); // Polyline del arco solar
@@ -130,6 +131,8 @@ export default function InteractiveRoofMap({
     const maps = window.google.maps;
     polygonsRef.current.forEach(p => p.setMap(null));
     polygonsRef.current = [];
+    syntheticPanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    syntheticPanelsRef.current = [];
     labelsRef.current.forEach(l => l.setMap(null));
     labelsRef.current = [];
     if (!Array.isArray(segments) || segments.length === 0) return;
@@ -343,7 +346,7 @@ export default function InteractiveRoofMap({
                 clickable: false,
                 zIndex: 12,  // bien arriba del polígono del segmento
               });
-              polygonsRef.current.push(panelPoly);
+              syntheticPanelsRef.current.push(panelPoly);
               drawn++;
             }
           }
@@ -632,9 +635,10 @@ export default function InteractiveRoofMap({
     const panels = googlePanels.filter(p => p.center?.lat != null && p.center?.lng != null);
     if (panels.length === 0) return;
 
-    // Primero limpiar el grid sintético para que no se superponga
-    polygonsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
-    polygonsRef.current = [];
+    // Limpiar SOLO el grid sintético azul (los paneles reales lo reemplazan).
+    // No tocar polygonsRef — contiene segmentos, sun arrows y leader lines.
+    syntheticPanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    syntheticPanelsRef.current = [];
 
     const halfH = (panelH * 0.46) / 2;
     const halfW = (panelW * 0.46) / 2;
