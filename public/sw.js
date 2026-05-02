@@ -1,5 +1,7 @@
-const CACHE_NAME = 'solarhub-v2';
-const STATIC_CACHE = 'solarhub-static-v2';
+// Bump versión en cada release para invalidar caché vieja en móviles
+// (el activate handler borra cualquier caché que no coincida con estos nombres).
+const CACHE_NAME = 'solarhub-v3';
+const STATIC_CACHE = 'solarhub-static-v3';
 
 // Assets to cache on install
 const PRECACHE_URLS = [

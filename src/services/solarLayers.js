@@ -28,7 +28,18 @@ function interpolateColor(t) {
 
 // Llama a n8n para obtener las URLs firmadas de dataLayers + bounds.
 export async function fetchDataLayerUrls({ lat, lon, radiusMeters = 50 }) {
-  const data = await n8nPost('solar-datalayers', { lat, lon, radiusMeters });
+  let data;
+  try {
+    data = await n8nPost('solar-datalayers', { lat, lon, radiusMeters });
+  } catch (e) {
+    const msg = String(e?.message || e || '');
+    // n8n devuelve "Error fetching data" cuando el webhook no está registrado
+    // (workflow no importado/activado en producción).
+    if (/Error fetching data|404|not.?registered|webhook.*not/i.test(msg)) {
+      throw new Error('Servicio de irradiancia aún no disponible. Avisa al admin para activar el workflow en n8n.');
+    }
+    throw e;
+  }
   if (!data || data.ok === false) {
     throw new Error(data?.detail || 'solar-datalayers: error desconocido');
   }

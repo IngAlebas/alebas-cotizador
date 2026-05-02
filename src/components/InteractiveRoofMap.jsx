@@ -298,11 +298,11 @@ export default function InteractiveRoofMap({
       });
       polygonsRef.current.push(innerOutline);
       // GRID DE PANELES SINTÉTICO (estilo Google Solar Platform)
-      // Para cubiertas ACTIVAS, renderizar pequeños rectángulos azules
-      // representando los paneles que se instalarían. Distribuidos en
-      // grid orientado al azimut, dentro del área de la cubierta.
-      if (isActive && areaM2 > 0) {
-        const PANEL_COLOR = '#3b82f6';  // azul típico paneles
+      // Renderizar en TODOS los segmentos (no solo activos) para que el
+      // usuario vea los paneles desde el primer momento — los inactivos
+      // con color desaturado, los activos con azul fuerte.
+      if (areaM2 > 0) {
+        const PANEL_COLOR = isActive ? '#3b82f6' : '#94a3b8';  // azul vivo / gris azulado
         // Cuántos paneles caben en este segmento (con packing 65%)
         const panelArea = panelW * panelH;
         const panelsCount = Math.floor((areaM2 * 0.65) / panelArea);
@@ -338,13 +338,13 @@ export default function InteractiveRoofMap({
               const panelPoly = new maps.Polygon({
                 map: mapRef.current,
                 paths: panelCorners,
-                strokeColor: '#0b1d4f',  // borde azul muy oscuro para contraste
-                strokeOpacity: 1,
+                strokeColor: isActive ? '#0b1d4f' : '#475569',
+                strokeOpacity: isActive ? 1 : 0.7,
                 strokeWeight: 1,
                 fillColor: PANEL_COLOR,
-                fillOpacity: 0.95,
+                fillOpacity: isActive ? 0.95 : 0.55,  // inactivos atenuados
                 clickable: false,
-                zIndex: 12,  // bien arriba del polígono del segmento
+                zIndex: isActive ? 12 : 11,
               });
               syntheticPanelsRef.current.push(panelPoly);
               drawn++;
