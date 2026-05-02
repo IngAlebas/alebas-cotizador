@@ -37,7 +37,8 @@ export async function fetchDataLayerUrls({ lat, lon, radiusMeters = 50 }) {
 
 // Descarga un GeoTIFF desde una URL firmada de Google Solar,
 // parsea con geotiff.js, y devuelve un PNG data-URL + bounds.
-export async function geotiffToPngDataUrl(signedUrl, bounds) {
+// bounds se puede omitir — si falta se deriva del propio GeoTIFF.
+export async function geotiffToPngDataUrl(signedUrl, apiBounds) {
   const { fromUrl } = await import('geotiff');
   const tiff = await fromUrl(signedUrl);
   const image = await tiff.getImage();
@@ -45,6 +46,16 @@ export async function geotiffToPngDataUrl(signedUrl, bounds) {
 
   const width = image.getWidth();
   const height = image.getHeight();
+
+  // Extraer bounds del GeoTIFF si el API no los entregó.
+  // image.getBoundingBox() → [west, south, east, north] en WGS84.
+  let bounds = apiBounds;
+  if (!bounds) {
+    try {
+      const [west, south, east, north] = image.getBoundingBox();
+      bounds = { sw: { lat: south, lng: west }, ne: { lat: north, lng: east } };
+    } catch (_) { /* sin georef — overlay no se posicionará */ }
+  }
 
   // Calcular min/max para normalizar (ignorar nodata = 0 o NaN).
   let minVal = Infinity, maxVal = -Infinity;
@@ -78,7 +89,7 @@ export async function geotiffToPngDataUrl(signedUrl, bounds) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  return { dataUrl: canvas.toDataURL('image/png'), width, height, minVal, maxVal };
+  return { dataUrl: canvas.toDataURL('image/png'), width, height, minVal, maxVal, bounds };
 }
 
 // Procesa los 12 GeoTIFFs mensuales de Google Solar y devuelve

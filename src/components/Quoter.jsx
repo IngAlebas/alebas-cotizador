@@ -509,8 +509,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       const layerData = await fetchDataLayerUrls({ lat: f.lat, lon: f.lon });
       if (!layerData.annualFluxUrl) throw new Error('No hay datos de irradiancia para esta ubicación');
       setDataLayerUrls(layerData); // guardar para uso en monthly
-      const { dataUrl, minVal, maxVal } = await geotiffToPngDataUrl(layerData.annualFluxUrl, layerData.bounds);
-      setHeatmapLayer({ dataUrl, bounds: layerData.bounds, minVal, maxVal, imageryDate: layerData.imageryDate });
+      const { dataUrl, minVal, maxVal, bounds: geotiffBounds } = await geotiffToPngDataUrl(layerData.annualFluxUrl, layerData.bounds);
+      const resolvedBounds = geotiffBounds || layerData.bounds;
+      if (!resolvedBounds) throw new Error('No se pudieron determinar los límites del mapa de irradiancia');
+      setHeatmapLayer({ dataUrl, bounds: resolvedBounds, minVal, maxVal, imageryDate: layerData.imageryDate });
     } catch (e) {
       setHeatmapError(e?.message || 'No se pudo cargar el heatmap de irradiancia');
     } finally {
@@ -4602,6 +4604,59 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         Ubicación geográfica de Colombia (lat ~4°N): el sol pasa casi por el cenit al mediodía. El arco se proyecta de Este a Oeste atravesando el techo.
                       </div>
                     </div>
+                  {/* Producción mensual estimada en PDF */}
+                  {(() => {
+                    const MONTHLY_PROFILE = [0.0892,0.0851,0.0815,0.0768,0.0735,0.0748,0.0858,0.0878,0.0792,0.0748,0.0753,0.0862];
+                    const MONTH_LABELS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+                    const annualKwh = res.googleSolarEstimate?.yearlyEnergyDcKwh || res.ap || 0;
+                    if (!(annualKwh > 0)) return null;
+                    const data = monthlyReal?.length === 12
+                      ? monthlyReal
+                      : MONTHLY_PROFILE.map(f2 => Math.round(annualKwh * f2));
+                    const maxVal2 = Math.max(...data);
+                    const BAR_W = 22, GAP = 4, CHART_H = 70;
+                    const CHART_W = 12 * (BAR_W + GAP) - GAP;
+                    return (
+                      <div style={{ marginTop: 14 }}>
+                        <div className="al-pdf-compass-title">
+                          Producción mensual estimada {monthlyReal?.length === 12 ? '· Datos reales Google Solar GeoTIFF' : '· Perfil típico Colombia'}
+                        </div>
+                        <svg width={CHART_W} height={CHART_H + 28} style={{ display: 'block', margin: '4px auto 0' }}>
+                          {data.map((v, i) => {
+                            const barH = Math.max(2, (v / maxVal2) * CHART_H);
+                            const x = i * (BAR_W + GAP);
+                            const y = CHART_H - barH;
+                            return (
+                              <g key={i}>
+                                <rect x={x} y={y} width={BAR_W} height={barH} rx={2} fill="#FF8C00" opacity={0.85} />
+                                <text x={x + BAR_W / 2} y={CHART_H + 10} fontSize={8} fill="#555" textAnchor="middle">{MONTH_LABELS[i]}</text>
+                                <text x={x + BAR_W / 2} y={y - 3} fontSize={7} fill="#333" textAnchor="middle">{v}</text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                        <div className="al-pdf-compass-note" style={{ textAlign: 'center', marginTop: 4 }}>
+                          Total anual: <strong>{Math.round(annualKwh).toLocaleString('es-CO')} kWh</strong> · Promedio: <strong>{Math.round(annualKwh / 12).toLocaleString('es-CO')} kWh/mes</strong>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Heatmap de irradiancia si fue cargado */}
+                  {heatmapLayer?.dataUrl && (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="al-pdf-compass-title">Mapa de irradiancia solar anual (Google Solar Platform)</div>
+                      <img
+                        src={heatmapLayer.dataUrl}
+                        alt="Mapa de irradiancia"
+                        style={{ display: 'block', width: '100%', maxWidth: 320, margin: '6px auto', borderRadius: 4, border: '1px solid #ccc' }}
+                      />
+                      <div className="al-pdf-compass-note" style={{ textAlign: 'center' }}>
+                        Rango: <strong>{Math.round(heatmapLayer.minVal)} – {Math.round(heatmapLayer.maxVal)} kWh/m²/año</strong>
+                        {heatmapLayer.imageryDate && <> · Imagen: <strong>{heatmapLayer.imageryDate.year}/{String(heatmapLayer.imageryDate.month || '').padStart(2,'0')}</strong></>}
+                      </div>
+                    </div>
+                  )}
                   </>
                 );
               })()}
