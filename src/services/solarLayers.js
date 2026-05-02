@@ -80,3 +80,30 @@ export async function geotiffToPngDataUrl(signedUrl, bounds) {
   ctx.putImageData(img, 0, 0);
   return { dataUrl: canvas.toDataURL('image/png'), width, height, minVal, maxVal };
 }
+
+// Procesa los 12 GeoTIFFs mensuales de Google Solar y devuelve
+// array[12] con la producción estimada en kWh/mes para cada mes.
+// areaM2: área instalable del sistema (para escalar el flujo → kWh).
+// systemEfficiency: rendimiento total del sistema (default 0.75).
+export async function fetchMonthlyProduction(monthlyFluxUrls, areaM2, systemEfficiency = 0.75) {
+  if (!Array.isArray(monthlyFluxUrls) || monthlyFluxUrls.length !== 12) {
+    throw new Error('Se necesitan exactamente 12 URLs mensuales');
+  }
+  const { fromUrl } = await import('geotiff');
+  const results = [];
+  for (const url of monthlyFluxUrls) {
+    const tiff = await fromUrl(url);
+    const image = await tiff.getImage();
+    const [raster] = await image.readRasters({ interleave: false });
+    // Cada píxel = kWh/m²/mes. Calcular media de píxeles válidos (>0).
+    let sum = 0, count = 0;
+    for (let i = 0; i < raster.length; i++) {
+      const v = raster[i];
+      if (v > 0 && Number.isFinite(v)) { sum += v; count++; }
+    }
+    const meanFlux = count > 0 ? sum / count : 0;
+    // Producción mensual estimada del sistema: flujo medio × área × eficiencia
+    results.push(Math.round(meanFlux * (areaM2 || 30) * systemEfficiency));
+  }
+  return results;
+}

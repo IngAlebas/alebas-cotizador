@@ -14,7 +14,8 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
-import { fetchDataLayerUrls, geotiffToPngDataUrl } from '../services/solarLayers';
+import { fetchDataLayerUrls, geotiffToPngDataUrl, fetchMonthlyProduction } from '../services/solarLayers';
+import MonthlyProductionChart from './MonthlyProductionChart';
 import { autocompleteAddress, newPlacesSessionToken } from '../services/places';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import InteractiveRoofMap from './InteractiveRoofMap';
@@ -267,6 +268,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [heatmapLoading, setHeatmapLoading] = useState(false);
   const [heatmapError, setHeatmapError] = useState(null);
   const [panelSlider, setPanelSlider] = useState(null); // null = sin override (usa res.numPanels)
+  const [monthlyReal, setMonthlyReal] = useState(null);   // array[12] kWh/mes reales Google Solar
+  const [monthlyRealLoading, setMonthlyRealLoading] = useState(false);
+  const [monthlyRealError, setMonthlyRealError] = useState(null);
+  const [dataLayerUrls, setDataLayerUrls] = useState(null); // URLs firmadas del último fetch
   // Autocomplete de direcciones (Google Places via n8n)
   const [addrSuggestions, setAddrSuggestions] = useState([]);
   const [addrSuggestOpen, setAddrSuggestOpen] = useState(false);
@@ -502,12 +507,46 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     try {
       const layerData = await fetchDataLayerUrls({ lat: f.lat, lon: f.lon });
       if (!layerData.annualFluxUrl) throw new Error('No hay datos de irradiancia para esta ubicación');
+      setDataLayerUrls(layerData); // guardar para uso en monthly
       const { dataUrl, minVal, maxVal } = await geotiffToPngDataUrl(layerData.annualFluxUrl, layerData.bounds);
       setHeatmapLayer({ dataUrl, bounds: layerData.bounds, minVal, maxVal, imageryDate: layerData.imageryDate });
     } catch (e) {
       setHeatmapError(e?.message || 'No se pudo cargar el heatmap de irradiancia');
     } finally {
       setHeatmapLoading(false);
+    }
+  };
+
+  const loadMonthlyReal = async () => {
+    const urls = dataLayerUrls?.monthlyFluxUrls;
+    if (!urls?.length) {
+      // Si no tenemos las URLs todavía, fetching primero
+      setMonthlyRealLoading(true);
+      setMonthlyRealError(null);
+      try {
+        const layerData = await fetchDataLayerUrls({ lat: f.lat, lon: f.lon });
+        setDataLayerUrls(layerData);
+        if (!layerData.monthlyFluxUrls?.length) throw new Error('No hay datos mensuales para esta ubicación');
+        const areaM2 = f.googleAreaM2 || f.availableArea || 30;
+        const monthly = await fetchMonthlyProduction(layerData.monthlyFluxUrls, Number(areaM2));
+        setMonthlyReal(monthly);
+      } catch (e) {
+        setMonthlyRealError(e?.message || 'No se pudieron cargar datos mensuales');
+      } finally {
+        setMonthlyRealLoading(false);
+      }
+      return;
+    }
+    setMonthlyRealLoading(true);
+    setMonthlyRealError(null);
+    try {
+      const areaM2 = f.googleAreaM2 || f.availableArea || 30;
+      const monthly = await fetchMonthlyProduction(urls, Number(areaM2));
+      setMonthlyReal(monthly);
+    } catch (e) {
+      setMonthlyRealError(e?.message || 'No se pudieron cargar datos mensuales');
+    } finally {
+      setMonthlyRealLoading(false);
     }
   };
 
@@ -1732,6 +1771,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       </div>
                     );
                   })()}
+                  {/* Gráfico de producción mensual — visible si hay estimación anual */}
+                  {(res?.ap > 0 || f.googleSolarEstimate?.yearlyEnergyDcKwh > 0) && (
+                    <MonthlyProductionChart
+                      annualKwh={f.googleSolarEstimate?.yearlyEnergyDcKwh || res?.ap || 0}
+                      monthlyKwhReal={monthlyReal}
+                      onLoadReal={loadMonthlyReal}
+                      loadingReal={monthlyRealLoading}
+                      loadError={monthlyRealError}
+                      monthlyConsumption={f.monthlyKwh ? Number(f.monthlyKwh) : null}
+                    />
+                  )}
                   {/* Streets map MOVIDO al final del bloque de techo, después
                       de las cubiertas — para que la lista de cubiertas quede
                       pegada al mapa interactivo (mejor UX). */}
