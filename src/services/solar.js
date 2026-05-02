@@ -58,6 +58,7 @@ async function fetchDirectGoogle({ address, lat, lon }) {
   const sp = data.solarPotential || {};
   const wholeRoof = sp.wholeRoofStats || {};
   const roofSegs = Array.isArray(sp.roofSegmentStats) ? sp.roofSegmentStats : [];
+  const rawPanels = Array.isArray(sp.solarPanels) ? sp.solarPanels : [];
   const configs = Array.isArray(sp.solarPanelConfigs) ? sp.solarPanelConfigs : [];
   // El último config es el que maximiza panelsCount, no el de mejor yield.
   // Usamos el de mayor yearlyEnergyDcKwh para el cross-check con PVWatts.
@@ -97,6 +98,14 @@ async function fetchDirectGoogle({ address, lat, lon }) {
         ne: { lat: Number(s.boundingBox.ne.latitude), lng: Number(s.boundingBox.ne.longitude) },
       } : null,
     })),
+    solarPanels: rawPanels.map(p => ({
+      center: p.center ? { lat: Number(p.center.latitude), lng: Number(p.center.longitude) } : null,
+      orientation: p.orientation || 'LANDSCAPE',
+      yearlyEnergyDcKwh: p.yearlyEnergyDcKwh != null ? Number(p.yearlyEnergyDcKwh) : null,
+      segmentIndex: p.segmentIndex != null ? Number(p.segmentIndex) : null,
+    })),
+    panelHeightMeters: sp.panelHeightMeters != null ? Number(sp.panelHeightMeters) : 1.65,
+    panelWidthMeters: sp.panelWidthMeters != null ? Number(sp.panelWidthMeters) : 0.99,
     imagery: data.imageryDate ? {
       imageryDate: data.imageryDate,
       imageryQuality: data.imageryQuality,
@@ -118,7 +127,7 @@ export async function lookupRoof({ address, lat, lon } = {}) {
   let norm;
   if (n8nConfigured()) {
     try {
-      const data = await n8nPost('solar-roof', { address, lat, lon });
+      const data = await n8nPost('solar-roof-cached', { address, lat, lon });
       if (!data || typeof data !== 'object') throw new Error('Servicio de análisis de techo no disponible. Intenta de nuevo en unos minutos.');
       // El workflow puede devolver {ok:false, reason, detail} cuando geocoding falla,
       // input es inválido, o falta GOOGLE_API_KEY. Sin este check los Number(undefined)
@@ -143,6 +152,9 @@ export async function lookupRoof({ address, lat, lon } = {}) {
         shadeIndex: data.shadeIndex != null ? Number(data.shadeIndex) : null,
         shadeSource: data.shadeSource || null,
         roofSegments: Array.isArray(data.roofSegments) ? data.roofSegments : [],
+        solarPanels: Array.isArray(data.solarPanels) ? data.solarPanels : [],
+        panelHeightMeters: data.panelHeightMeters != null ? Number(data.panelHeightMeters) : null,
+        panelWidthMeters: data.panelWidthMeters != null ? Number(data.panelWidthMeters) : null,
         imagery: data.imagery || null,
         staticMapUrl: data.staticMapUrl || null,
         staticMapRoadUrl: data.staticMapRoadUrl || null,
