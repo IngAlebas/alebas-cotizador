@@ -1747,8 +1747,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                   {/* Slider de paneles Google Solar — solo visible si hay paneles reales */}
                   {f.solarPanels?.length > 0 && f.googleMaxPanels > 0 && (() => {
-                    const maxP = f.googleMaxPanels;
-                    const currentP = panelSlider ?? f.solarPanels.length;
+                    // Slider max = paneles que caben SOLO en cubiertas activas.
+                    // Si el usuario desactiva cubiertas, el max baja proporcionalmente
+                    // según el área activa vs el área total Google.
+                    const totalArea = (f.roofSegments || []).reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
+                    const activeArea = (f.roofSegments || [])
+                      .filter((_, idx) => selectedSegmentIdx.has(idx))
+                      .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
+                    const areaRatio = totalArea > 0 ? activeArea / totalArea : 1;
+                    const maxP = Math.max(1, Math.floor(f.googleMaxPanels * areaRatio));
+                    const currentP = Math.min(panelSlider ?? f.solarPanels.length, maxP);
                     const gEst = f.googleSolarEstimate;
                     const bestP = gEst?.bestConfigPanels || maxP;
                     const bestKwh = gEst?.yearlyEnergyDcKwh || 0;
