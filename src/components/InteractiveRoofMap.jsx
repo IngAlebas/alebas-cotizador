@@ -260,13 +260,14 @@ export default function InteractiveRoofMap({
         // sobre satellite. Antes solo activos tenían halo. Ahora todos
         // los polígonos son claramente distinguibles, pero los activos
         // se diferencian por color verde + outline interno + fill más denso.
-        strokeColor: '#ffffff',
-        strokeOpacity: isActive ? 1 : 0.85,
+        strokeColor: isActive ? '#0b1d4f' : '#1f2937',
+        strokeOpacity: 1,
         strokeWeight: isActive ? 3 : 2,
-        fillColor: col,
-        // Activos transparentes para que el grid de paneles azules sea visible
-        // arriba; inactivos un poco más opacos para distinguirlos.
-        fillOpacity: isActive ? 0.18 : 0.25,
+        fillColor: isActive ? '#3b82f6' : col,
+        // Zona AZUL grande sobre cubiertas activas (representa "aquí van paneles").
+        // Inactivos en color de estado (verde/naranja). Opacidades altas para que
+        // se vea claramente sobre satellite — antes 0.18 era casi invisible.
+        fillOpacity: isActive ? 0.5 : 0.35,
         clickable: isClickable || isDraggable,
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
@@ -357,6 +358,33 @@ export default function InteractiveRoofMap({
               syntheticPanelsRef.current.push(panelPoly);
               drawn++;
             }
+          }
+          // LABEL grande con conteo de paneles — garantiza feedback visual
+          // aunque los polígonos individuales sean pequeños en el zoom actual.
+          if (isActive && drawn > 0) {
+            const labelMarker = new maps.Marker({
+              map: mapRef.current,
+              position: center,
+              icon: {
+                path: 'M -22 -10 L 22 -10 L 22 10 L -22 10 Z',
+                fillColor: '#0b1d4f',
+                fillOpacity: 0.95,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+                scale: 1,
+                anchor: new maps.Point(0, 0),
+                labelOrigin: new maps.Point(0, 0),
+              },
+              label: {
+                text: `${drawn} ☀`,
+                color: '#ffffff',
+                fontWeight: '800',
+                fontSize: '12px',
+              },
+              zIndex: 15,
+              clickable: false,
+            });
+            syntheticPanelsRef.current.push(labelMarker);
           }
         }
         // FLECHA DE ORIENTACIÓN AL SOL sobre la cubierta — desde el lomo
