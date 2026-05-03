@@ -508,16 +508,17 @@ export default function InteractiveRoofMap({
       sunPathRef.current = null;
     }
     if (!showSunPath || lat == null || lon == null) return;
-    // RUTA DEL SOL: arco LARGO y bien arriba del techo (al NORTE = lat
-    // POSITIVA). En el hemisferio norte (Colombia +4°N), el cliente ve
-    // el cielo "arriba" en el mapa = norte = lat creciente. Por eso y
-    // debe ser POSITIVO para subir en pantalla.
+    // RUTA DEL SOL: arco que curva SOBRE el techo. En el hemisferio norte
+    // (Colombia +4°N), el sol pasa por el sur durante el día — pero
+    // visualmente lo dibujamos arriba del pin para que se vea claro.
+    // ANTES: northOffset 2.5 × r ≈ 23m al norte → fuera de la pantalla en mobile.
+    // AHORA: ofset pequeño y arco compacto sobre el techo.
     const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.4 : 12;
     const dLat = r / 111000;
     const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
-    const northOffset = 2.5;       // múltiplo de r — bien al norte (arriba en pantalla)
-    const arcWidth = 2.2;          // ancho del arco — LARGO
-    const arcHeight = 0.55;        // altura del arco — visible curvatura
+    const northOffset = 0.6;       // múltiplo de r — apenas arriba del techo (visible en mobile)
+    const arcWidth = 1.8;          // ancho del arco — compacto pero visible
+    const arcHeight = 0.7;         // altura del arco — curvatura visible
     const points = [];
     // Iteramos h de -90 (este, amanecer) → +90 (oeste, atardecer). El
     // sol VIAJA de este a oeste, por eso negamos sin(rad): así el primer
@@ -744,6 +745,23 @@ export default function InteractiveRoofMap({
       {ready && (
         <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'rgba(7,9,15,0.85)', color: moved ? '#4ade80' : '#E8F0F7', fontSize: 10, padding: '5px 10px', borderRadius: 6, lineHeight: 1.35 }}>
           {moved ? '✓ Ubicación ajustada — el cálculo se actualizó' : '✋ Arrastra el pin (o haz click) para afinar la ubicación exacta sobre el techo'}
+        </div>
+      )}
+      {ready && !heatmapLayer?.dataUrl && (
+        <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(7,9,15,0.88)', borderRadius: 8, padding: '6px 9px', fontSize: 9, color: '#E8F0F7', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', maxWidth: 150, lineHeight: 1.5 }}>
+          <div style={{ fontWeight: 700, marginBottom: 3, color: '#FFB800', letterSpacing: 0.4, fontSize: 8.5 }}>LEYENDA</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ color: '#FF8C00', fontSize: 13, lineHeight: 1 }}>↗</span>
+            <span>Orientación del techo</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+            <span style={{ color: '#FFD93D', fontSize: 13, lineHeight: 1 }}>☀</span>
+            <span>Trayectoria del sol</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+            <span style={{ color: '#3b82f6', fontSize: 13, lineHeight: 1 }}>▪</span>
+            <span>Paneles estimados</span>
+          </div>
         </div>
       )}
       {heatmapLayer?.dataUrl && (
