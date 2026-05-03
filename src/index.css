@@ -560,8 +560,13 @@ button:active { transform: scale(0.97); }
   /* Refuerzo crítico: NINGÚN elemento puede desbordar el viewport horizontal.
      Bug visto en screenshot: cards 2-col se cortaban al borde derecho en
      pantallas <420px. La causa más común son grids con minmax o repeat sin
-     ancho mínimo controlado. */
-  body * { max-width: 100%; }
+     ancho mínimo controlado.
+
+     IMPORTANTE: excluir Google Maps (.gm-style) — su SDK crea tiles e
+     internal overlays que NECESITAN su ancho natural para renderizar
+     correctamente Polygons, Markers y heatmaps. max-width: 100% rompía
+     los paneles azules en mobile. */
+  body *:not(.gm-style):not(.gm-style *):not([class^="gm-"]) { max-width: 100%; }
   /* Grids de KPI/stats: asegurar que las celdas no excedan ancho asignado */
   .al-stats-grid > *,
   .al-excedente-grid > *,
