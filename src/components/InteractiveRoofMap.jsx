@@ -661,8 +661,11 @@ export default function InteractiveRoofMap({
     syntheticPanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
     syntheticPanelsRef.current = [];
 
-    const halfH = (panelH * 0.46) / 2;
-    const halfW = (panelW * 0.46) / 2;
+    // Mismo half-size que el grid sintético (panelW * 0.47, panelH * 0.47)
+    // para que paneles reales y sintéticos se vean del mismo tamaño cuando
+    // el usuario mueve el slider entre uno y otro.
+    const halfH = panelH * 0.47;
+    const halfW = panelW * 0.47;
 
     panels.forEach(panel => {
       const cLat = Number(panel.center.lat);
@@ -748,20 +751,30 @@ export default function InteractiveRoofMap({
         </div>
       )}
       {ready && !heatmapLayer?.dataUrl && (
-        <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(7,9,15,0.88)', borderRadius: 8, padding: '6px 9px', fontSize: 9, color: '#E8F0F7', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', maxWidth: 150, lineHeight: 1.5 }}>
-          <div style={{ fontWeight: 700, marginBottom: 3, color: '#FFB800', letterSpacing: 0.4, fontSize: 8.5 }}>LEYENDA</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ color: '#FF8C00', fontSize: 13, lineHeight: 1 }}>↗</span>
-            <span>Orientación del techo</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-            <span style={{ color: '#FFD93D', fontSize: 13, lineHeight: 1 }}>☀</span>
-            <span>Trayectoria del sol</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-            <span style={{ color: '#3b82f6', fontSize: 13, lineHeight: 1 }}>▪</span>
-            <span>Paneles estimados</span>
-          </div>
+        <div style={{
+          marginTop: 6,
+          padding: '6px 10px',
+          background: 'rgba(7,9,15,0.92)',
+          border: '1px solid rgba(122,158,170,0.25)',
+          borderRadius: 8,
+          fontSize: 10,
+          color: '#E8F0F7',
+          display: 'flex', flexWrap: 'wrap', gap: '4px 14px',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <span style={{ fontWeight: 700, color: '#FFB800', letterSpacing: 0.4, fontSize: 9 }}>LEYENDA</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#FF8C00', fontSize: 14, lineHeight: 1 }}>↗</span>
+            Orientación del techo
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#FFD93D', fontSize: 14, lineHeight: 1 }}>☀</span>
+            Trayectoria del sol
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#3b82f6', fontSize: 14, lineHeight: 1 }}>▪</span>
+            Paneles estimados
+          </span>
         </div>
       )}
       {heatmapLayer?.dataUrl && (
