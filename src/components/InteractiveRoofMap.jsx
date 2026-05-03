@@ -299,12 +299,12 @@ export default function InteractiveRoofMap({
       });
       polygonsRef.current.push(innerOutline);
       // GRID DE PANELES SINTÉTICO (estilo Google Solar Platform)
-      // Renderizar en TODOS los segmentos. Si areaM2 viene en 0 (n8n con
-      // datos parciales o segmentos sin stats), usamos un área default
-      // estimada para que SIEMPRE se vea al menos algo representativo.
+      // SOLO se renderiza en cubiertas ACTIVAS — al desactivar una cubierta
+      // los paneles desaparecen, dejando solo el contorno verde/naranja para
+      // diferenciar segmentos activos vs descartados.
       const effectiveAreaM2 = areaM2 > 0 ? areaM2 : 25;
-      if (effectiveAreaM2 > 0) {
-        const PANEL_COLOR = isActive ? '#3b82f6' : '#94a3b8';  // azul vivo / gris azulado
+      if (isActive && effectiveAreaM2 > 0) {
+        const PANEL_COLOR = '#3b82f6';
         // Cuántos paneles caben en este segmento (con packing 65%)
         const panelArea = panelW * panelH;
         const panelsCount = Math.max(1, Math.floor((effectiveAreaM2 * 0.65) / panelArea));
@@ -346,13 +346,13 @@ export default function InteractiveRoofMap({
               const panelPoly = new maps.Polygon({
                 map: mapRef.current,
                 paths: panelCorners,
-                strokeColor: isActive ? '#0b1d4f' : '#475569',
-                strokeOpacity: isActive ? 1 : 0.7,
+                strokeColor: '#0b1d4f',
+                strokeOpacity: 1,
                 strokeWeight: 1,
                 fillColor: PANEL_COLOR,
-                fillOpacity: isActive ? 0.95 : 0.55,  // inactivos atenuados
+                fillOpacity: 0.95,
                 clickable: false,
-                zIndex: isActive ? 12 : 11,
+                zIndex: 12,
               });
               syntheticPanelsRef.current.push(panelPoly);
               drawn++;
@@ -746,7 +746,13 @@ export default function InteractiveRoofMap({
         </div>
       )}
       {ready && (
-        <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'rgba(7,9,15,0.85)', color: moved ? '#4ade80' : '#E8F0F7', fontSize: 10, padding: '5px 10px', borderRadius: 6, lineHeight: 1.35 }}>
+        <div style={{
+          marginTop: 6,
+          background: moved ? 'rgba(74,222,128,0.12)' : 'rgba(7,9,15,0.85)',
+          border: `1px solid ${moved ? 'rgba(74,222,128,0.4)' : 'rgba(122,158,170,0.25)'}`,
+          color: moved ? '#4ade80' : '#E8F0F7',
+          fontSize: 10, padding: '5px 10px', borderRadius: 6, lineHeight: 1.35,
+        }}>
           {moved ? '✓ Ubicación ajustada — el cálculo se actualizó' : '✋ Arrastra el pin (o haz click) para afinar la ubicación exacta sobre el techo'}
         </div>
       )}
