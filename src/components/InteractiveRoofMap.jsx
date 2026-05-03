@@ -299,17 +299,22 @@ export default function InteractiveRoofMap({
       });
       polygonsRef.current.push(innerOutline);
       // GRID DE PANELES SINTÉTICO (estilo Google Solar Platform)
-      // Renderizar en TODOS los segmentos (no solo activos) para que el
-      // usuario vea los paneles desde el primer momento — los inactivos
-      // con color desaturado, los activos con azul fuerte.
-      if (areaM2 > 0) {
+      // Renderizar en TODOS los segmentos. Si areaM2 viene en 0 (n8n con
+      // datos parciales o segmentos sin stats), usamos un área default
+      // estimada para que SIEMPRE se vea al menos algo representativo.
+      const effectiveAreaM2 = areaM2 > 0 ? areaM2 : 25;
+      if (effectiveAreaM2 > 0) {
         const PANEL_COLOR = isActive ? '#3b82f6' : '#94a3b8';  // azul vivo / gris azulado
         // Cuántos paneles caben en este segmento (con packing 65%)
         const panelArea = panelW * panelH;
-        const panelsCount = Math.floor((areaM2 * 0.65) / panelArea);
+        const panelsCount = Math.max(1, Math.floor((effectiveAreaM2 * 0.65) / panelArea));
+        // Si areaM2 vino en 0, recalcular widthM/heightM desde el área efectiva
+        // para que el grid tenga dónde caber.
+        const gridWidthM = widthM > 2 ? widthM : Math.sqrt(effectiveAreaM2) * 1.18;
+        const gridHeightM = heightM > 2 ? heightM : Math.sqrt(effectiveAreaM2) * 0.85;
         if (panelsCount > 0) {
-          // Dimensiones del grid (cols × rows) para que ~quepa en widthM × heightM
-          const cols = Math.max(1, Math.floor(widthM / panelW));
+          // Dimensiones del grid (cols × rows) para que ~quepa en gridWidthM × gridHeightM
+          const cols = Math.max(1, Math.floor(gridWidthM / panelW));
           const rows = Math.max(1, Math.ceil(panelsCount / cols));
           // Comenzar grid en esquina inferior-izquierda local
           const totalGridW = cols * panelW;
