@@ -157,6 +157,11 @@ export default function InteractiveRoofMap({
     };
     let renderedCount = 0;
     segments.forEach((s, i) => {
+      // Cubiertas INACTIVAS no se dibujan en el mapa: ni marker ni polígono
+      // ni paneles. El usuario las activa/desactiva desde la lista de
+      // 'Cubiertas del techo' debajo del mapa, y al desactivar desaparecen
+      // completamente para no contaminar la visualización.
+      if (s.selected === false) return;
       try {
       let center = pickCoords(s.center);
       if (!center && s.boundingBox) {
