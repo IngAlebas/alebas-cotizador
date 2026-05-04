@@ -203,7 +203,10 @@ export default function InteractiveRoofMap({
         zIndex: 4,
       });
       if (onSegmentToggle && s._idx != null) {
-        fallbackMarker.addListener('click', () => onSegmentToggle(s._idx));
+        fallbackMarker.addListener('click', (e) => {
+          if (e && typeof e.stop === 'function') e.stop();
+          onSegmentToggle(s._idx);
+        });
       }
       polygonsRef.current.push(fallbackMarker);
       const isActive = !!s.selected;
@@ -276,7 +279,13 @@ export default function InteractiveRoofMap({
         draggable: isDraggable,
         zIndex: isActive ? 6 : 5,
       });
-      if (isClickable) polygon.addListener('click', () => onSegmentToggle(s._idx));
+      if (isClickable) polygon.addListener('click', (e) => {
+        // STOP propagation: el map.addListener('click') mueve el pin si no
+        // detenemos el evento aquí, lo que disparaba un re-lookup que
+        // descartaba el toggle del segmento.
+        if (e && typeof e.stop === 'function') e.stop();
+        onSegmentToggle(s._idx);
+      });
       if (isDraggable) {
         // Al terminar el drag, calcular el nuevo centroide del polígono
         // y emitirlo al padre para que actualice f.customSegments.center.
