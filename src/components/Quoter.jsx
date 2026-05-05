@@ -4556,14 +4556,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div className="al-pdf-roof-image-grid">
                   {f.roofStaticMapHDUrl && (
                     <div>
-                      <img src={f.roofStaticMapHDUrl} alt="Vista satelital del techo" className="al-pdf-roof-image" crossOrigin="anonymous" />
-                      <div className="al-pdf-image-caption">Satelital · zoom 20 · análisis DSM</div>
+                      <img src={addRoofSegmentsToStaticUrl(f.roofStaticMapHDUrl, f.roofSegments)} alt="Vista satelital del techo con cubiertas validadas" className="al-pdf-roof-image" crossOrigin="anonymous" />
+                      <div className="al-pdf-image-caption">Satelital · zoom 20 · cubiertas detectadas (verde) y descartadas (naranja)</div>
                     </div>
                   )}
                   {f.roofStaticMapRoadUrl && (
                     <div>
-                      <img src={f.roofStaticMapRoadUrl} alt="Mapa de calles" className="al-pdf-roof-image" crossOrigin="anonymous" />
-                      <div className="al-pdf-image-caption">Calles · contexto urbano</div>
+                      <img src={addRoofSegmentsToStaticUrl(f.roofStaticMapRoadUrl, f.roofSegments)} alt="Mapa de calles con cubiertas validadas" className="al-pdf-roof-image" crossOrigin="anonymous" />
+                      <div className="al-pdf-image-caption">Calles · contexto urbano · cubiertas validadas</div>
                     </div>
                   )}
                 </div>
