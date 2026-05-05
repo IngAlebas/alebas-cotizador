@@ -497,16 +497,14 @@ export default function InteractiveRoofMap({
       return null;
     }).filter(Boolean);
     if (validCenters.length > 0) {
-      // Centro = promedio de coords (centroid). Más confiable que fitBounds
-      // para fijar zoom alto: fitBounds elige zoom según los bounds y el
-      // listener 'idle' a veces no dispara o se descarta antes de fire.
-      const avgLat = validCenters.reduce((a, s) => a + s.center.lat, 0) / validCenters.length;
-      const avgLng = validCenters.reduce((a, s) => a + s.center.lng, 0) / validCenters.length;
-      mapRef.current.setCenter({ lat: avgLat, lng: avgLng });
-      // Solo forzar zoom 22 la PRIMERA VEZ (cuando el usuario aún no ha
-      // ajustado el mapa). Si ya hay polígonos previos, asumimos que el
-      // usuario hizo pinch-zoom o pan y respetamos su nivel actual.
-      if (renderedCount === 0 || !zoomLockedRef.current) {
+      // Solo recentrar y fijar zoom la PRIMERA VEZ que se renderizan segments.
+      // En renders subsiguientes (slider, toggle, etc.) respetamos el pan/zoom
+      // actual del usuario — antes el efecto se disparaba siempre y mover el
+      // slider hacía "saltar" el mapa al centroide + zoom 22.
+      if (!zoomLockedRef.current) {
+        const avgLat = validCenters.reduce((a, s) => a + s.center.lat, 0) / validCenters.length;
+        const avgLng = validCenters.reduce((a, s) => a + s.center.lng, 0) / validCenters.length;
+        mapRef.current.setCenter({ lat: avgLat, lng: avgLng });
         mapRef.current.setZoom(22);
         zoomLockedRef.current = true;
       }
@@ -722,6 +720,8 @@ export default function InteractiveRoofMap({
   // Heatmap de irradiancia solar (dataLayers GeoTIFF procesado como PNG).
   // Renderiza un GroundOverlay semi-transparente sobre el satellite con la
   // escala azul→verde→rojo que muestra flujo solar por m².
+  // Cuando el heatmap está activo, ocultamos los paneles azules sintéticos y
+  // los reales para que el cliente lea la irradiancia sin obstrucción visual.
   useEffect(() => {
     if (!ready || !mapRef.current || !window.google?.maps) return;
     const maps = window.google.maps;
@@ -729,13 +729,24 @@ export default function InteractiveRoofMap({
       try { heatmapOverlayRef.current.setMap(null); } catch (_) {}
       heatmapOverlayRef.current = null;
     }
-    if (!heatmapLayer?.dataUrl || !heatmapLayer?.bounds) return;
+    const isHeatmapActive = !!(heatmapLayer?.dataUrl && heatmapLayer?.bounds);
+    // Mostrar/ocultar paneles sintéticos y reales según el estado del heatmap.
+    const setPanelsVisible = (visible) => {
+      const m = visible ? mapRef.current : null;
+      syntheticPanelsRef.current.forEach(p => { try { p.setMap(m); } catch (_) {} });
+      googlePanelsRef.current.forEach(p => { try { p.setMap(m); } catch (_) {} });
+    };
+    if (!isHeatmapActive) {
+      setPanelsVisible(true);
+      return;
+    }
+    setPanelsVisible(false);
     const { dataUrl, bounds } = heatmapLayer;
     const sw = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
     const ne = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
     const overlayBounds = new maps.LatLngBounds(sw, ne);
     heatmapOverlayRef.current = new maps.GroundOverlay(dataUrl, overlayBounds, {
-      opacity: 0.72,
+      opacity: 0.62,
       clickable: false,
       map: mapRef.current,
     });
