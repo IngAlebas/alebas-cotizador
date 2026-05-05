@@ -51,12 +51,7 @@ export default function InteractiveRoofMap({
           tilt: 0,
           disableDefaultUI: true,
           zoomControl: true,
-          mapTypeControl: true,
-          mapTypeControlOptions: {
-            style: maps.MapTypeControlStyle.HORIZONTAL_BAR,
-            position: maps.ControlPosition.TOP_RIGHT,
-            mapTypeIds: ['hybrid', 'satellite', 'roadmap'],
-          },
+          mapTypeControl: false,  // labels "Satélite/Mapa" estorbaban — usuario pidió quitarlas
           gestureHandling: 'greedy',  // un dedo arrastra (no requiere 2 dedos)
           clickableIcons: false,
         });
@@ -815,19 +810,17 @@ export default function InteractiveRoofMap({
         </div>
       )}
       {heatmapLayer?.dataUrl && (
-        <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(7,9,15,0.88)', borderRadius: 8, padding: '6px 10px', fontSize: 9.5, color: '#E8F0F7', boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 4, color: '#FFB800', letterSpacing: 0.5 }}>IRRADIANCIA SOLAR</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <div style={{ width: 80, height: 8, borderRadius: 4, background: 'linear-gradient(to right, #0000ff, #0080ff, #00dcb4, #00dc3c, #c8e60a, #ffb400, #ff0000)' }} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2, color: '#7A9EAA' }}>
-            <span>{heatmapLayer.minVal != null ? Math.round(heatmapLayer.minVal) + ' kWh/m²' : 'bajo'}</span>
-            <span>{heatmapLayer.maxVal != null ? Math.round(heatmapLayer.maxVal) + ' kWh/m²' : 'alto'}</span>
+        <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(7,9,15,0.92)', border: '1px solid rgba(255,184,0,0.35)', borderRadius: 8, fontSize: 10, color: '#E8F0F7', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, color: '#FFB800', letterSpacing: 0.5, fontSize: 9 }}>IRRADIANCIA SOLAR</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 120px', minWidth: 100 }}>
+            <span style={{ fontSize: 9, color: '#7A9EAA' }}>{heatmapLayer.minVal != null ? Math.round(heatmapLayer.minVal) + ' kWh/m²' : 'bajo'}</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 4, background: 'linear-gradient(to right, #0000ff, #0080ff, #00dcb4, #00dc3c, #c8e60a, #ffb400, #ff0000)' }} />
+            <span style={{ fontSize: 9, color: '#7A9EAA' }}>{heatmapLayer.maxVal != null ? Math.round(heatmapLayer.maxVal) + ' kWh/m²' : 'alto'}</span>
           </div>
           {heatmapLayer.imageryDate && (
-            <div style={{ marginTop: 3, color: '#7A9EAA' }}>
+            <span style={{ fontSize: 9, color: '#7A9EAA' }}>
               Imagen: {heatmapLayer.imageryDate.year}/{String(heatmapLayer.imageryDate.month).padStart(2,'0')}
-            </div>
+            </span>
           )}
         </div>
       )}
