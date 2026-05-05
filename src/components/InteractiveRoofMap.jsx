@@ -32,6 +32,7 @@ export default function InteractiveRoofMap({
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
   const [moved, setMoved] = useState(false);
+  const [mapType, setMapType] = useState('hybrid');
 
   // Init mapa una sola vez. lat/lon iniciales se capturan en este efecto;
   // las actualizaciones posteriores se aplican en el efecto de sync de abajo.
@@ -769,6 +770,18 @@ export default function InteractiveRoofMap({
       {ready && busy && (
         <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(7,9,15,0.85)', color: '#FFB800', fontSize: 10, padding: '4px 10px', borderRadius: 14, fontWeight: 600 }}>
           ⟳ Recalculando…
+        </div>
+      )}
+      {ready && (
+        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 3, zIndex: 5 }}>
+          {[{ id: 'hybrid', icon: '🛰', title: 'Vista satélite' }, { id: 'roadmap', icon: '🗺', title: 'Vista mapa' }].map(({ id, icon, title }) => (
+            <button key={id} title={title} onClick={() => { setMapType(id); mapRef.current?.setMapTypeId(id); }} style={{
+              width: 30, height: 30, background: mapType === id ? 'rgba(1,112,139,0.92)' : 'rgba(7,9,15,0.82)',
+              border: `1px solid ${mapType === id ? '#01708B' : 'rgba(122,158,170,0.35)'}`, borderRadius: 6,
+              cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.5)', transition: 'background 0.15s, border-color 0.15s',
+            }}>{icon}</button>
+          ))}
         </div>
       )}
       {ready && (
