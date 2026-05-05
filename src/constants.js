@@ -32,7 +32,7 @@ export const ROOF_MATERIALS = {
   losa:           { label: 'Losa de concreto',       icon: '▰',   weightKgM2: 0,   mountingType: 'lastrado-o-anclaje-quimico', notes: 'Sistema lastrado o anclajes químicos. Permite cualquier orientación con estructura inclinada.' },
   barro:          { label: 'Teja de barro',          icon: '⌇',   weightKgM2: 50,  mountingType: 'gancho-teja-cerámica', structuralRisk: true, notes: 'Frágil. Estructura debe soportar carga viva + paneles + acceso. Cálculo estructural recomendado.' },
   eternit:        { label: 'Eternit / fibrocemento', icon: '∿',   weightKgM2: 14,  mountingType: 'gancho-asbesto-cemento', structuralRisk: true, notes: 'Ley 1968/2019 prohíbe NUEVAS instalaciones de asbesto. Si el techo existente es de Eternit con asbesto, requiere protocolo de manejo seguro y considerar reemplazo previo.' },
-  otro:           { label: 'Otro / no sé',           icon: '?',   weightKgM2: null, mountingType: 'evaluar-en-sitio', notes: 'Un ingeniero ALEBAS evaluará en visita técnica.' },
+  otro:           { label: 'Otro / no sé',           icon: '?',   weightKgM2: null, mountingType: 'evaluar-en-sitio', notes: 'Un ingeniero SolarHub evaluará en visita técnica.' },
 };
 
 // ==================== OPERATORS DE RED (OR) ====================

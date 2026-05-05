@@ -409,7 +409,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         return false;
       }
       if (r?.reason === 'blocked') {
-        setContactError('Contacto bloqueado. Escríbenos a info@alebas.co.');
+        setContactError('Contacto bloqueado. Escríbenos a info@solar-hub.co.');
         return false;
       }
       return true;
@@ -962,7 +962,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       }}>
         <img src={logo} alt="SolarHub" className="al-mini-hero-logo" style={{ height: 54, width: 'auto', objectFit: 'contain', flexShrink: 0 }} />
         <div className="al-mini-hero-txt" style={{ flex: '1 1 260px', minWidth: 0 }}>
-          <div style={{ fontSize: 11, letterSpacing: 2.6, fontWeight: 700, color: C.teal, marginBottom: 3 }}>SOLARHUB BY ALEBAS</div>
+          <div style={{ fontSize: 11, letterSpacing: 2.6, fontWeight: 700, color: C.teal, marginBottom: 3 }}>SOLARHUB</div>
           <div className="al-mini-hero-title" style={{ fontSize: 19, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
             El centro de tu <span style={{ color: C.yellow }}>energía solar</span>
           </div>
@@ -997,7 +997,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       {/* Hero */}
       <div style={{ ...ss.card, textAlign: 'center', padding: '36px 20px', borderColor: C.teal }}>
         <img src={logo} alt="SolarHub" style={{ height: 72, maxWidth: '75%', marginBottom: 12, objectFit: 'contain' }} />
-        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 4, fontWeight: 700, color: C.teal }}>SOLARHUB BY ALEBAS</div>
+        <div style={{ fontSize: 11, letterSpacing: 3, marginBottom: 4, fontWeight: 700, color: C.teal }}>SOLARHUB</div>
         <h1 style={{ margin: '0 0 6px', fontSize: 26, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
           El centro de tu <span style={{ color: C.yellow }}>energía solar</span>
         </h1>
@@ -2786,7 +2786,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ⚠ {contactError}
           </div>
         )}
-        <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.</div>
+        <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>🔒 Información confidencial. Solo usada por nuestros ingenieros para tu propuesta técnica.</div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
           {(() => {
@@ -2837,7 +2837,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: `${C.teal}22`, border: `2px solid ${C.teal}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, margin: '0 auto 14px', color: C.teal }}>✓</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 8 }}>¡Solicitud enviada!</div>
           <div style={{ color: C.muted, fontSize: 13, maxWidth: 360, margin: '0 auto 18px', lineHeight: 1.7 }}>
-            <strong style={{ color: '#fff' }}>{f.name}</strong>, un ingeniero ALEBAS te contactará al <strong style={{ color: C.teal }}>{f.phone}</strong> en menos de 24 horas.
+            <strong style={{ color: '#fff' }}>{f.name}</strong>, uno de nuestros ingenieros te contactará al <strong style={{ color: C.teal }}>{f.phone}</strong> en menos de 24 horas.
           </div>
           <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 9, padding: '13px 20px', display: 'inline-block', marginBottom: 22, textAlign: 'left' }}>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3, textTransform: 'uppercase' }}>Tu sistema estimado</div>
@@ -2938,7 +2938,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ background: `${C.orange}12`, border: `1px solid ${C.orange}55`, borderRadius: 9, padding: '12px 16px', marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 4, textTransform: 'uppercase' }}>⚠ Sistema acotado a {MAX_KWP_AGPE} kW</div>
             <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
-              Tu consumo requeriría más de {MAX_KWP_AGPE} kWp. El cotizador limita a {MAX_KWP_AGPE} kWp (alcance AGPE Mayor, CREG 174/2021). Para sistemas mayores se requiere ingeniería distribuida (GD) — un ingeniero ALEBAS te cotizará por separado.
+              Tu consumo requeriría más de {MAX_KWP_AGPE} kWp. El cotizador limita a {MAX_KWP_AGPE} kWp (alcance AGPE Mayor, CREG 174/2021). Para sistemas mayores se requiere ingeniería distribuida (GD) — uno de nuestros ingenieros te cotizará por separado.
             </div>
           </div>
         )}
@@ -3732,7 +3732,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 {' '}({ACOMETIDA_INFO[f.acometida].hilos} · {ACOMETIDA_INFO[f.acometida].volts}).
                 {' '}Inversor seleccionado: <strong>{res.inv.brand} {res.inv.model}</strong> — <strong style={{ color: C.orange }}>{res.inv.phase === 3 ? 'trifásico' : 'monofásico/bifásico'}</strong>.
                 <br />
-                No hay stock del tipo/fase exactos en el catálogo. Opciones: (a) cambiar la acometida arriba si el operador de red lo permite, (b) agregar un inversor compatible en BackOffice → Inversores, o (c) contactar a ALEBAS para disponibilidad especial.
+                No hay stock del tipo/fase exactos en el catálogo. Opciones: (a) cambiar la acometida arriba si el operador de red lo permite, (b) agregar un inversor compatible en BackOffice → Inversores, o (c) contactarnos para disponibilidad especial.
               </div>
             </div>
           );
@@ -4014,7 +4014,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ marginTop: 12, background: `${C.orange}12`, border: `1px solid ${C.orange}44`, borderRadius: 7, padding: '11px 14px' }}>
                   <div style={{ fontSize: 12, color: C.orange, fontWeight: 700, marginBottom: 4 }}>⚠ Observación — Cobertura parcial por área disponible</div>
                   <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
-                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * m2PerPanel)} m² de techo útil. Un ingeniero ALEBAS puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
+                    El sistema cotizado ({res.actKwp} kWp · {res.numPanels} paneles) cubre el <strong style={{ color: C.orange }}>{res.cov}%</strong> del consumo mensual declarado ({f.monthlyKwh} kWh/mes) debido a la restricción de área disponible ({parseFloat(f.availableArea)} m²). Para alcanzar el 100% de cobertura se requerirían ~{Math.ceil(Math.ceil(consumptionKwp * 1000 / panel.wp) * m2PerPanel)} m² de techo útil. Un ingeniero SolarHub puede evaluar alternativas como ampliación de área, paneles de mayor eficiencia o un sistema complementario.
                   </div>
                 </div>
               )}
@@ -4038,7 +4038,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           const obs = [];
 
           if (res.cappedByRegulation) {
-            obs.push({ type: 'warn', title: `Sistema acotado a ${MAX_KWP_AGPE} kWp por normativa`, text: `Tu consumo requeriría más de ${MAX_KWP_AGPE} kWp pero el alcance AGPE Mayor (CREG 174/2021) limita el cotizador. Para sistemas mayores se requiere ingeniería distribuida (GD) — contacto con ALEBAS para propuesta separada.` });
+            obs.push({ type: 'warn', title: `Sistema acotado a ${MAX_KWP_AGPE} kWp por normativa`, text: `Tu consumo requeriría más de ${MAX_KWP_AGPE} kWp pero el alcance AGPE Mayor (CREG 174/2021) limita el cotizador. Para sistemas mayores se requiere ingeniería distribuida (GD) — contáctanos para propuesta separada.` });
           }
           if (areaLimited) {
             obs.push({ type: 'warn', title: `Cobertura parcial (${res.cov}%) por área disponible`, text: `El techo declarado (${area} m²) no alcanza para el 100% de tu consumo. Se requerirían ~${idealArea} m² para cubrir ${f.monthlyKwh} kWh/mes. Alternativas: ampliar área, usar paneles de mayor eficiencia o complementar con un segundo sistema.` });
@@ -4164,7 +4164,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             obs.push({ type: 'info', title: `Beneficios Ley 1715/2014 — hasta ~${fmtCOP(ley1715Renta + ley1715Iva)} ahorro tributario`, text: `Sistemas FV cumplen con FNCE (Fuente No Convencional de Energía). Beneficios cuantificados: (1) Deducción renta 50% del valor del proyecto durante 15 años desde año fiscal — hasta ${fmtCOP(ley1715Renta)}. (2) Exclusión IVA 19% sobre equipos importados/nacionales — hasta ${fmtCOP(ley1715Iva)}. (3) Exclusión arancel sobre importación de paneles e inversores. (4) Depreciación acelerada — hasta 20%/año vs 10% normal. Aplicar via UPME → MinHacienda con factura del proyecto.` });
           }
           if (agpe?.excedentes > 0 && agpe?.gridExport) {
-            obs.push({ type: 'info', title: `Trámite AGPE con ${operator.name}`, text: `Pasos: (1) Solicitud Conexión Simple (Formato CREG 030/2018), (2) Estudio de conexión por el OR, (3) Inscripción en CGM como AGPE ${agpe.agpeCategory}, (4) Instalación de medidor bidireccional (costo asumido por el OR para AGPE Menor ≤100 kWp), (5) Registro UPME-FNCE para beneficios Ley 1715. Tiempo total: 30-90 días. ALEBAS gestiona el trámite completo.` });
+            obs.push({ type: 'info', title: `Trámite AGPE con ${operator.name}`, text: `Pasos: (1) Solicitud Conexión Simple (Formato CREG 030/2018), (2) Estudio de conexión por el OR, (3) Inscripción en CGM como AGPE ${agpe.agpeCategory}, (4) Instalación de medidor bidireccional (costo asumido por el OR para AGPE Menor ≤100 kWp), (5) Registro UPME-FNCE para beneficios Ley 1715. Tiempo total: 30-90 días. SolarHub gestiona el trámite completo.` });
           }
           // Proyección 25 años con inflación CU
           if (bgt?.sav > 0 && bgt?.tot > 0) {
@@ -4182,7 +4182,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             const sysLabel = f.systemType === 'off-grid' ? 'aislado (off-grid)'
                            : f.systemType === 'hybrid' ? 'híbrido'
                            : 'on-grid';
-            obs.push({ type: 'warn', title: 'Inversor no disponible — consultar stock', text: `No hay inversor ${sysLabel} compatible en el catálogo para ${res.actKwp} kWp · ${ACOMETIDA_INFO[f.acometida].label}. El presupuesto se muestra sin la línea de inversor; antes de la propuesta detallada un ingeniero ALEBAS confirma stock o solicita importación.` });
+            obs.push({ type: 'warn', title: 'Inversor no disponible — consultar stock', text: `No hay inversor ${sysLabel} compatible en el catálogo para ${res.actKwp} kWp · ${ACOMETIDA_INFO[f.acometida].label}. El presupuesto se muestra sin la línea de inversor; antes de la propuesta detallada un ingeniero SolarHub confirma stock o solicita importación.` });
           }
           if (res.inv) {
             const expected = phasesForAcometida(f.acometida);
@@ -4349,8 +4349,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         </div>
         {(showNormativo || showObservaciones) && (
           <div style={{ textAlign: 'center', padding: '0 0 20px' }}>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero SolarHub · ALEBAS te contacta en menos de 24 h</div>
-            <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>Un ingeniero SolarHub te contacta en menos de 24 h</div>
+            <div style={{ fontSize: 10, color: C.teal }}>info@solar-hub.co · Villavicencio, Meta</div>
           </div>
         )}
 
@@ -4920,7 +4920,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div className="al-pdf-footer">
             <div>
               <strong>SolarHub</strong><br />
-              info@alebas.co · solar-hub.co<br />
+              info@solar-hub.co<br />
               Villavicencio, Meta · Colombia
             </div>
             <div className="al-pdf-disclaimer">

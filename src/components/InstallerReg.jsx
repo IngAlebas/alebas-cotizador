@@ -42,7 +42,7 @@ export default function InstallerReg({ addInstaller }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 32 }}>🔧</span>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>Red de instaladores ALEBAS</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>Red de instaladores SolarHub</div>
             <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Conectamos proyectos con técnicos certificados en todo Colombia</div>
           </div>
         </div>
@@ -52,7 +52,7 @@ export default function InstallerReg({ addInstaller }) {
           { ic: '🌍', t: 'Cobertura nacional', d: 'Proyectos en todas las regiones', col: C.teal },
           { ic: '💰', t: 'Ingresos adicionales', d: 'Comisiones por proyecto cerrado', col: C.teal },
           { ic: '📋', t: 'Proyectos calificados', d: 'Solo solicitudes de tu región', col: C.teal },
-          { logo: '/fluxai-logo.svg', t: 'FluxAI Pro · 12 meses', d: 'Acceso al monitoreo de ALEBAS para tus instalaciones', col: C.fluxBlue },
+          { logo: '/fluxai-logo.svg', t: 'FluxAI Pro · 12 meses', d: 'Acceso al monitoreo SolarHub para tus instalaciones', col: C.fluxBlue },
         ].map(({ ic, logo, t, d, col }) => (
           <div key={t} style={{ ...ss.card, flex: '1 1 140px', textAlign: 'center', padding: '14px 10px', borderColor: `${col}44` }}>
             {logo
@@ -106,7 +106,7 @@ export default function InstallerReg({ addInstaller }) {
           </div>
         </div>
         <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '9px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>
-          Al registrarte aceptas los términos de la red ALEBAS. Tu información será validada antes de asignarte proyectos.
+          Al registrarte aceptas los términos de la red SolarHub. Tu información será validada antes de asignarte proyectos.
         </div>
         <button style={{ ...ss.btn, width: '100%', padding: '12px', opacity: (!f.name || !f.phone || !f.email || !f.retie) ? 0.4 : 1 }} onClick={submit}>
           Enviar solicitud de vinculación →

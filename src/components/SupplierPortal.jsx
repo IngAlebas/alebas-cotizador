@@ -105,7 +105,7 @@ export default function SupplierPortal({ addSupplierSubmission }) {
             onChange={e => u('notes', e.target.value)} placeholder="Vigencia, condiciones, stock disponible, etc." />
         </div>
         <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '9px 12px', marginBottom: 14, fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
-          Al enviar, aceptas que ALEBAS use esta información para evaluar inclusión de tus productos en el cotizador. No compartimos listas con terceros.
+          Al enviar, aceptas que SolarHub use esta información para evaluar inclusión de tus productos en el cotizador. No compartimos listas con terceros.
         </div>
         <button
           style={{ ...ss.btn, width: '100%', padding: '12px', opacity: (!f.company || !f.contact || !f.email || !f.fileData) ? 0.4 : 1 }}
