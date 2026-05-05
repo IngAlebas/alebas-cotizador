@@ -518,10 +518,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       setHeatmapLayer({ dataUrl, bounds: resolvedBounds, minVal, maxVal, imageryDate: layerData.imageryDate });
     } catch (e) {
       const msg = e?.message || 'No se pudo cargar el heatmap de irradiancia';
-      // Mensaje específico cuando el workflow n8n viejo aún rechaza por boundingBox.
-      const friendly = /boundingBox|no_bounds/i.test(msg)
-        ? 'Servicio de irradiancia desactualizado. Reintenta en unos minutos.'
-        : msg;
+      let friendly = msg;
+      if (/boundingBox|no_bounds/i.test(msg)) {
+        friendly = 'Servicio de irradiancia desactualizado. Reimporta solar-datalayers.json en n8n.';
+      } else if (/cors|cross.?origin|access.?control|blocked|opaque/i.test(msg) || /failed to fetch/i.test(msg)) {
+        friendly = 'Error de red al descargar imagen de irradiancia. Verifica que solar-datalayers.json esté activo en n8n y que GOOGLE_API_KEY esté configurada.';
+      }
       setHeatmapError(friendly);
     } finally {
       setHeatmapLoading(false);

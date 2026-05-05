@@ -41,6 +41,8 @@ export async function fetchDataLayerUrls({ lat, lon, radiusMeters = 50 }) {
     throw e;
   }
   if (!data || data.ok === false) {
+    const reason = data?.reason || '';
+    if (reason === 'missing_env') throw new Error('GOOGLE_API_KEY no configurada en n8n. Agrégala en Railway → Variables de entorno.');
     throw new Error(data?.detail || 'solar-datalayers: error desconocido');
   }
   return data; // { annualFluxUrl, bounds, imageryDate, ... }
@@ -49,9 +51,19 @@ export async function fetchDataLayerUrls({ lat, lon, radiusMeters = 50 }) {
 // Descarga un GeoTIFF desde una URL firmada de Google Solar,
 // parsea con geotiff.js, y devuelve un PNG data-URL + bounds.
 // bounds se puede omitir — si falta se deriva del propio GeoTIFF.
+// NOTA: usamos fromArrayBuffer (no fromUrl) porque fromUrl usa HTTP range
+// requests que Google Solar CDN no permite cross-origin (bloqueo CORS).
 export async function geotiffToPngDataUrl(signedUrl, apiBounds) {
-  const { fromUrl } = await import('geotiff');
-  const tiff = await fromUrl(signedUrl);
+  const { fromArrayBuffer } = await import('geotiff');
+  let buffer;
+  try {
+    const res = await fetch(signedUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    buffer = await res.arrayBuffer();
+  } catch (fetchErr) {
+    throw new Error(`Error al descargar imagen de irradiancia: ${fetchErr.message}`);
+  }
+  const tiff = await fromArrayBuffer(buffer);
   const image = await tiff.getImage();
   const [raster] = await image.readRasters({ interleave: false });
 
