@@ -47,10 +47,16 @@ export default function InteractiveRoofMap({
           zoom: 19,  // 19 da más contexto que 20 — todavía se ve el techo claro
           minZoom: 16,
           maxZoom: 22,
-          mapTypeId: 'satellite',
+          mapTypeId: 'hybrid',  // satélite + nombres de calles + edificios delineados
           tilt: 0,
           disableDefaultUI: true,
           zoomControl: true,
+          mapTypeControl: true,
+          mapTypeControlOptions: {
+            style: maps.MapTypeControlStyle.HORIZONTAL_BAR,
+            position: maps.ControlPosition.TOP_RIGHT,
+            mapTypeIds: ['hybrid', 'satellite', 'roadmap'],
+          },
           gestureHandling: 'greedy',  // un dedo arrastra (no requiere 2 dedos)
           clickableIcons: false,
         });
