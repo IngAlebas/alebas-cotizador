@@ -1762,16 +1762,28 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       googlePanels={(() => {
                         if (!f.solarPanels?.length) return [];
                         const dismissed = new Set(f.dismissedRoofSegmentIdx || []);
-                        // Filtra paneles de cubiertas desactivadas — antes seguían
-                        // mostrándose porque el efecto de googlePanels en el mapa
-                        // no consultaba dismissedRoofSegmentIdx.
-                        let panels = f.solarPanels.filter(p => p.segmentIndex == null || !dismissed.has(p.segmentIndex));
-                        // Sliding: top-N por yield, ordenados espacialmente para
-                        // que la instalación visual luzca coherente.
+                        // Excluye paneles de cubiertas descartadas O deseleccionadas.
+                        let panels = f.solarPanels.filter(p => {
+                          if (p.segmentIndex == null) return true;
+                          if (dismissed.has(p.segmentIndex)) return false;
+                          if (!selectedSegmentIdx.has(p.segmentIndex)) return false;
+                          return true;
+                        });
+                        // Sliding: agrupa por segmento (mejor segmento primero),
+                        // respeta orden espacial del API dentro de cada segmento.
                         if (panelSlider != null && panelSlider < panels.length) {
-                          panels = [...panels]
-                            .sort((a, b) => (b.yearlyEnergyDcKwh || 0) - (a.yearlyEnergyDcKwh || 0))
-                            .slice(0, panelSlider);
+                          const bySegment = new Map();
+                          panels.forEach(p => {
+                            const k = p.segmentIndex ?? -1;
+                            if (!bySegment.has(k)) bySegment.set(k, []);
+                            bySegment.get(k).push(p);
+                          });
+                          const segsSorted = [...bySegment.entries()].sort((a, b) => {
+                            const avgA = a[1].reduce((s, p) => s + (p.yearlyEnergyDcKwh || 0), 0) / a[1].length;
+                            const avgB = b[1].reduce((s, p) => s + (p.yearlyEnergyDcKwh || 0), 0) / b[1].length;
+                            return avgB - avgA;
+                          });
+                          panels = segsSorted.flatMap(([, ps]) => ps).slice(0, panelSlider);
                         }
                         return panels;
                       })()}
