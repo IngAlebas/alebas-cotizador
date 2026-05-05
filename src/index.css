@@ -724,6 +724,10 @@ button:active { transform: scale(0.97); }
   .al-roof-preview-grid {
     grid-template-columns: 1fr !important;
   }
+  /* Métricas + chart de producción se apilan en pantallas estrechas */
+  .al-roof-metrics-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* Inputs con padding cómodo en touch */
