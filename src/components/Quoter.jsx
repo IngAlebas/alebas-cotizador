@@ -1766,13 +1766,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     const estKwp = gEst?.panelCapacityWatts ? +(currentP * gEst.panelCapacityWatts / 1000).toFixed(1) : null;
                     return (
                       <div style={{ background: 'rgba(7,9,15,0.92)', borderTop: `1px solid ${C.border}`, padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5 }}>CONFIGURACIÓN DE PANELES</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5 }}>CAPACIDAD MÁXIMA EN EL TECHO</span>
                           {panelSlider != null && (
                             <button onClick={() => setPanelSlider(null)} style={{ fontSize: 9, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                               Restablecer
                             </button>
                           )}
+                        </div>
+                        <div style={{ fontSize: 9.5, color: C.muted, marginBottom: 6, lineHeight: 1.4 }}>
+                          Visualización de la capacidad posible — muestra cuántos paneles <em>caben</em> en el techo. El sistema real se dimensiona según tu consumo en la cotización.
                         </div>
                         <input
                           type="range"
@@ -3190,7 +3193,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                         sunshineHoursYear: f.sunshineHoursYear,
                       },
                       budget: { total: bgt.tot, roi: bgt.roi },
-                      roof: { availableM2: f.availableArea ? Number(f.availableArea) : null, source: f.roofLookupSource || null },
+                      roof: {
+                        availableM2: f.availableArea ? Number(f.availableArea) : null,
+                        wholeAreaM2: f.roofWholeAreaM2 ? Number(f.roofWholeAreaM2) : null,
+                        googleMaxPanels: f.googleMaxPanels ?? null,
+                        source: f.roofLookupSource || null,
+                      },
                       // Beneficio AGPE pre-calculado (autoconsumo + excedentes con precio bolsa XM)
                       // — habilita a la IA reforzar la decisión cuantificando ahorro/ingresos en COP
                       // en vez de re-sugerir AGPE cuando wantsExcedentes ya está marcado.
@@ -3961,9 +3969,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>Colombia · MinMinas · CREG</div>
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
-                {agpe.gridExport
-                  ? <>Normas colombianas vigentes que rigen tu instalación AGPE {agpe.agpeCategory}{hasExcedentes ? ' con entrega de excedentes' : ''}. Este pre-dimensionamiento se ajusta a sus requisitos técnicos y comerciales.</>
-                  : <>Tu sistema es <strong style={{ color: C.teal }}>off-grid (aislado)</strong>: no está conectado al SIN, por lo que la regulación AGPE (CREG 174/2021) no aplica. El marco relevante es el de Zonas No Interconectadas (ZNI) y las normas técnicas RETIE.</>}
+                {!agpe.gridExport
+                  ? <>Tu sistema es <strong style={{ color: C.teal }}>off-grid (aislado)</strong>: no conectado al SIN. Marco aplicable: Zonas No Interconectadas (ZNI) y RETIE para la instalación técnica.</>
+                  : hasExcedentes
+                    ? <>Normas para tu instalación <strong style={{ color: C.teal }}>AGPE {agpe.agpeCategory} con entrega de excedentes</strong>. Incluye requisitos de conexión al OR ({operator.name}), medición bidireccional y acuerdo de excedentes con tu comercializador.</>
+                    : <>Normas aplicables a tu instalación de <strong style={{ color: C.teal }}>autoconsumo sin entrega de excedentes</strong>: autorización legal, conexión al OR ({operator.name}) y medición. Las regulaciones de excedentes (CREG 135, Decreto 1073) no aplican a este caso.</>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {norms.map(n => (

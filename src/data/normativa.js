@@ -27,7 +27,7 @@ export const NORMATIVA = [
     title: 'Decreto 1073 de 2015',
     fullName: 'Decreto Único Reglamentario del Sector Administrativo de Minas y Energía',
     article: 'Sección 4, Capítulo 2, Título III — modificado por Decreto 1403/2024 y Decreto 376/2026',
-    scope: 'always',
+    scope: 'excedentes',
     summary:
       'Política energética del MinMinas sobre entrega de excedentes. Define simetría con generadores del mercado mayorista, parámetros para ser AGPE, trámite simplificado de conexión al OR, contrato de respaldo (obligatorio gran escala, opcional ≤0,1 MW) y créditos de energía para FNCER. El Decreto 1403/2024 habilita autogeneración remota y producción marginal.',
   },
