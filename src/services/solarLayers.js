@@ -61,7 +61,10 @@ async function fetchGeoTiffViaProxy(signedUrl) {
   if (!data || data.ok === false || !data.base64) {
     const reason = data?.reason || '';
     if (reason === 'invalid_url') throw new Error('URL inválida para proxy GeoTIFF');
-    throw new Error(data?.detail || 'Proxy GeoTIFF: error desconocido');
+    if (data?.detail) throw new Error(data.detail);
+    // Sin detail: dump del shape real para diagnosticar.
+    const dump = data ? JSON.stringify(data).slice(0, 250) : 'sin respuesta';
+    throw new Error(`Proxy GeoTIFF respondió shape inesperado: ${dump}`);
   }
   // Convertir base64 → ArrayBuffer
   const binary = atob(data.base64);

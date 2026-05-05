@@ -17,109 +17,35 @@
     },
     {
       "parameters": {
-        "jsCode": "// Valida que la URL sea de Google Solar e inyecta la API key.\n// La key se inyecta acá (no en el frontend) para no exponerla.\n// Idempotente: si la URL ya trae ?key= la reemplaza por la actual.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst url = body.url;\nif (!url || typeof url !== 'string') {\n  return [{ json: { ok: false, reason: 'invalid_input', detail: 'url requerida' } }];\n}\nif (!url.startsWith('https://solar.googleapis.com/')) {\n  return [{ json: { ok: false, reason: 'invalid_url', detail: 'url debe ser de solar.googleapis.com' } }];\n}\nconst safeEnv = (k) => { try { return $env[k]; } catch (_) { return null; } };\nconst gkey = safeEnv('GOOGLE_API_KEY');\nif (!gkey) {\n  return [{ json: { ok: false, reason: 'missing_env', detail: 'GOOGLE_API_KEY no configurada en n8n' } }];\n}\n// Quita cualquier key= existente y agrega la nuestra\nconst u = new URL(url);\nu.searchParams.delete('key');\nu.searchParams.set('key', gkey);\nreturn [{ json: { url: u.toString() } }];"
+        "jsCode": "// Proxy GeoTIFF: valida URL, inyecta GOOGLE_API_KEY (server-side),\n// descarga el binario, convierte a base64 y devuelve.\n// Todo en un solo Code node para minimizar puntos de falla en n8n.\n\nconst src = $input.first().json;\nconst body = src.body || src;\nconst urlIn = body && body.url;\n\nif (!urlIn || typeof urlIn !== 'string') {\n  return [{ json: { ok: false, reason: 'invalid_input', detail: 'url requerida' } }];\n}\nif (!urlIn.startsWith('https://solar.googleapis.com/')) {\n  return [{ json: { ok: false, reason: 'invalid_url', detail: 'url debe ser de solar.googleapis.com' } }];\n}\n\n// API key del entorno de n8n (Railway env var GOOGLE_API_KEY)\nlet gkey = null;\ntry { gkey = $env && $env.GOOGLE_API_KEY; } catch (_) { /* ignore */ }\nif (!gkey) {\n  return [{ json: { ok: false, reason: 'missing_env', detail: 'GOOGLE_API_KEY no configurada en n8n (Railway → Variables)' } }];\n}\n\n// Quita key existente (si la había) y agrega la actual — string manipulation\n// pura, sin URL constructor (más robusto en sandbox de n8n).\nconst hashIdx = urlIn.indexOf('#');\nconst urlNoHash = hashIdx >= 0 ? urlIn.slice(0, hashIdx) : urlIn;\nconst qIdx = urlNoHash.indexOf('?');\nconst base = qIdx >= 0 ? urlNoHash.slice(0, qIdx) : urlNoHash;\nconst qs = qIdx >= 0 ? urlNoHash.slice(qIdx + 1) : '';\nconst params = qs.split('&').filter(p => p && p.split('=')[0] !== 'key');\nparams.push('key=' + encodeURIComponent(gkey));\nconst finalUrl = base + '?' + params.join('&');\n\n// Descarga el binario usando helpers de n8n.\nlet response;\ntry {\n  response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: finalUrl,\n    encoding: 'arraybuffer',\n    returnFullResponse: true,\n    timeout: 30000,\n  });\n} catch (err) {\n  const code = err.response?.status || err.statusCode || err.httpCode || 'n/a';\n  let bodyText = '';\n  try {\n    const b = err.response?.data || err.body;\n    if (b) bodyText = (typeof b === 'string' ? b : Buffer.isBuffer(b) ? b.toString('utf8') : JSON.stringify(b)).slice(0, 400);\n  } catch (_) {}\n  return [{ json: { ok: false, reason: 'http_error', detail: 'Google ' + code + ': ' + (bodyText || err.message || 'sin cuerpo') } }];\n}\n\nconst statusCode = response?.statusCode || response?.status;\nif (statusCode && statusCode >= 400) {\n  let bodyText = '';\n  try { bodyText = Buffer.isBuffer(response.body) ? response.body.toString('utf8') : (typeof response.body === 'string' ? response.body : JSON.stringify(response.body)); } catch (_) {}\n  return [{ json: { ok: false, reason: 'http_error', detail: 'Google ' + statusCode + ': ' + bodyText.slice(0, 400) } }];\n}\n\nconst raw = response?.body;\nif (!raw) {\n  return [{ json: { ok: false, reason: 'empty_body', detail: 'Google devolvió respuesta vacía (status ' + (statusCode || 'n/a') + ')' } }];\n}\nconst buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);\nconst base64 = buf.toString('base64');\nconst mimeType = (response.headers && (response.headers['content-type'] || response.headers['Content-Type'])) || 'image/tiff';\n\nreturn [{ json: { ok: true, base64, mimeType, size: buf.length } }];"
       },
       "id": "g4000000-0001-4000-9000-000000000002",
-      "name": "Validate URL",
+      "name": "Validate + Fetch + Encode",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [460, 300]
     },
     {
       "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            {
-              "id": "cond-is-error",
-              "leftValue": "={{ $json.ok }}",
-              "rightValue": false,
-              "operator": { "type": "boolean", "operation": "equal" }
-            }
-          ],
-          "combinator": "and"
-        },
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
         "options": {}
       },
       "id": "g4000000-0001-4000-9000-000000000003",
-      "name": "If error",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
       "position": [680, 300]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.url }}",
-        "options": {
-          "timeout": 30000,
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "fullResponse": true
-            }
-          }
-        }
-      },
-      "id": "g4000000-0001-4000-9000-000000000004",
-      "name": "Fetch GeoTIFF",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [900, 420],
-      "continueOnFail": true,
-      "alwaysOutputData": true,
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Detecta errores del HTTP Request y los reporta con detalle.\n// n8n con continueOnFail+alwaysOutputData entrega:\n//   - en éxito: item.binary.data + item.json (con headers/statusCode si fullResponse)\n//   - en error: item.json.error con info del fallo\nconst item = $input.first();\nconst err = item.json?.error;\nif (err) {\n  return [{ json: {\n    ok: false,\n    reason: 'fetch_error',\n    detail: `${err.statusCode || ''} ${err.message || err.description || JSON.stringify(err).slice(0,200)}`.trim(),\n  } }];\n}\nconst statusCode = item.json?.statusCode;\nif (statusCode && statusCode >= 400) {\n  return [{ json: {\n    ok: false,\n    reason: 'http_error',\n    detail: `Google respondió HTTP ${statusCode}. Verifica que la API key permita geoTiff:get desde la IP de n8n (sin restricción de referer/IP).`,\n  } }];\n}\nconst bin = item.binary?.data;\nif (!bin || !bin.data) {\n  return [{ json: {\n    ok: false,\n    reason: 'no_binary',\n    detail: `Sin contenido binario. statusCode=${statusCode || 'n/a'}, headers=${JSON.stringify(item.json?.headers || {}).slice(0,150)}`,\n  } }];\n}\nreturn [{ json: {\n  ok: true,\n  base64: bin.data,\n  mimeType: bin.mimeType || 'image/tiff',\n  size: Number(bin.fileSize) || null,\n} }];"
-      },
-      "id": "g4000000-0001-4000-9000-000000000005",
-      "name": "To base64",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1120, 420]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {}
-      },
-      "id": "g4000000-0001-4000-9000-000000000006",
-      "name": "Respond OK",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1340, 420]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": { "responseCode": 400 }
-      },
-      "id": "g4000000-0001-4000-9000-000000000007",
-      "name": "Respond error",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [900, 180]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Validate URL", "type": "main", "index": 0 }]] },
-    "Validate URL": { "main": [[{ "node": "If error", "type": "main", "index": 0 }]] },
-    "If error": {
-      "main": [
-        [{ "node": "Respond error", "type": "main", "index": 0 }],
-        [{ "node": "Fetch GeoTIFF", "type": "main", "index": 0 }]
-      ]
-    },
-    "Fetch GeoTIFF": { "main": [[{ "node": "To base64", "type": "main", "index": 0 }]] },
-    "To base64": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+    "Webhook": { "main": [[{ "node": "Validate + Fetch + Encode", "type": "main", "index": 0 }]] },
+    "Validate + Fetch + Encode": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "settings": { "executionOrder": "v1" },
   "staticData": null,
   "tags": [{ "name": "alebas" }],
   "triggerCount": 0,
-  "versionId": "1"
+  "versionId": "2"
 }
