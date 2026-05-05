@@ -17,7 +17,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Valida que la URL sea de Google Solar (security).\n// Acepta solo https://solar.googleapis.com/* — evita usar este endpoint\n// como proxy abierto a cualquier URL.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst url = body.url;\nif (!url || typeof url !== 'string') {\n  return [{ json: { ok: false, reason: 'invalid_input', detail: 'url requerida' } }];\n}\nif (!url.startsWith('https://solar.googleapis.com/')) {\n  return [{ json: { ok: false, reason: 'invalid_url', detail: 'url debe ser de solar.googleapis.com' } }];\n}\nreturn [{ json: { url } }];"
+        "jsCode": "// Valida que la URL sea de Google Solar e inyecta la API key.\n// La key se inyecta acá (no en el frontend) para no exponerla.\n// Idempotente: si la URL ya trae ?key= la reemplaza por la actual.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst url = body.url;\nif (!url || typeof url !== 'string') {\n  return [{ json: { ok: false, reason: 'invalid_input', detail: 'url requerida' } }];\n}\nif (!url.startsWith('https://solar.googleapis.com/')) {\n  return [{ json: { ok: false, reason: 'invalid_url', detail: 'url debe ser de solar.googleapis.com' } }];\n}\nconst safeEnv = (k) => { try { return $env[k]; } catch (_) { return null; } };\nconst gkey = safeEnv('GOOGLE_API_KEY');\nif (!gkey) {\n  return [{ json: { ok: false, reason: 'missing_env', detail: 'GOOGLE_API_KEY no configurada en n8n' } }];\n}\n// Quita cualquier key= existente y agrega la nuestra\nconst u = new URL(url);\nu.searchParams.delete('key');\nu.searchParams.set('key', gkey);\nreturn [{ json: { url: u.toString() } }];"
       },
       "id": "g4000000-0001-4000-9000-000000000002",
       "name": "Validate URL",
