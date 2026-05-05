@@ -1577,7 +1577,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
           {f.roofLookupSource && (
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
+            <div className="al-roof-metrics-grid" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 12, marginTop: 5, alignItems: 'start' }}>
+              <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
               {f.lat != null && f.lon != null && <>📍 {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
               {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
               {f.shadeIndex != null && (
@@ -1644,6 +1645,36 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <div style={{ marginTop: 3 }}>
                 Área usada por panel: <strong style={{ color: C.teal }}>{m2PerPanel.toFixed(2)} m²</strong> (huella real + packing {Math.round(DEFAULT_PACKING_FACTOR * 100)}%)
               </div>
+              </div>
+              {/* Columna derecha: gráfico de producción mensual estimada — feedback
+                  inmediato junto a las métricas del techo. El slider de paneles lo
+                  actualiza cuando el usuario lo mueve más abajo. */}
+              <div style={{ minWidth: 0 }}>{(() => {
+                const gse = f.googleSolarEstimate;
+                const sliderPanels = panelSlider != null ? panelSlider : (gse?.bestConfigPanels || f.googleMaxPanels || 0);
+                const panelKwp = gse?.panelCapacityWatts ? gse.panelCapacityWatts / 1000 : null;
+                const sliderKwp = panelKwp ? sliderPanels * panelKwp : null;
+                const fromGoogleYield = gse?.specificYieldKwhPerKwpYear && sliderKwp
+                  ? Math.round(gse.specificYieldKwhPerKwpYear * sliderKwp)
+                  : (gse?.specificYieldKwhPerKwpYear && gse?.bestConfigKwp
+                      ? Math.round(gse.specificYieldKwhPerKwpYear * gse.bestConfigKwp)
+                      : null);
+                const annualKwhForChart = gse?.yearlyEnergyDcKwh
+                  || fromGoogleYield
+                  || res?.ap
+                  || (f.sunshineHoursYear > 0 && f.monthlyKwh ? parseFloat(f.monthlyKwh) * 12 : 0);
+                if (!(annualKwhForChart > 0)) return null;
+                return (
+                  <MonthlyProductionChart
+                    annualKwh={annualKwhForChart}
+                    monthlyKwhReal={monthlyReal}
+                    onLoadReal={loadMonthlyReal}
+                    loadingReal={monthlyRealLoading}
+                    loadError={monthlyRealError}
+                    monthlyConsumption={f.monthlyKwh ? Number(f.monthlyKwh) : null}
+                  />
+                );
+              })()}</div>
             </div>
           )}
 
@@ -1801,39 +1832,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       </div>
                     );
                   })()}
-                  {/* Gráfico de producción mensual — visible si hay estimación anual o Google Solar corrió.
-                      Cascada de fuentes ordenadas por precisión:
-                        1) Google Solar yearlyEnergyDcKwh (best config exacta)
-                        2) specificYield × bestConfigKwp (Google Solar derivado)
-                        3) specificYield × (panels seleccionados × panelKwp) — escala según slider
-                        4) res.ap (cálculo final hecho)
-                        5) consumo × 12 (fallback genérico, no varía con ubicación) */}
-                  {(() => {
-                    const gse = f.googleSolarEstimate;
-                    const sliderPanels = panelSlider != null ? panelSlider : (gse?.bestConfigPanels || f.googleMaxPanels || 0);
-                    const panelKwp = gse?.panelCapacityWatts ? gse.panelCapacityWatts / 1000 : null;
-                    const sliderKwp = panelKwp ? sliderPanels * panelKwp : null;
-                    const fromGoogleYield = gse?.specificYieldKwhPerKwpYear && sliderKwp
-                      ? Math.round(gse.specificYieldKwhPerKwpYear * sliderKwp)
-                      : (gse?.specificYieldKwhPerKwpYear && gse?.bestConfigKwp
-                          ? Math.round(gse.specificYieldKwhPerKwpYear * gse.bestConfigKwp)
-                          : null);
-                    const annualKwhForChart = gse?.yearlyEnergyDcKwh
-                      || fromGoogleYield
-                      || res?.ap
-                      || (f.sunshineHoursYear > 0 && f.monthlyKwh ? parseFloat(f.monthlyKwh) * 12 : 0);
-                    if (!(annualKwhForChart > 0)) return null;
-                    return (
-                      <MonthlyProductionChart
-                        annualKwh={annualKwhForChart}
-                        monthlyKwhReal={monthlyReal}
-                        onLoadReal={loadMonthlyReal}
-                        loadingReal={monthlyRealLoading}
-                        loadError={monthlyRealError}
-                        monthlyConsumption={f.monthlyKwh ? Number(f.monthlyKwh) : null}
-                      />
-                    );
-                  })()}
+                  {/* Gráfico de producción mensual movido arriba al grid 2-col
+                      (al-roof-metrics-grid) — feedback inmediato junto a las métricas. */}
                   {/* Streets map MOVIDO al final del bloque de techo, después
                       de las cubiertas — para que la lista de cubiertas quede
                       pegada al mapa interactivo (mejor UX). */}

@@ -66,8 +66,18 @@ async function fetchGeoTiffViaProxy(signedUrl) {
     const dump = data ? JSON.stringify(data).slice(0, 250) : 'sin respuesta';
     throw new Error(`Proxy GeoTIFF respondió shape inesperado: ${dump}`);
   }
-  // Convertir base64 → ArrayBuffer
-  const binary = atob(data.base64);
+  // Sanitizar base64: quitar whitespace/saltos, normalizar URL-safe (-,_ → +,/),
+  // agregar padding si falta. atob es estricto y falla con cualquier irregularidad.
+  let b64 = String(data.base64).replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4;
+  if (pad) b64 += '='.repeat(4 - pad);
+  let binary;
+  try {
+    binary = atob(b64);
+  } catch (e) {
+    // Si aún así falla, exponer un prefix del b64 para diagnóstico.
+    throw new Error(`base64 inválido del proxy (${b64.length} chars): ${b64.slice(0, 60)}…`);
+  }
   const buffer = new ArrayBuffer(binary.length);
   const view = new Uint8Array(buffer);
   for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
