@@ -713,6 +713,23 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // Selección efectiva = override manual si existe, sino auto.
   const selectedSegmentIdx = manualSegmentSelection || autoSelectedSegmentIdx;
 
+  // Segments listos para InteractiveRoofMap. Memoizados para que mover el
+  // slider de paneles NO recree el array → no dispara el useEffect que
+  // limpia/redibuja polígonos cada cambio (causaba flicker tipo "zoom").
+  const interactiveSegments = useMemo(() => {
+    const allSegs = [
+      ...(f.roofSegments || [])
+        .map((s, i) => ({ ...s, _idx: i }))
+        .filter(s => !(f.dismissedRoofSegmentIdx || []).includes(s._idx)),
+      ...(f.customSegments || []).map((s, i) => ({
+        ...s, _idx: (f.roofSegments?.length || 0) + i, _custom: true,
+      })),
+    ];
+    return allSegs.length > 0
+      ? allSegs.map(s => ({ ...s, selected: selectedSegmentIdx.has(s._idx) }))
+      : null;
+  }, [f.roofSegments, f.customSegments, f.dismissedRoofSegmentIdx, selectedSegmentIdx]);
+
   const toggleSegment = (idx) => {
     const base = manualSegmentSelection || new Set(autoSelectedSegmentIdx);
     const next = new Set(base);
@@ -1577,7 +1594,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
           {f.roofLookupSource && (
-            <div className="al-roof-metrics-grid" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 12, marginTop: 5, alignItems: 'start' }}>
+            <div className="al-roof-metrics-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 14, marginTop: 5, alignItems: 'start' }}>
               <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
               {f.lat != null && f.lon != null && <>📍 {Number(f.lat).toFixed(4)}, {Number(f.lon).toFixed(4)}</>}
               {f.roofLookupNotes && <> · {f.roofLookupNotes}</>}
@@ -1727,21 +1744,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     <InteractiveRoofMap
                       lat={f.lat} lon={f.lon}
                       areaM2={f.googleAreaM2 || (f.availableArea ? Number(f.availableArea) : null)}
-                      segments={(() => {
-                        // Combinar Google + custom; _idx alineado con selectedSegmentIdx
-                        // para que el toggle desde el mapa actualice el set correctamente.
-                        const allSegs = [
-                          ...(f.roofSegments || [])
-                            .map((s, i) => ({ ...s, _idx: i }))
-                            .filter(s => !(f.dismissedRoofSegmentIdx || []).includes(s._idx)),
-                          ...(f.customSegments || []).map((s, i) => ({
-                            ...s, _idx: (f.roofSegments?.length || 0) + i, _custom: true,
-                          })),
-                        ];
-                        return allSegs.length > 0
-                          ? allSegs.map(s => ({ ...s, selected: selectedSegmentIdx.has(s._idx) }))
-                          : null;
-                      })()}
+                      segments={interactiveSegments}
                       onSegmentToggle={toggleSegment}
                       onSegmentMove={(idx, newCenter) => {
                         // El idx llega como _idx combinado: roofSegments primero,
@@ -1756,11 +1759,22 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       showSunPath={true}
                       panelW={f.panelWidthMeters || (panel?.widthMm ? panel.widthMm / 1000 : 1.0)}
                       panelH={f.panelHeightMeters || (panel?.lengthMm ? panel.lengthMm / 1000 : 2.0)}
-                      googlePanels={f.solarPanels?.length > 0
-                        ? (panelSlider != null
-                            ? [...f.solarPanels].sort((a,b) => (b.yearlyEnergyDcKwh||0)-(a.yearlyEnergyDcKwh||0)).slice(0, panelSlider)
-                            : f.solarPanels)
-                        : []}
+                      googlePanels={(() => {
+                        if (!f.solarPanels?.length) return [];
+                        const dismissed = new Set(f.dismissedRoofSegmentIdx || []);
+                        // Filtra paneles de cubiertas desactivadas — antes seguían
+                        // mostrándose porque el efecto de googlePanels en el mapa
+                        // no consultaba dismissedRoofSegmentIdx.
+                        let panels = f.solarPanels.filter(p => p.segmentIndex == null || !dismissed.has(p.segmentIndex));
+                        // Sliding: top-N por yield, ordenados espacialmente para
+                        // que la instalación visual luzca coherente.
+                        if (panelSlider != null && panelSlider < panels.length) {
+                          panels = [...panels]
+                            .sort((a, b) => (b.yearlyEnergyDcKwh || 0) - (a.yearlyEnergyDcKwh || 0))
+                            .slice(0, panelSlider);
+                        }
+                        return panels;
+                      })()}
                       heatmapLayer={heatmapLayer}
                       busy={roofLoading}
                       onPinMove={async (newLat, newLon) => {
@@ -3201,9 +3215,32 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                       roof: {
                         availableM2: f.availableArea ? Number(f.availableArea) : null,
                         wholeAreaM2: f.roofWholeAreaM2 ? Number(f.roofWholeAreaM2) : null,
+                        groundAreaM2: f.roofGroundAreaM2 ? Number(f.roofGroundAreaM2) : null,
                         googleMaxPanels: f.googleMaxPanels ?? null,
+                        imageryQuality: f.roofImageryQuality || null,
+                        confidence: f.roofConfidence != null ? Number(f.roofConfidence) : null,
+                        precisionHint: f.roofPrecisionHint || null,
+                        panelsDetected: f.roofPanelsDetected ?? null,
                         source: f.roofLookupSource || null,
                       },
+                      // Estimación de Google Solar (DSM + sunshine + shade hora a hora)
+                      // — la fuente de producción más precisa que tenemos.
+                      googleSolarEstimate: f.googleSolarEstimate ? {
+                        yearlyEnergyDcKwh: f.googleSolarEstimate.yearlyEnergyDcKwh,
+                        specificYieldKwhPerKwpYear: f.googleSolarEstimate.specificYieldKwhPerKwpYear,
+                        bestConfigPanels: f.googleSolarEstimate.bestConfigPanels,
+                        bestConfigKwp: f.googleSolarEstimate.bestConfigKwp,
+                        peakSunshineHoursYear: f.googleSolarEstimate.peakSunshineHoursYear,
+                        methodology: f.googleSolarEstimate.methodology,
+                      } : null,
+                      // Irradiancia del heatmap (Google Solar dataLayers GeoTIFF):
+                      // min/max kWh/m²/año ya analizado en el área del techo.
+                      irradiance: heatmapLayer ? {
+                        minKwhPerM2Year: heatmapLayer.minVal != null ? Math.round(heatmapLayer.minVal) : null,
+                        maxKwhPerM2Year: heatmapLayer.maxVal != null ? Math.round(heatmapLayer.maxVal) : null,
+                        imageryDate: heatmapLayer.imageryDate || null,
+                        source: 'google-solar-datalayers',
+                      } : null,
                       // Beneficio AGPE pre-calculado (autoconsumo + excedentes con precio bolsa XM)
                       // — habilita a la IA reforzar la decisión cuantificando ahorro/ingresos en COP
                       // en vez de re-sugerir AGPE cuando wantsExcedentes ya está marcado.
