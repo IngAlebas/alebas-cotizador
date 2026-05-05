@@ -34,7 +34,6 @@ export default function InteractiveRoofMap({
   const [moved, setMoved] = useState(false);
   const [mapType, setMapType] = useState('hybrid');
   const [showLabels, setShowLabels] = useState(true);
-  const labelElsRef = useRef([]); // raw DOM elements — toggled sin recrear overlays
 
   // Init mapa una sola vez. lat/lon iniciales se capturan en este efecto;
   // las actualizaciones posteriores se aplican en el efecto de sync de abajo.
@@ -140,7 +139,6 @@ export default function InteractiveRoofMap({
     syntheticPanelsRef.current = [];
     labelsRef.current.forEach(l => l.setMap(null));
     labelsRef.current = [];
-    labelElsRef.current = [];
     if (!Array.isArray(segments) || segments.length === 0) return;
     const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
     const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
@@ -477,8 +475,6 @@ export default function InteractiveRoofMap({
         if (pt) { labelEl.style.position = 'absolute'; labelEl.style.left = pt.x + 'px'; labelEl.style.top = pt.y + 'px'; }
       };
       label.onRemove = function () { if (labelEl.parentNode) labelEl.parentNode.removeChild(labelEl); };
-      labelEl.style.display = showLabels ? '' : 'none';
-      labelElsRef.current.push(labelEl);
       label.setMap(mapRef.current);
       labelsRef.current.push(label);
       } catch (e) {
@@ -488,6 +484,10 @@ export default function InteractiveRoofMap({
         console.warn('Segmento ' + i + ' no se pudo renderizar:', e?.message);
       }
     });
+    // Aplicar visibilidad inicial de etiquetas según el estado actual del toggle.
+    if (!showLabels) {
+      labelsRef.current.forEach(l => { try { l.setMap(null); } catch (_) {} });
+    }
     // Auto-fit a los círculos.
     // validCenters acepta ambos formatos (lat/lng y latitude/longitude).
     const validCenters = segments.map(s => {
@@ -512,10 +512,13 @@ export default function InteractiveRoofMap({
     }
   }, [segments, ready]);
 
-  // Toggle de etiquetas — no recrea overlays, solo cambia display en los DOM nodes ya existentes.
+  // Toggle de etiquetas — añade/quita los OverlayView del mapa (onAdd/onRemove lifecycle correcto).
   useEffect(() => {
-    labelElsRef.current.forEach(el => { el.style.display = showLabels ? '' : 'none'; });
-  }, [showLabels]);
+    if (!ready || !mapRef.current) return;
+    labelsRef.current.forEach(l => {
+      try { l.setMap(showLabels ? mapRef.current : null); } catch (_) {}
+    });
+  }, [showLabels, ready]);
 
   // Ruta del sol DELGADA sobre el mapa — arco de E (oriente) → cenit → O
   // (poniente). Diseño minimal: línea amarilla 1.5px con sun emoji 🌞 en
@@ -782,60 +785,62 @@ export default function InteractiveRoofMap({
     // Solo cubiertas activas como área de clip
     const activeSegs = Array.isArray(segments) ? segments.filter(s => s.selected !== false) : [];
 
-    // Canvas overlay: dibuja el heatmap recortado al polígono de las cubiertas activas.
-    // GroundOverlay mostraba toda la imagen (vecindario completo) — el canvas con
-    // ctx.clip() limita la visualización a la zona real del techo.
-    const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+    // Pre-clip la imagen en espacio de imagen (coordenadas lat/lng → píxel de imagen)
+    // antes de pasarla al GroundOverlay. Esto evita dependencia de la proyección del
+    // mapa y funciona correctamente con pan/zoom porque GroundOverlay se actualiza solo.
+    let cancelled = false;
     const img = new Image();
-    const overlay = new maps.OverlayView();
-
-    const drawHM = () => {
-      const proj = overlay.getProjection();
-      if (!proj || !img.complete || !img.naturalWidth) return;
-      const swPx = proj.fromLatLngToDivPixel(new maps.LatLng(bounds.sw.lat, bounds.sw.lng));
-      const nePx = proj.fromLatLngToDivPixel(new maps.LatLng(bounds.ne.lat, bounds.ne.lng));
-      if (!swPx || !nePx) return;
-      const left = Math.min(swPx.x, nePx.x);
-      const top = Math.min(swPx.y, nePx.y);
-      const w = Math.max(1, Math.round(Math.abs(nePx.x - swPx.x)));
-      const h = Math.max(1, Math.round(Math.abs(swPx.y - nePx.y)));
-      canvas.style.left = left + 'px';
-      canvas.style.top = top + 'px';
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, w, h);
-      // Clip al polígono de cubiertas activas
-      if (activeSegs.length > 0) {
-        ctx.save();
+    img.onload = () => {
+      if (cancelled) return;
+      const iw = img.naturalWidth || 512;
+      const ih = img.naturalHeight || 512;
+      const clipCanvas = document.createElement('canvas');
+      clipCanvas.width = iw;
+      clipCanvas.height = ih;
+      const ctx = clipCanvas.getContext('2d');
+      const latRange = bounds.ne.lat - bounds.sw.lat;
+      const lngRange = bounds.ne.lng - bounds.sw.lng;
+      // Convierte lat/lng a píxel de imagen. Y invertido porque norte = arriba de imagen.
+      const toImgPx = (lat, lng) => ({
+        x: ((lng - bounds.sw.lng) / lngRange) * iw,
+        y: ((bounds.ne.lat - lat) / latRange) * ih,
+      });
+      if (latRange > 0 && lngRange > 0 && activeSegs.length > 0) {
         ctx.beginPath();
         let hasPath = false;
         activeSegs.forEach(s => {
           const corners = getCornersHM(s);
           if (!corners) return;
           corners.forEach((corner, i) => {
-            const px = proj.fromLatLngToDivPixel(new maps.LatLng(corner.lat, corner.lng));
-            if (!px) return;
-            i === 0 ? ctx.moveTo(px.x - left, px.y - top) : ctx.lineTo(px.x - left, px.y - top);
+            const { x, y } = toImgPx(corner.lat, corner.lng);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
             hasPath = true;
           });
           ctx.closePath();
         });
         if (hasPath) ctx.clip();
       }
-      ctx.globalAlpha = 0.78;
-      ctx.drawImage(img, 0, 0, w, h);
-      if (activeSegs.length > 0) ctx.restore();
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(img, 0, 0, iw, ih);
+      if (cancelled) return;
+      const clippedUrl = clipCanvas.toDataURL('image/png');
+      const swLL = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
+      const neLL = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
+      heatmapOverlayRef.current = new maps.GroundOverlay(clippedUrl, new maps.LatLngBounds(swLL, neLL), {
+        opacity: 1.0, clickable: false, map: mapRef.current,
+      });
     };
-
-    overlay.onAdd = function () { this.getPanes().overlayLayer.appendChild(canvas); };
-    overlay.draw = drawHM;
-    overlay.onRemove = function () { if (canvas.parentNode) canvas.parentNode.removeChild(canvas); };
-    img.onload = () => { try { overlay.draw(); } catch (_) {} };
+    img.onerror = () => {
+      if (cancelled) return;
+      // Fallback sin clip si falla la carga de imagen
+      const swLL = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
+      const neLL = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
+      heatmapOverlayRef.current = new maps.GroundOverlay(dataUrl, new maps.LatLngBounds(swLL, neLL), {
+        opacity: 0.78, clickable: false, map: mapRef.current,
+      });
+    };
     img.src = dataUrl;
-    overlay.setMap(mapRef.current);
-    heatmapOverlayRef.current = overlay;
+    return () => { cancelled = true; };
   }, [heatmapLayer, segments, ready]);
 
   // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
