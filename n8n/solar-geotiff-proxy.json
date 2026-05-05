@@ -54,7 +54,8 @@
           "timeout": 30000,
           "response": {
             "response": {
-              "responseFormat": "file"
+              "responseFormat": "file",
+              "fullResponse": true
             }
           }
         }
@@ -63,11 +64,14 @@
       "name": "Fetch GeoTIFF",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 420]
+      "position": [900, 420],
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Convierte el binario descargado a base64 para devolverlo en JSON.\n// n8n ya almacena los binarios como base64 en item.binary.data.data,\n// así que solo extraemos ese campo.\nconst item = $input.first();\nconst bin = item.binary?.data;\nif (!bin || !bin.data) {\n  return [{ json: { ok: false, reason: 'no_binary', detail: 'el endpoint no devolvió contenido' } }];\n}\nreturn [{ json: {\n  ok: true,\n  base64: bin.data,\n  mimeType: bin.mimeType || 'image/tiff',\n  size: Number(bin.fileSize) || null,\n} }];"
+        "jsCode": "// Detecta errores del HTTP Request y los reporta con detalle.\n// n8n con continueOnFail+alwaysOutputData entrega:\n//   - en éxito: item.binary.data + item.json (con headers/statusCode si fullResponse)\n//   - en error: item.json.error con info del fallo\nconst item = $input.first();\nconst err = item.json?.error;\nif (err) {\n  return [{ json: {\n    ok: false,\n    reason: 'fetch_error',\n    detail: `${err.statusCode || ''} ${err.message || err.description || JSON.stringify(err).slice(0,200)}`.trim(),\n  } }];\n}\nconst statusCode = item.json?.statusCode;\nif (statusCode && statusCode >= 400) {\n  return [{ json: {\n    ok: false,\n    reason: 'http_error',\n    detail: `Google respondió HTTP ${statusCode}. Verifica que la API key permita geoTiff:get desde la IP de n8n (sin restricción de referer/IP).`,\n  } }];\n}\nconst bin = item.binary?.data;\nif (!bin || !bin.data) {\n  return [{ json: {\n    ok: false,\n    reason: 'no_binary',\n    detail: `Sin contenido binario. statusCode=${statusCode || 'n/a'}, headers=${JSON.stringify(item.json?.headers || {}).slice(0,150)}`,\n  } }];\n}\nreturn [{ json: {\n  ok: true,\n  base64: bin.data,\n  mimeType: bin.mimeType || 'image/tiff',\n  size: Number(bin.fileSize) || null,\n} }];"
       },
       "id": "g4000000-0001-4000-9000-000000000005",
       "name": "To base64",
