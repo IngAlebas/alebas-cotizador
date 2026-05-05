@@ -33,6 +33,8 @@ export default function InteractiveRoofMap({
   const [ready, setReady] = useState(false);
   const [moved, setMoved] = useState(false);
   const [mapType, setMapType] = useState('hybrid');
+  const [showLabels, setShowLabels] = useState(true);
+  const labelElsRef = useRef([]); // raw DOM elements — toggled sin recrear overlays
 
   // Init mapa una sola vez. lat/lon iniciales se capturan en este efecto;
   // las actualizaciones posteriores se aplican en el efecto de sync de abajo.
@@ -138,6 +140,7 @@ export default function InteractiveRoofMap({
     syntheticPanelsRef.current = [];
     labelsRef.current.forEach(l => l.setMap(null));
     labelsRef.current = [];
+    labelElsRef.current = [];
     if (!Array.isArray(segments) || segments.length === 0) return;
     const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
     const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
@@ -474,6 +477,8 @@ export default function InteractiveRoofMap({
         if (pt) { labelEl.style.position = 'absolute'; labelEl.style.left = pt.x + 'px'; labelEl.style.top = pt.y + 'px'; }
       };
       label.onRemove = function () { if (labelEl.parentNode) labelEl.parentNode.removeChild(labelEl); };
+      labelEl.style.display = showLabels ? '' : 'none';
+      labelElsRef.current.push(labelEl);
       label.setMap(mapRef.current);
       labelsRef.current.push(label);
       } catch (e) {
@@ -506,6 +511,11 @@ export default function InteractiveRoofMap({
       }
     }
   }, [segments, ready]);
+
+  // Toggle de etiquetas — no recrea overlays, solo cambia display en los DOM nodes ya existentes.
+  useEffect(() => {
+    labelElsRef.current.forEach(el => { el.style.display = showLabels ? '' : 'none'; });
+  }, [showLabels]);
 
   // Ruta del sol DELGADA sobre el mapa — arco de E (oriente) → cenit → O
   // (poniente). Diseño minimal: línea amarilla 1.5px con sun emoji 🌞 en
@@ -738,15 +748,95 @@ export default function InteractiveRoofMap({
     }
     setPanelsVisible(false);
     const { dataUrl, bounds } = heatmapLayer;
-    const sw = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
-    const ne = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
-    const overlayBounds = new maps.LatLngBounds(sw, ne);
-    heatmapOverlayRef.current = new maps.GroundOverlay(dataUrl, overlayBounds, {
-      opacity: 0.62,
-      clickable: false,
-      map: mapRef.current,
-    });
-  }, [heatmapLayer, ready]);
+
+    // Helper: lat/lng corners de un segmento (misma lógica que el efecto de polígonos).
+    const pickC = (obj) => {
+      if (!obj) return null;
+      const la = obj.lat ?? obj.latitude;
+      const lo = obj.lng ?? obj.longitude;
+      return Number.isFinite(la) && Number.isFinite(lo) ? { lat: la, lng: lo } : null;
+    };
+    const getCornersHM = (s) => {
+      const bbSw = pickC(s.boundingBox?.sw);
+      const bbNe = pickC(s.boundingBox?.ne);
+      if (bbSw && bbNe && !s._custom) {
+        return [
+          { lat: bbSw.lat, lng: bbSw.lng }, { lat: bbSw.lat, lng: bbNe.lng },
+          { lat: bbNe.lat, lng: bbNe.lng }, { lat: bbNe.lat, lng: bbSw.lng },
+        ];
+      }
+      const center = pickC(s.center);
+      if (!center) return null;
+      const area = s.areaMeters2 || 16;
+      const azRad = ((s.azimuthDegrees ?? 180) * Math.PI) / 180;
+      const cosA = Math.cos(azRad), sinA = Math.sin(azRad);
+      const latM = 1 / 111000;
+      const lngM = 1 / (111000 * Math.cos(center.lat * Math.PI / 180));
+      const h = Math.sqrt(Math.max(4, area));
+      const hw = h * 1.18 / 2, hh = h * 0.85 / 2;
+      return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([lx, ly]) => ({
+        lat: center.lat + (lx * sinA + ly * cosA) * latM,
+        lng: center.lng + (lx * cosA - ly * sinA) * lngM,
+      }));
+    };
+    // Solo cubiertas activas como área de clip
+    const activeSegs = Array.isArray(segments) ? segments.filter(s => s.selected !== false) : [];
+
+    // Canvas overlay: dibuja el heatmap recortado al polígono de las cubiertas activas.
+    // GroundOverlay mostraba toda la imagen (vecindario completo) — el canvas con
+    // ctx.clip() limita la visualización a la zona real del techo.
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+    const img = new Image();
+    const overlay = new maps.OverlayView();
+
+    const drawHM = () => {
+      const proj = overlay.getProjection();
+      if (!proj || !img.complete || !img.naturalWidth) return;
+      const swPx = proj.fromLatLngToDivPixel(new maps.LatLng(bounds.sw.lat, bounds.sw.lng));
+      const nePx = proj.fromLatLngToDivPixel(new maps.LatLng(bounds.ne.lat, bounds.ne.lng));
+      if (!swPx || !nePx) return;
+      const left = Math.min(swPx.x, nePx.x);
+      const top = Math.min(swPx.y, nePx.y);
+      const w = Math.max(1, Math.round(Math.abs(nePx.x - swPx.x)));
+      const h = Math.max(1, Math.round(Math.abs(swPx.y - nePx.y)));
+      canvas.style.left = left + 'px';
+      canvas.style.top = top + 'px';
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      // Clip al polígono de cubiertas activas
+      if (activeSegs.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        let hasPath = false;
+        activeSegs.forEach(s => {
+          const corners = getCornersHM(s);
+          if (!corners) return;
+          corners.forEach((corner, i) => {
+            const px = proj.fromLatLngToDivPixel(new maps.LatLng(corner.lat, corner.lng));
+            if (!px) return;
+            i === 0 ? ctx.moveTo(px.x - left, px.y - top) : ctx.lineTo(px.x - left, px.y - top);
+            hasPath = true;
+          });
+          ctx.closePath();
+        });
+        if (hasPath) ctx.clip();
+      }
+      ctx.globalAlpha = 0.78;
+      ctx.drawImage(img, 0, 0, w, h);
+      if (activeSegs.length > 0) ctx.restore();
+    };
+
+    overlay.onAdd = function () { this.getPanes().overlayLayer.appendChild(canvas); };
+    overlay.draw = drawHM;
+    overlay.onRemove = function () { if (canvas.parentNode) canvas.parentNode.removeChild(canvas); };
+    img.onload = () => { try { overlay.draw(); } catch (_) {} };
+    img.src = dataUrl;
+    overlay.setMap(mapRef.current);
+    heatmapOverlayRef.current = overlay;
+  }, [heatmapLayer, segments, ready]);
 
   // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
   // mapa. Aquí solo va una indicación delgada visible.
@@ -782,6 +872,14 @@ export default function InteractiveRoofMap({
               boxShadow: '0 1px 4px rgba(0,0,0,0.5)', transition: 'background 0.15s, border-color 0.15s',
             }}>{icon}</button>
           ))}
+          <button title={showLabels ? 'Ocultar etiquetas' : 'Mostrar etiquetas'} onClick={() => setShowLabels(v => !v)} style={{
+            width: 30, height: 30, background: showLabels ? 'rgba(7,9,15,0.82)' : 'rgba(1,112,139,0.92)',
+            border: `1px solid ${showLabels ? 'rgba(122,158,170,0.35)' : '#01708B'}`, borderRadius: 6,
+            cursor: 'pointer', fontSize: 11, fontWeight: 700, color: showLabels ? '#7A9EAA' : '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.5)', transition: 'background 0.15s, border-color 0.15s',
+            fontFamily: 'inherit',
+          }}>Aa</button>
         </div>
       )}
       {ready && (
