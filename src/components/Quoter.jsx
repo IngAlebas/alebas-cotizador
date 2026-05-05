@@ -23,6 +23,7 @@ import SunPathDiagram from './SunPathDiagram';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
+import { addRoofSegmentsToStaticUrl } from '../services/staticMapOverlays';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
@@ -2276,11 +2277,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           {/* Mapa de UBICACIÓN (calles) — al final, contexto urbano. */}
           {f.roofStaticMapRoadUrl && (
             <div style={{ marginTop: 12, background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 9, overflow: 'hidden' }}>
-              <div style={{ fontSize: 9, padding: '6px 10px', color: C.muted, background: `${C.teal}10`, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>📍</span>
-                <span><strong style={{ color: C.teal }}>Ubicación · contexto urbano</strong> · calles cercanas (zoom 16)</span>
+              <div style={{ fontSize: 9, padding: '6px 10px', color: C.muted, background: `${C.teal}10`, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <span><span>📍</span> <strong style={{ color: C.teal }}>Ubicación · cubiertas validadas</strong> · calles cercanas (zoom 16)</span>
+                {f.roofSegments?.length > 0 && (
+                  <span style={{ fontSize: 9, color: C.muted }}>
+                    <span style={{ color: '#4ade80' }}>■</span> activas · <span style={{ color: '#fb923c' }}>■</span> detectadas
+                  </span>
+                )}
               </div>
-              <img src={f.roofStaticMapRoadUrl} alt="Mapa de calles cercanas"
+              <img src={addRoofSegmentsToStaticUrl(f.roofStaticMapRoadUrl, f.roofSegments)} alt="Mapa de calles con cubiertas validadas"
                 style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 240, objectFit: 'cover' }}
                 onError={(e) => { e.currentTarget.style.display = 'none'; }} />
             </div>
@@ -4551,14 +4556,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div className="al-pdf-roof-image-grid">
                   {f.roofStaticMapHDUrl && (
                     <div>
-                      <img src={f.roofStaticMapHDUrl} alt="Vista satelital del techo" className="al-pdf-roof-image" crossOrigin="anonymous" />
-                      <div className="al-pdf-image-caption">Satelital · zoom 20 · análisis DSM</div>
+                      <img src={addRoofSegmentsToStaticUrl(f.roofStaticMapHDUrl, f.roofSegments)} alt="Vista satelital del techo con cubiertas validadas" className="al-pdf-roof-image" crossOrigin="anonymous" />
+                      <div className="al-pdf-image-caption">Satelital · zoom 20 · cubiertas detectadas (verde) y descartadas (naranja)</div>
                     </div>
                   )}
                   {f.roofStaticMapRoadUrl && (
                     <div>
-                      <img src={f.roofStaticMapRoadUrl} alt="Mapa de calles" className="al-pdf-roof-image" crossOrigin="anonymous" />
-                      <div className="al-pdf-image-caption">Calles · contexto urbano</div>
+                      <img src={addRoofSegmentsToStaticUrl(f.roofStaticMapRoadUrl, f.roofSegments)} alt="Mapa de calles con cubiertas validadas" className="al-pdf-roof-image" crossOrigin="anonymous" />
+                      <div className="al-pdf-image-caption">Calles · contexto urbano · cubiertas validadas</div>
                     </div>
                   )}
                 </div>
