@@ -3960,7 +3960,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
         {showNormativo && agpe && (() => {
           const hasExcedentes = agpe.excedentes > 0;
-          const norms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
+          const allNorms = getApplicableNormativa({ hasExcedentes, agpeCategory: agpe.agpeCategory, kwp: res.actKwp, gridExport: agpe.gridExport });
+          const required = allNorms.filter(n => n.category !== 'suggested');
+          const suggested = allNorms.filter(n => n.category === 'suggested');
+          const normCard = (n, accent = C.teal) => (
+            <div key={n.id} style={{ background: C.dark, border: `1px solid ${accent}44`, borderRadius: 8, padding: '13px 15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: accent }}>{n.title}</span>
+                {n.article && <span style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>{n.article}</span>}
+              </div>
+              <div style={{ fontSize: 12, color: '#fff', fontWeight: 600, marginBottom: 5 }}>{n.fullName}</div>
+              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{n.summary}</div>
+            </div>
+          );
           return (
             <div style={{ ...ss.card, borderColor: `${C.teal}55`, background: `${C.teal}06` }}>
               <div style={{ textAlign: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${C.teal}33` }}>
@@ -3972,21 +3984,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 {!agpe.gridExport
                   ? <>Tu sistema es <strong style={{ color: C.teal }}>off-grid (aislado)</strong>: no conectado al SIN. Marco aplicable: Zonas No Interconectadas (ZNI) y RETIE para la instalación técnica.</>
                   : hasExcedentes
-                    ? <>Normas para tu instalación <strong style={{ color: C.teal }}>AGPE {agpe.agpeCategory} con entrega de excedentes</strong>. Incluye requisitos de conexión al OR ({operator.name}), medición bidireccional y acuerdo de excedentes con tu comercializador.</>
-                    : <>Normas aplicables a tu instalación de <strong style={{ color: C.teal }}>autoconsumo sin entrega de excedentes</strong>: autorización legal, conexión al OR ({operator.name}) y medición. Las regulaciones de excedentes (CREG 135, Decreto 1073) no aplican a este caso.</>}
+                    ? <>Normas aplicables a tu instalación <strong style={{ color: C.teal }}>AGPE {agpe.agpeCategory} con entrega de excedentes</strong>. Incluye autorización legal, conexión al OR ({operator.name}), medición bidireccional y acuerdo de excedentes con tu comercializador.</>
+                    : <>Normas aplicables a tu instalación de <strong style={{ color: C.teal }}>autoconsumo sin entrega de excedentes</strong>: autorización, conexión al OR ({operator.name}) y medición. Las normas de excedentes (CREG 135, Decreto 1073, etc.) no aplican a este caso.</>}
               </div>
+
+              {/* Normas directamente aplicables */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {norms.map(n => (
-                  <div key={n.id} style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '13px 15px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>{n.title}</span>
-                      {n.article && <span style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>{n.article}</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#fff', fontWeight: 600, marginBottom: 5 }}>{n.fullName}</div>
-                    <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{n.summary}</div>
-                  </div>
-                ))}
+                {required.map(n => normCard(n, C.teal))}
               </div>
+
+              {/* Normas sugeridas — pueden interesar al cliente */}
+              {suggested.length > 0 && (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontSize: 10, color: C.yellow, letterSpacing: 2, fontWeight: 700, textTransform: 'uppercase', marginBottom: 10 }}>
+                    Puede interesarte — otras opciones disponibles
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {suggested.map(n => normCard(n, C.yellow))}
+                  </div>
+                </div>
+              )}
+
               {res.sizedFor === 'area' && (
                 <div style={{ marginTop: 12, background: `${C.orange}12`, border: `1px solid ${C.orange}44`, borderRadius: 7, padding: '11px 14px' }}>
                   <div style={{ fontSize: 12, color: C.orange, fontWeight: 700, marginBottom: 4 }}>⚠ Observación — Cobertura parcial por área disponible</div>
@@ -3996,9 +4014,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 </div>
               )}
               <div style={{ fontSize: 11, color: C.muted, marginTop: 12, lineHeight: 1.6, fontStyle: 'italic' }}>
-                {agpe.gridExport
-                  ? 'Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021. Este cotizador no reemplaza asesoría jurídica.'
-                  : 'Nota: si deseas monetizar excedentes, evalúa un sistema on-grid o híbrido bajo AGPE. Este cotizador no reemplaza asesoría jurídica.'}
+                {agpe.gridExport && hasExcedentes
+                  ? 'Nota: previo a la entrega de excedentes, el cliente debe suscribir con su comercializador un acuerdo especial (anexo al Contrato de Condiciones Uniformes) según la Resolución CREG 135/2021.'
+                  : agpe.gridExport
+                    ? 'Nota: si en el futuro deseas monetizar excedentes, puedes actualizar tu sistema a AGPE bajo CREG 174/2021.'
+                    : 'Nota: si deseas conectarte al SIN y monetizar excedentes, evalúa un sistema on-grid o híbrido bajo AGPE.'}
+                {' '}Este cotizador no reemplaza asesoría jurídica.
               </div>
             </div>
           );
