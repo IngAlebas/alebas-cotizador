@@ -48,20 +48,40 @@ export async function fetchDataLayerUrls({ lat, lon, radiusMeters = 50 }) {
   return data; // { annualFluxUrl, bounds, imageryDate, ... }
 }
 
-// Descarga un GeoTIFF desde una URL firmada de Google Solar,
-// parsea con geotiff.js, y devuelve un PNG data-URL + bounds.
-// bounds se puede omitir — si falta se deriva del propio GeoTIFF.
-// NOTA: usamos fromArrayBuffer (no fromUrl) porque fromUrl usa HTTP range
-// requests que Google Solar CDN no permite cross-origin (bloqueo CORS).
+// Descarga un GeoTIFF de Google Solar a través del proxy n8n y lo
+// convierte en un PNG data-URL + bounds. bounds se puede omitir — si falta
+// se deriva del propio GeoTIFF.
+//
+// Por qué proxy: Google Solar API restringe las URLs por referer/IP del
+// API key. Cuando el browser hace fetch directo a solar.googleapis.com,
+// envía referer=solar-hub.co y Google responde 403. n8n descarga el
+// binario server-side (sin referer del browser) y lo devuelve como base64.
+async function fetchGeoTiffViaProxy(signedUrl) {
+  const data = await n8nPost('solar-geotiff', { url: signedUrl });
+  if (!data || data.ok === false || !data.base64) {
+    const reason = data?.reason || '';
+    if (reason === 'invalid_url') throw new Error('URL inválida para proxy GeoTIFF');
+    throw new Error(data?.detail || 'Proxy GeoTIFF: error desconocido');
+  }
+  // Convertir base64 → ArrayBuffer
+  const binary = atob(data.base64);
+  const buffer = new ArrayBuffer(binary.length);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
+  return buffer;
+}
+
 export async function geotiffToPngDataUrl(signedUrl, apiBounds) {
   const { fromArrayBuffer } = await import('geotiff');
   let buffer;
   try {
-    const res = await fetch(signedUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    buffer = await res.arrayBuffer();
+    buffer = await fetchGeoTiffViaProxy(signedUrl);
   } catch (fetchErr) {
-    throw new Error(`Error al descargar imagen de irradiancia: ${fetchErr.message}`);
+    const msg = String(fetchErr?.message || fetchErr || '');
+    if (/Error fetching data|404|not.?registered|webhook.*not/i.test(msg)) {
+      throw new Error('Proxy GeoTIFF aún no disponible. Importa solar-geotiff-proxy.json en n8n.');
+    }
+    throw new Error(`Error al descargar imagen de irradiancia: ${msg}`);
   }
   const tiff = await fromArrayBuffer(buffer);
   const image = await tiff.getImage();
@@ -123,10 +143,11 @@ export async function fetchMonthlyProduction(monthlyFluxUrls, areaM2, systemEffi
   if (!Array.isArray(monthlyFluxUrls) || monthlyFluxUrls.length !== 12) {
     throw new Error('Se necesitan exactamente 12 URLs mensuales');
   }
-  const { fromUrl } = await import('geotiff');
+  const { fromArrayBuffer } = await import('geotiff');
   const results = [];
   for (const url of monthlyFluxUrls) {
-    const tiff = await fromUrl(url);
+    const buffer = await fetchGeoTiffViaProxy(url);
+    const tiff = await fromArrayBuffer(buffer);
     const image = await tiff.getImage();
     const [raster] = await image.readRasters({ interleave: false });
     // Cada píxel = kWh/m²/mes. Calcular media de píxeles válidos (>0).
