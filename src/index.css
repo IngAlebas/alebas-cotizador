@@ -182,6 +182,22 @@ body:has(.al-loading-screen) .al-footer { display: none !important; }
     min-height: calc(100vh - 52px - 58px - env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+/* Fix tema claro en pantalla "Calculando tu sistema". El card usa
+   linear-gradient con C.card (#0C1422) hard-coded — los overrides
+   genéricos de [data-theme="light"] solo aplican a background-color
+   sólido, no a gradientes. Forzamos bg light en todo el subtree. */
+[data-theme="light"] .al-loading-screen {
+  background: var(--dark);
+}
+[data-theme="light"] .al-loading-screen > div > div {
+  background: linear-gradient(180deg, rgba(1,89,118,0.05) 0%, var(--card) 60%) !important;
+  border-color: rgba(1,89,118,0.35) !important;
+}
+[data-theme="light"] .al-loading-screen [style*="color: rgb(255, 255, 255)" i],
+[data-theme="light"] .al-loading-screen [style*="color:#fff" i],
+[data-theme="light"] .al-loading-screen [style*="color: #fff" i] {
+  color: var(--text) !important;
+}
 
 /* ── BASE ── */
 html { scroll-behavior: smooth; }

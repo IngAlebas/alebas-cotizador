@@ -969,7 +969,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     <div style={ss.wrap}>
       <aside style={ss.side}>
         <div style={{ padding: '0 4px 10px', borderBottom: `1px solid ${C.border}`, marginBottom: 10 }}>
-          <img src={logo} alt="ALEBAS" style={{ height: 28, borderRadius: 3 }} />
+          <img src={logo} alt="SolarHub" style={{ height: 28, borderRadius: 3 }} />
         </div>
         {NAV.map(([id, ic, l]) => (
           <div key={id} onClick={() => setTab(id)} style={{ padding: '7px 10px', borderRadius: 5, cursor: 'pointer', marginBottom: 2, fontSize: 11, display: 'flex', alignItems: 'center', gap: 7, background: tab === id ? `${C.teal}22` : 'transparent', color: tab === id ? C.teal : C.muted, fontWeight: tab === id ? 600 : 400, borderLeft: tab === id ? `2px solid ${C.teal}` : '2px solid transparent' }}>
@@ -979,7 +979,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         <div style={{ padding: '20px 8px 0', fontSize: 9, color: C.muted, lineHeight: 2 }}>
           <div style={{ fontWeight: 600, color: C.teal, marginBottom: 1 }}>SolarHub Admin</div>
           <div>NIT 901.992.450-5</div>
-          <div style={{ color: C.teal }}>info@alebas.co</div>
+          <div style={{ color: C.teal }}>info@solar-hub.co</div>
           <div>Villavicencio, Meta</div>
         </div>
       </aside>
