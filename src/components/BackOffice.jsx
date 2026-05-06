@@ -200,8 +200,10 @@ function PriceMgr({ pricing, upd, ss }) {
   );
 }
 
-function QuotesMgr({ quotes, ss }) {
+function QuotesMgr({ quotes, ss, quotesSync, loadRemoteQuotes }) {
   const [sel, setSel] = useState(null);
+  const sync = quotesSync || {};
+  const lastSync = sync.at ? new Date(sync.at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : null;
   if (sel) {
     const q = quotes.find(x => x.id === sel);
     if (!q) { setSel(null); return null; }
@@ -225,20 +227,45 @@ function QuotesMgr({ quotes, ss }) {
       </div>
     );
   }
+  const remoteCount = quotes.filter(q => q._remoteId).length;
+  const localOnlyCount = quotes.length - remoteCount;
   return (
     <div>
-      <div style={ss.h2}>Cotizaciones ({quotes.length})</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Cotizaciones ({quotes.length})</div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+            {remoteCount} sincronizadas · {localOnlyCount} solo locales
+            {lastSync && <> · última sincronización {lastSync}</>}
+            {sync.error && <span style={{ color: '#f87171', marginLeft: 6 }}>· {sync.error}</span>}
+          </div>
+        </div>
+        {loadRemoteQuotes && (
+          <button onClick={() => loadRemoteQuotes()} disabled={sync.loading}
+            style={{ ...ss.btn, opacity: sync.loading ? 0.5 : 1, padding: '6px 14px' }}>
+            {sync.loading ? '⟳ Sincronizando…' : '⟳ Sincronizar'}
+          </button>
+        )}
+      </div>
       {quotes.length === 0 ? (
         <div style={{ ...ss.card, textAlign: 'center', padding: '44px', color: C.muted }}>Las cotizaciones del portal aparecerán aquí automáticamente.</div>
       ) : (
         <div style={ss.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Fecha', 'Cliente', 'Operador', 'Sistema', 'kWp', 'Inversión', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Fecha', 'Cliente', 'Operador', 'Sistema', 'kWp', 'Inversión', 'Estado', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
             <tbody>{quotes.map(q => (
               <tr key={q.id}>
-                <td style={ss.td}>{q.date}</td><td style={ss.td}>{q.name}</td><td style={ss.td}>{q.operator || '—'}</td>
+                <td style={ss.td}>{q.date}</td>
+                <td style={ss.td}>
+                  {q.name}
+                  {q._remoteId
+                    ? <span title="Sincronizada con servidor" style={{ marginLeft: 6, fontSize: 8, color: C.teal }}>● remoto</span>
+                    : <span title="Solo local — pendiente de sync" style={{ marginLeft: 6, fontSize: 8, color: C.yellow }}>● local</span>}
+                </td>
+                <td style={ss.td}>{q.operator || '—'}</td>
                 <td style={ss.td}>{q.systemType}</td><td style={ss.td}>{q.results?.actKwp}</td>
                 <td style={ss.td}>{q.budget ? fmtCOP(q.budget.tot) : '—'}</td>
+                <td style={ss.td}><span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 9, background: `${C.teal}22`, color: C.teal }}>{q.status || 'nuevo'}</span></td>
                 <td style={ss.td}><button style={{ ...ss.btn, padding: '3px 9px' }} onClick={() => setSel(q.id)}>Ver →</button></td>
               </tr>
             ))}</tbody>
@@ -938,7 +965,7 @@ function LoadsTab({ catalog, source, setCatalog, setSource, ss }) {
   );
 }
 
-export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp, loadsCatalog = [], loadsSource = 'local-default', setLoadsCatalog, setLoadsSource }) {
+export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp, loadsCatalog = [], loadsSource = 'local-default', setLoadsCatalog, setLoadsSource, quotesSync, loadRemoteQuotes }) {
   const [dashTrm, setDashTrm] = React.useState(null);
   React.useEffect(() => {
     fetchTRM().then(d => setDashTrm(d)).catch(() => {});
@@ -1016,7 +1043,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'loads' && <LoadsTab catalog={loadsCatalog} source={loadsSource} setCatalog={setLoadsCatalog} setSource={setLoadsSource} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
-        {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} />}
+        {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} quotesSync={quotesSync} loadRemoteQuotes={loadRemoteQuotes} />}
         {tab === 'installers' && <InstallersMgr installers={installers} ss={ss} />}
         {tab === 'suppliers' && <SuppliersMgr suppliers={suppliers} uSupp={uSupp} ss={ss} />}
       </main>
