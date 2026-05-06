@@ -1,0 +1,73 @@
+{
+  "name": "ALEBAS — quote-public",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "quote-public",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "p5000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-quote-public"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibe { id, token } — id puede venir como número o 'r_<n>'.\nconst src = $input.first().json;\nconst body = src.body || src;\nlet rawId = body.id;\nif (typeof rawId === 'string' && rawId.startsWith('r_')) rawId = rawId.slice(2);\nconst quoteId = Number(rawId);\nconst token = String(body.token || '').trim();\nif (!Number.isFinite(quoteId) || quoteId <= 0) throw new Error('id inválido');\nif (!token) throw new Error('token requerido');\nreturn [{ json: { quoteId, token } }];"
+      },
+      "id": "p5000000-0001-4000-9000-000000000002",
+      "name": "Validate input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT q.id, q.created_at, q.status, q.system_type, q.kwp, q.num_panels, q.dept, q.address, q.total_cop, q.annual_sav_cop, q.roi_years, q.coverage_pct, q.payload, u.name, u.email FROM quotes q JOIN users u ON u.id = q.user_id WHERE q.id = $1 LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.quoteId }}"
+        }
+      },
+      "id": "p5000000-0001-4000-9000-000000000003",
+      "name": "Load quote",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida token y devuelve payload PÚBLICO (sin notas internas).\nconst input = $('Validate input').first().json;\nconst row = $input.first().json;\nif (!row || !row.id) {\n  return [{ json: { ok: false, reason: 'no encontrada' } }];\n}\nconst payload = row.payload || {};\nif (!payload.trackingToken) {\n  return [{ json: { ok: false, reason: 'sin token (admin debe abrir la cotización primero)' } }];\n}\nif (payload.trackingToken !== input.token) {\n  return [{ json: { ok: false, reason: 'token inválido' } }];\n}\n// Filtra historial: solo cambios de estado (no notas internas)\nconst publicHistory = (Array.isArray(payload.history) ? payload.history : [])\n  .filter(h => h.fromStatus && h.toStatus)\n  .map(h => ({ at: h.at, fromStatus: h.fromStatus, toStatus: h.toStatus }));\nreturn [{ json: {\n  ok: true,\n  quote: {\n    id: row.id,\n    createdAt: row.created_at,\n    status: row.status,\n    systemType: row.system_type,\n    kwp: row.kwp,\n    numPanels: row.num_panels,\n    dept: row.dept,\n    address: row.address,\n    totalCop: row.total_cop,\n    annualSavCop: row.annual_sav_cop,\n    roiYears: row.roi_years,\n    coveragePct: row.coverage_pct,\n    customer: { name: row.name, email: row.email },\n    history: publicHistory,\n    monthlyKwh: payload.monthlyKwh || null,\n    operator: payload.operator || null,\n    results: payload.results || null,\n    budget: payload.budget || null,\n    panel: payload.panel ? { brand: payload.panel.brand, model: payload.panel.model, wp: payload.panel.wp } : null,\n  }\n} }];"
+      },
+      "id": "p5000000-0001-4000-9000-000000000004",
+      "name": "Validate token + sanitize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "p5000000-0001-4000-9000-000000000005",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":                    { "main": [[{ "node": "Validate input",            "type": "main", "index": 0 }]] },
+    "Validate input":             { "main": [[{ "node": "Load quote",                "type": "main", "index": 0 }]] },
+    "Load quote":                 { "main": [[{ "node": "Validate token + sanitize", "type": "main", "index": 0 }]] },
+    "Validate token + sanitize":  { "main": [[{ "node": "Respond",                   "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
