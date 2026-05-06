@@ -7,7 +7,8 @@ import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
 import { n8nConfigured, n8nBaseUrl, n8nPlaceholderDetected } from '../services/n8n';
-import { updateQuoteRemote, QUOTE_STATUSES, buildTrackingUrl } from '../services/quotes';
+import { updateQuoteRemote, QUOTE_STATUSES, buildTrackingUrl, sendQuoteEmail } from '../services/quotes';
+import { quotePdfAsBase64, downloadQuotePdf } from '../services/pdfGenerator';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -213,6 +214,9 @@ function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
   const [token, setToken] = useState(q.trackingToken || null);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [copyOk, setCopyOk] = useState(false);
+  const [emailMsg, setEmailMsg] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult] = useState(null); // { ok, error?, sentAt? }
   const isRemote = !!q._remoteId;
   const dirty = status !== (q.status || 'nuevo') || notes !== (q.notes || '') || historyNote.trim() !== '';
   const history = Array.isArray(q.history) ? q.history : [];
@@ -236,6 +240,41 @@ function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
       setCopyOk(true);
       setTimeout(() => setCopyOk(false), 1500);
     } catch (_) {}
+  };
+
+  const onDownloadPdf = () => {
+    try { downloadQuotePdf(q, { trackingUrl }); }
+    catch (e) { setErr('No se pudo generar el PDF: ' + (e?.message || e)); }
+  };
+
+  const onSendEmail = async () => {
+    if (!isRemote) return;
+    if (!q.email) { setEmailResult({ ok: false, error: 'La cotización no tiene email registrado' }); return; }
+    setEmailSending(true); setEmailResult(null);
+    try {
+      const pdfBase64 = quotePdfAsBase64(q, { trackingUrl });
+      const r = await sendQuoteEmail({
+        id: q._remoteId,
+        email: q.email,
+        name: q.name,
+        pdfBase64,
+        trackingUrl,
+        customMessage: emailMsg.trim() || undefined,
+      });
+      if (!r?.ok) throw new Error(r?.reason || 'fallo al enviar');
+      setEmailResult({ ok: true, sentAt: Date.now() });
+      setEmailMsg('');
+      // Registra la acción en el historial
+      await updateQuoteRemote({
+        id: q._remoteId,
+        historyEntry: { note: `Email con cotización + PDF enviado a ${q.email}`, by: 'admin' },
+      });
+      if (loadRemoteQuotes) await loadRemoteQuotes();
+    } catch (e) {
+      setEmailResult({ ok: false, error: e?.message || 'error de red' });
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   const onSave = async () => {
@@ -332,6 +371,36 @@ function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
             ) : (
               <div style={{ fontSize: 11, color: '#f87171' }}>No se pudo generar el token. Verifica que el workflow update-quote esté activo en n8n.</div>
             )}
+          </div>
+        )}
+
+        {/* Envío al cliente: PDF + email */}
+        {isRemote && (
+          <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Enviar al cliente</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+              Destinatario: <strong style={{ color: '#fff' }}>{q.email || '⚠ sin email'}</strong>
+              {q.name && <> · {q.name}</>}
+            </div>
+            <textarea value={emailMsg} onChange={e => setEmailMsg(e.target.value)}
+              placeholder="Mensaje opcional para el cliente (ej: 'Adjunto la cotización ajustada según lo conversado…')"
+              disabled={emailSending}
+              style={{ ...ss.inp, minHeight: 56, fontFamily: 'inherit', resize: 'vertical', marginBottom: 8 }} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={onDownloadPdf} style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.text }}>
+                ↓ Descargar PDF
+              </button>
+              <button onClick={onSendEmail} disabled={emailSending || !q.email || !trackingUrl}
+                style={{ ...ss.btn, opacity: (emailSending || !q.email || !trackingUrl) ? 0.4 : 1 }}>
+                {emailSending ? '⟳ Enviando…' : '✉ Enviar email + PDF al cliente'}
+              </button>
+              {emailResult?.ok && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Enviado a {q.email}</span>}
+              {emailResult && !emailResult.ok && <span style={{ fontSize: 11, color: '#f87171' }}>⚠ {emailResult.error}</span>}
+            </div>
+            <div style={{ fontSize: 9, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+              El PDF se genera client-side (jsPDF) y se envía adjunto vía Gmail SMTP (solarhub@alebas.co).
+              El cuerpo del email incluye el link de seguimiento.
+            </div>
           </div>
         )}
 

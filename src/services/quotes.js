@@ -10,6 +10,8 @@
 //     -> { ok, quoteId, status, payload, history, trackingToken }
 //   POST /webhook/quote-public { id, token }
 //     -> { ok, quote: {...sanitized...} }
+//   POST /webhook/send-quote-email { id?, email?, name?, pdfBase64?, trackingUrl?, customMessage? }
+//     -> { ok, sent, to, quoteId }
 
 import { n8nPost, n8nConfigured } from './n8n';
 
@@ -49,4 +51,11 @@ export function buildTrackingUrl({ id, token, origin } = {}) {
   const base = origin || (typeof window !== 'undefined' ? window.location.origin : 'https://solar-hub.co');
   const remoteId = String(id || '').replace(/^r_/, '');
   return `${base}/?view=seguimiento&id=${remoteId}&t=${encodeURIComponent(token)}`;
+}
+
+// Envía email al cliente con resumen + tracking URL + PDF adjunto opcional.
+// Backend: n8n/send-quote-email.json (Gmail SMTP via solarhub@alebas.co).
+export async function sendQuoteEmail({ id, email, name, pdfBase64, trackingUrl, customMessage } = {}) {
+  if (!n8nConfigured()) return { ok: false, offline: true };
+  return n8nPost('send-quote-email', { id, email, name, pdfBase64, trackingUrl, customMessage });
 }
