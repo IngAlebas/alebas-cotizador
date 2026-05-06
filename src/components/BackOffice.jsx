@@ -7,7 +7,7 @@ import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
 import { n8nConfigured, n8nBaseUrl, n8nPlaceholderDetected } from '../services/n8n';
-import { updateQuoteRemote, QUOTE_STATUSES } from '../services/quotes';
+import { updateQuoteRemote, QUOTE_STATUSES, buildTrackingUrl } from '../services/quotes';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -210,9 +210,33 @@ function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [ok, setOk] = useState(false);
+  const [token, setToken] = useState(q.trackingToken || null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [copyOk, setCopyOk] = useState(false);
   const isRemote = !!q._remoteId;
   const dirty = status !== (q.status || 'nuevo') || notes !== (q.notes || '') || historyNote.trim() !== '';
   const history = Array.isArray(q.history) ? q.history : [];
+  const trackingUrl = token && q._remoteId ? buildTrackingUrl({ id: q._remoteId, token }) : null;
+
+  // Auto-genera tracking token al abrir la cotización si aún no existe.
+  // updateQuoteRemote sin cambios fuerza al workflow a inicializar payload.trackingToken.
+  React.useEffect(() => {
+    if (!isRemote || token) return;
+    setTokenLoading(true);
+    updateQuoteRemote({ id: q._remoteId })
+      .then(r => { if (r?.ok && r.trackingToken) setToken(r.trackingToken); })
+      .catch(() => {})
+      .finally(() => setTokenLoading(false));
+  }, [isRemote, q._remoteId, token]);
+
+  const onCopyUrl = async () => {
+    if (!trackingUrl) return;
+    try {
+      await navigator.clipboard.writeText(trackingUrl);
+      setCopyOk(true);
+      setTimeout(() => setCopyOk(false), 1500);
+    } catch (_) {}
+  };
 
   const onSave = async () => {
     if (!isRemote) { setErr('Esta cotización solo está en local — sincroniza primero.'); return; }
@@ -279,6 +303,37 @@ function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
             </button>
           </div>
         </div>
+
+        {/* URL pública de seguimiento */}
+        {isRemote && (
+          <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Link de seguimiento (cliente)</div>
+            {tokenLoading && !token ? (
+              <div style={{ fontSize: 11, color: C.muted }}>⟳ Generando token…</div>
+            ) : trackingUrl ? (
+              <>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input readOnly value={trackingUrl}
+                    onFocus={e => e.target.select()}
+                    style={{ ...ss.inp, flex: 1, fontFamily: 'monospace', fontSize: 10 }} />
+                  <button onClick={onCopyUrl} style={{ ...ss.btn, padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                    {copyOk ? '✓ Copiado' : 'Copiar'}
+                  </button>
+                  <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ ...ss.btn, padding: '6px 12px', textDecoration: 'none', background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }}>
+                    Abrir
+                  </a>
+                </div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+                  Envía este link al cliente para que vea el estado de su cotización en tiempo real.
+                  El acceso está protegido por un token único — no comparte notas internas ni datos sensibles.
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 11, color: '#f87171' }}>No se pudo generar el token. Verifica que el workflow update-quote esté activo en n8n.</div>
+            )}
+          </div>
+        )}
 
         {/* Historial */}
         {history.length > 0 && (

@@ -7,7 +7,9 @@
 //   POST /webhook/list-quotes { status?, search?, limit? }
 //     -> { ok, count, quotes: [...] }
 //   POST /webhook/update-quote { id, status?, notes?, historyEntry? }
-//     -> { ok, quoteId, status, payload, history }
+//     -> { ok, quoteId, status, payload, history, trackingToken }
+//   POST /webhook/quote-public { id, token }
+//     -> { ok, quote: {...sanitized...} }
 
 import { n8nPost, n8nConfigured } from './n8n';
 
@@ -35,3 +37,16 @@ export async function updateQuoteRemote({ id, status, notes, historyEntry } = {}
 
 // Estados permitidos en el ciclo de vida de la cotización (sincronizado con n8n update-quote).
 export const QUOTE_STATUSES = ['nuevo', 'contactado', 'propuesta', 'negociacion', 'ganada', 'perdida', 'archivada'];
+
+// Vista pública para el cliente (validada con token).
+export async function getPublicQuote({ id, token } = {}) {
+  if (!n8nConfigured()) return { ok: false, offline: true };
+  return n8nPost('quote-public', { id, token });
+}
+
+// Construye URL de seguimiento absoluta (la que se le envía al cliente por email).
+export function buildTrackingUrl({ id, token, origin } = {}) {
+  const base = origin || (typeof window !== 'undefined' ? window.location.origin : 'https://solar-hub.co');
+  const remoteId = String(id || '').replace(/^r_/, '');
+  return `${base}/?view=seguimiento&id=${remoteId}&t=${encodeURIComponent(token)}`;
+}

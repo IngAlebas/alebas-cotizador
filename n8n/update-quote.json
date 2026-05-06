@@ -42,7 +42,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge: status (top-level + payload), notes (payload), history (payload.history[]).\nconst input = $('Validate input').first().json;\nconst current = $input.first().json;\nif (!current || !current.id) throw new Error('cotización no encontrada');\nconst payload = current.payload && typeof current.payload === 'object' ? { ...current.payload } : {};\nconst nextStatus = input.status || current.status || 'nuevo';\nif (input.notes != null) payload.notes = input.notes;\nif (input.status && input.status !== current.status) {\n  payload.history = Array.isArray(payload.history) ? [...payload.history] : [];\n  payload.history.push({\n    at: new Date().toISOString(),\n    fromStatus: current.status,\n    toStatus: input.status,\n    note: input.historyEntry?.note || null,\n    by: input.historyEntry?.by || 'admin',\n  });\n}\nif (input.historyEntry && !input.status) {\n  payload.history = Array.isArray(payload.history) ? [...payload.history] : [];\n  payload.history.push({\n    at: new Date().toISOString(),\n    note: input.historyEntry.note || null,\n    by: input.historyEntry.by || 'admin',\n  });\n}\npayload.status = nextStatus;\nreturn [{ json: { quoteId: current.id, nextStatus, payloadJson: JSON.stringify(payload) } }];"
+        "jsCode": "// Merge: status (top-level + payload), notes (payload), history (payload.history[]).\n// Lazy-genera trackingToken UUID si no existe — usado por la URL pública de seguimiento.\nconst input = $('Validate input').first().json;\nconst current = $input.first().json;\nif (!current || !current.id) throw new Error('cotización no encontrada');\nconst payload = current.payload && typeof current.payload === 'object' ? { ...current.payload } : {};\nconst nextStatus = input.status || current.status || 'nuevo';\nif (!payload.trackingToken) {\n  // crypto.randomUUID disponible en Node 18+\n  payload.trackingToken = (typeof crypto !== 'undefined' && crypto.randomUUID)\n    ? crypto.randomUUID()\n    : Array.from({length:32}, () => Math.floor(Math.random()*16).toString(16)).join('');\n}\nif (input.notes != null) payload.notes = input.notes;\nif (input.status && input.status !== current.status) {\n  payload.history = Array.isArray(payload.history) ? [...payload.history] : [];\n  payload.history.push({\n    at: new Date().toISOString(),\n    fromStatus: current.status,\n    toStatus: input.status,\n    note: input.historyEntry?.note || null,\n    by: input.historyEntry?.by || 'admin',\n  });\n}\nif (input.historyEntry && !input.status) {\n  payload.history = Array.isArray(payload.history) ? [...payload.history] : [];\n  payload.history.push({\n    at: new Date().toISOString(),\n    note: input.historyEntry.note || null,\n    by: input.historyEntry.by || 'admin',\n  });\n}\npayload.status = nextStatus;\nreturn [{ json: { quoteId: current.id, nextStatus, payloadJson: JSON.stringify(payload) } }];"
       },
       "id": "u4000000-0001-4000-9000-000000000004",
       "name": "Merge state",
@@ -67,7 +67,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r = $input.first().json;\nreturn [{ json: { ok: true, quoteId: r.id, status: r.status, payload: r.payload, history: r.payload?.history || [] } }];"
+        "jsCode": "const r = $input.first().json;\nreturn [{ json: { ok: true, quoteId: r.id, status: r.status, payload: r.payload, history: r.payload?.history || [], trackingToken: r.payload?.trackingToken || null } }];"
       },
       "id": "u4000000-0001-4000-9000-000000000006",
       "name": "Wrap response",

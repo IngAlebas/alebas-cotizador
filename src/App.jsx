@@ -8,6 +8,7 @@ import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
 import InstallPrompt from './components/InstallPrompt';
+import QuoteTracking from './components/QuoteTracking';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import { listQuotesRemote, quotesConfigured } from './services/quotes';
 import logo from './logo.svg';
@@ -44,6 +45,22 @@ function AdminLogin({ onSuccess }) {
 
 
 export default function App() {
+  // Vista pública de seguimiento — accesible vía /?view=seguimiento&id=X&t=Y.
+  // Se evalúa antes que cualquier otra cosa: la URL de tracking debe ser
+  // accesible sin login y sin cargar el resto del state de la app.
+  const trackingParams = (() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') !== 'seguimiento') return null;
+    const id = params.get('id');
+    const t = params.get('t');
+    if (!id || !t) return null;
+    return { id, token: t };
+  })();
+  if (trackingParams) {
+    return <QuoteTracking id={trackingParams.id} token={trackingParams.token} />;
+  }
+
   const [view, setView] = useState('quoter');
   const [adminAuth, setAdminAuth] = React.useState(false);
   const [boTab, setBoTab] = useState('dashboard');
