@@ -9,6 +9,7 @@ import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
 import InstallPrompt from './components/InstallPrompt';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
+import { listQuotesRemote, quotesConfigured } from './services/quotes';
 import logo from './logo.svg';
 
 const ADMIN_HASH = 'sh_' + btoa('hoJSDU2!kaiv337c');
@@ -124,6 +125,46 @@ export default function App() {
   const addInst = i => { const n = [i, ...installers]; setInstallers(n); sv('al:installers', n); };
   const addSupp = s => { const n = [s, ...suppliers]; setSuppliers(n); sv('al:suppliers', n); };
   const uSupp = d => { setSuppliers(d); sv('al:suppliers', d); };
+
+  // Sync con n8n/Postgres: trae cotizaciones remotas y deduplica por email+dateISO
+  // contra las locales. Las locales sin par remoto persisten (ej. fallaron al guardar).
+  const [quotesSync, setQuotesSync] = useState({ at: null, loading: false, error: null });
+  const loadRemoteQuotes = React.useCallback(async () => {
+    if (!quotesConfigured()) {
+      setQuotesSync({ at: null, loading: false, error: 'n8n no configurado' });
+      return;
+    }
+    setQuotesSync(s => ({ ...s, loading: true, error: null }));
+    try {
+      const r = await listQuotesRemote({ limit: 500 });
+      if (!r?.ok || !Array.isArray(r.quotes)) throw new Error(r?.reason || 'respuesta inválida');
+      const remote = r.quotes.map(row => {
+        const p = row.payload || {};
+        return {
+          ...p,
+          id: `r_${row.id}`,
+          _remoteId: row.id,
+          status: row.status || p.status || 'nuevo',
+          date: row.created_at ? new Date(row.created_at).toLocaleDateString('es-CO') : p.date,
+          dateISO: row.created_at || p.dateISO,
+        };
+      });
+      const fp = q => `${(q.email || '').toLowerCase()}|${q.dateISO || ''}`;
+      const remoteFps = new Set(remote.map(fp));
+      setQuotes(prev => {
+        const localOnly = prev.filter(q => !q._remoteId && !remoteFps.has(fp(q)));
+        const merged = [...remote, ...localOnly];
+        sv('al:quotes', merged);
+        return merged;
+      });
+      setQuotesSync({ at: Date.now(), loading: false, error: null });
+    } catch (e) {
+      setQuotesSync(s => ({ ...s, loading: false, error: e?.message || 'error de red' }));
+    }
+  }, []);
+
+  // Sincroniza cotizaciones cuando el admin se autentica
+  useEffect(() => { if (adminAuth) loadRemoteQuotes(); }, [adminAuth, loadRemoteQuotes]);
 
   const logout = () => { storage.set('sh:admin','0'); setAdminAuth(false); setView('quoter'); };
 
@@ -281,6 +322,7 @@ export default function App() {
               pricing={pricing} uPr={uPr}
               operators={operators} uOp={uOp}
               quotes={quotes} installers={installers}
+              quotesSync={quotesSync} loadRemoteQuotes={loadRemoteQuotes}
               suppliers={suppliers} uSupp={uSupp}
               loadsCatalog={loadsCatalog} loadsSource={loadsSource}
               setLoadsCatalog={setLoadsCatalog} setLoadsSource={setLoadsSource}
