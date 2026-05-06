@@ -7,6 +7,7 @@ import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
 import { n8nConfigured, n8nBaseUrl, n8nPlaceholderDetected } from '../services/n8n';
+import { updateQuoteRemote, QUOTE_STATUSES } from '../services/quotes';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -200,6 +201,121 @@ function PriceMgr({ pricing, upd, ss }) {
   );
 }
 
+// Editor de una cotización: cambia status, registra notas internas, guarda en n8n y refresca lista.
+// Solo cubiertas con _remoteId pueden editarse (la fila ya existe en Postgres).
+function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
+  const [status, setStatus] = useState(q.status || 'nuevo');
+  const [notes, setNotes] = useState(q.notes || '');
+  const [historyNote, setHistoryNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  const [ok, setOk] = useState(false);
+  const isRemote = !!q._remoteId;
+  const dirty = status !== (q.status || 'nuevo') || notes !== (q.notes || '') || historyNote.trim() !== '';
+  const history = Array.isArray(q.history) ? q.history : [];
+
+  const onSave = async () => {
+    if (!isRemote) { setErr('Esta cotización solo está en local — sincroniza primero.'); return; }
+    setSaving(true); setErr(null); setOk(false);
+    try {
+      const r = await updateQuoteRemote({
+        id: q._remoteId,
+        status: status !== q.status ? status : undefined,
+        notes: notes !== (q.notes || '') ? notes : undefined,
+        historyEntry: historyNote.trim() ? { note: historyNote.trim(), by: 'admin' } : undefined,
+      });
+      if (!r?.ok) throw new Error(r?.reason || 'fallo al guardar');
+      setOk(true);
+      setHistoryNote('');
+      if (loadRemoteQuotes) await loadRemoteQuotes();
+      setTimeout(() => setOk(false), 1800);
+    } catch (e) {
+      setErr(e?.message || 'error de red');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={onBack}>← Volver</button>
+      <div style={ss.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{q.name}</div>
+            <div style={{ color: C.muted, fontSize: 11 }}>{q.company && `${q.company} · `}{q.city} · {q.operator} · {q.date}</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${C.teal}22`, color: C.teal }}>{q.status || 'nuevo'}</span>
+            {!isRemote && <span style={{ fontSize: 9, color: C.yellow }}>● solo local — no editable</span>}
+            {isRemote && <span style={{ fontSize: 9, color: C.muted }}>ID #{q._remoteId}</span>}
+          </div>
+        </div>
+
+        {/* Sección de admin: estado + notas */}
+        <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Seguimiento</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'start' }}>
+            <label style={ss.lbl}>Estado</label>
+            <select style={ss.inp} value={status} onChange={e => setStatus(e.target.value)} disabled={!isRemote || saving}>
+              {QUOTE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <label style={ss.lbl}>Notas internas</label>
+            <textarea style={{ ...ss.inp, minHeight: 70, fontFamily: 'inherit', resize: 'vertical' }}
+              value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Notas que solo ve el equipo (presupuesto, contactos, etc.)"
+              disabled={!isRemote || saving} />
+            <label style={ss.lbl}>Nueva entrada de historial</label>
+            <input style={ss.inp} value={historyNote} onChange={e => setHistoryNote(e.target.value)}
+              placeholder="Ej: Llamé al cliente, propuesta enviada por email…"
+              disabled={!isRemote || saving} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 12 }}>
+            {err && <span style={{ fontSize: 11, color: '#f87171' }}>⚠ {err}</span>}
+            {ok && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ guardado</span>}
+            <button onClick={onSave} disabled={!isRemote || !dirty || saving}
+              style={{ ...ss.btn, opacity: (!isRemote || !dirty || saving) ? 0.4 : 1 }}>
+              {saving ? '⟳ Guardando…' : 'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+
+        {/* Historial */}
+        {history.length > 0 && (
+          <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Historial ({history.length})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {history.slice().reverse().map((h, i) => (
+                <div key={i} style={{ borderLeft: `2px solid ${C.teal}55`, paddingLeft: 9, fontSize: 11 }}>
+                  <div style={{ color: C.muted, fontSize: 9 }}>
+                    {h.at ? new Date(h.at).toLocaleString('es-CO') : ''} · {h.by || 'admin'}
+                  </div>
+                  <div style={{ color: '#fff', marginTop: 1 }}>
+                    {h.fromStatus && h.toStatus && (
+                      <span style={{ color: C.yellow }}>{h.fromStatus} → {h.toStatus}</span>
+                    )}
+                    {h.note && <span style={{ marginLeft: h.fromStatus ? 8 : 0 }}>{h.note}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Datos técnicos / financieros */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
+          {[['Email', q.email], ['Teléfono', q.phone], ['Dirección', q.address || '—'], ['Tipo', q.systemType], ['Consumo', `${q.monthlyKwh} kWh/mes`], ['Operador', q.operator], ['kWp', `${q.results?.actKwp} kWp`], ['Paneles', `${q.results?.numPanels}`], ['Producción', `${fmt(q.results?.mp || 0)} kWh/mes`], ['Cobertura', `${q.results?.cov}%`], ['CO2 evitado', `${fmt(q.results?.co2 || 0)} kg/año`], ['Total inversión', q.budget ? fmtCOP(q.budget.tot) : '—'], ['Sección A', q.budget ? fmtCOP(q.budget.sA) : '—'], ['Sección B', q.budget ? fmtCOP(q.budget.sB) : '—'], ['Transporte', q.budget ? fmtCOP(q.budget.transport) : '—'], ['Ahorro anual', q.budget ? fmtCOP(q.budget.sav) : '—'], ['ROI', q.budget ? `${q.budget.roi} años` : '—']].map(([k, v]) => (
+            <div key={k} style={{ padding: '5px 0', borderBottom: `1px solid ${C.border}22` }}>
+              <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3 }}>{k}</div>
+              <div style={{ fontSize: 11, color: '#fff', fontWeight: 500, marginTop: 1 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuotesMgr({ quotes, ss, quotesSync, loadRemoteQuotes }) {
   const [sel, setSel] = useState(null);
   const sync = quotesSync || {};
@@ -207,25 +323,7 @@ function QuotesMgr({ quotes, ss, quotesSync, loadRemoteQuotes }) {
   if (sel) {
     const q = quotes.find(x => x.id === sel);
     if (!q) { setSel(null); return null; }
-    return (
-      <div>
-        <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setSel(null)}>← Volver</button>
-        <div style={ss.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div><div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{q.name}</div><div style={{ color: C.muted, fontSize: 11 }}>{q.company && `${q.company} · `}{q.city} · {q.operator} · {q.date}</div></div>
-            <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${C.teal}22`, color: C.teal }}>{q.status}</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
-            {[['Email', q.email], ['Teléfono', q.phone], ['Dirección', q.address || '—'], ['Tipo', q.systemType], ['Consumo', `${q.monthlyKwh} kWh/mes`], ['Operador', q.operator], ['kWp', `${q.results?.actKwp} kWp`], ['Paneles', `${q.results?.numPanels}`], ['Producción', `${fmt(q.results?.mp || 0)} kWh/mes`], ['Cobertura', `${q.results?.cov}%`], ['CO2 evitado', `${fmt(q.results?.co2 || 0)} kg/año`], ['Total inversión', q.budget ? fmtCOP(q.budget.tot) : '—'], ['Sección A', q.budget ? fmtCOP(q.budget.sA) : '—'], ['Sección B', q.budget ? fmtCOP(q.budget.sB) : '—'], ['Transporte', q.budget ? fmtCOP(q.budget.transport) : '—'], ['Ahorro anual', q.budget ? fmtCOP(q.budget.sav) : '—'], ['ROI', q.budget ? `${q.budget.roi} años` : '—']].map(([k, v]) => (
-              <div key={k} style={{ padding: '5px 0', borderBottom: `1px solid ${C.border}22` }}>
-                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3 }}>{k}</div>
-                <div style={{ fontSize: 11, color: '#fff', fontWeight: 500, marginTop: 1 }}>{v}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <QuoteDetail q={q} ss={ss} onBack={() => setSel(null)} loadRemoteQuotes={loadRemoteQuotes} />;
   }
   const remoteCount = quotes.filter(q => q._remoteId).length;
   const localOnlyCount = quotes.length - remoteCount;

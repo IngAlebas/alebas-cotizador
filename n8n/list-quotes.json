@@ -28,7 +28,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT\n  q.id, q.created_at, q.status, q.system_type, q.monthly_kwh, q.operator,\n  q.dept, q.address, q.kwp, q.num_panels, q.total_cop, q.annual_sav_cop, q.roi_years,\n  q.has_excedentes, q.agpe_category, q.coverage_pct, q.shade_index,\n  u.id AS user_id, u.email, u.name, u.phone, u.company, u.quote_count\nFROM quotes q\nJOIN users u ON u.id = q.user_id\nWHERE ($1 = '' OR q.status = $1)\n  AND ($2 = '' OR LOWER(u.email) LIKE $2 OR LOWER(u.name) LIKE $2)\nORDER BY q.created_at DESC\nLIMIT $3;",
+        "query": "SELECT\n  q.id, q.created_at, q.status, q.system_type, q.monthly_kwh, q.operator,\n  q.dept, q.address, q.kwp, q.num_panels, q.total_cop, q.annual_sav_cop, q.roi_years,\n  q.has_excedentes, q.agpe_category, q.coverage_pct, q.shade_index, q.payload,\n  u.id AS user_id, u.email, u.name, u.phone, u.company, u.quote_count\nFROM quotes q\nJOIN users u ON u.id = q.user_id\nWHERE ($1 = '' OR q.status = $1)\n  AND ($2 = '' OR LOWER(u.email) LIKE $2 OR LOWER(u.name) LIKE $2)\nORDER BY q.created_at DESC\nLIMIT $3;",
         "options": {
           "queryReplacement": "={{ $json.status }},{{ $json.search }},{{ $json.limit }}"
         }
