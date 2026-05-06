@@ -6,6 +6,8 @@
 //     -> { ok, quoteId, userId, createdAt, contact, totals }
 //   POST /webhook/list-quotes { status?, search?, limit? }
 //     -> { ok, count, quotes: [...] }
+//   POST /webhook/update-quote { id, status?, notes?, historyEntry? }
+//     -> { ok, quoteId, status, payload, history }
 
 import { n8nPost, n8nConfigured } from './n8n';
 
@@ -25,3 +27,11 @@ export async function listQuotesRemote({ status, search, limit } = {}) {
   if (!n8nConfigured()) return { ok: false, offline: true, quotes: [] };
   return n8nPost('list-quotes', { status, search, limit });
 }
+
+export async function updateQuoteRemote({ id, status, notes, historyEntry } = {}) {
+  if (!n8nConfigured()) return { ok: false, offline: true };
+  return n8nPost('update-quote', { id, status, notes, historyEntry });
+}
+
+// Estados permitidos en el ciclo de vida de la cotización (sincronizado con n8n update-quote).
+export const QUOTE_STATUSES = ['nuevo', 'contactado', 'propuesta', 'negociacion', 'ganada', 'perdida', 'archivada'];

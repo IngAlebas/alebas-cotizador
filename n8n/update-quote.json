@@ -1,0 +1,100 @@
+{
+  "name": "ALEBAS — update-quote",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-quote",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "u4000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-update-quote"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibe { id, status?, notes?, historyEntry? } — id es q.id (BIGINT) ó string 'r_<id>'.\n// Devuelve { ok, quoteId, status, payload, history }.\nconst src = $input.first().json;\nconst body = src.body || src;\nlet rawId = body.id;\nif (typeof rawId === 'string' && rawId.startsWith('r_')) rawId = rawId.slice(2);\nconst quoteId = Number(rawId);\nif (!Number.isFinite(quoteId) || quoteId <= 0) {\n  throw new Error('id de cotización inválido');\n}\nconst allowed = ['nuevo','contactado','propuesta','negociacion','ganada','perdida','archivada'];\nlet status = body.status;\nif (status != null) {\n  status = String(status).trim().toLowerCase();\n  if (!allowed.includes(status)) throw new Error('status inválido: ' + status);\n}\nconst notes = body.notes != null ? String(body.notes) : null;\nconst historyEntry = body.historyEntry || null; // { at, by, fromStatus, toStatus, note }\nreturn [{ json: { quoteId, status, notes, historyEntry } }];"
+      },
+      "id": "u4000000-0001-4000-9000-000000000002",
+      "name": "Validate input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, status, payload FROM quotes WHERE id = $1 LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.quoteId }}"
+        }
+      },
+      "id": "u4000000-0001-4000-9000-000000000003",
+      "name": "Load current",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge: status (top-level + payload), notes (payload), history (payload.history[]).\nconst input = $('Validate input').first().json;\nconst current = $input.first().json;\nif (!current || !current.id) throw new Error('cotización no encontrada');\nconst payload = current.payload && typeof current.payload === 'object' ? { ...current.payload } : {};\nconst nextStatus = input.status || current.status || 'nuevo';\nif (input.notes != null) payload.notes = input.notes;\nif (input.status && input.status !== current.status) {\n  payload.history = Array.isArray(payload.history) ? [...payload.history] : [];\n  payload.history.push({\n    at: new Date().toISOString(),\n    fromStatus: current.status,\n    toStatus: input.status,\n    note: input.historyEntry?.note || null,\n    by: input.historyEntry?.by || 'admin',\n  });\n}\nif (input.historyEntry && !input.status) {\n  payload.history = Array.isArray(payload.history) ? [...payload.history] : [];\n  payload.history.push({\n    at: new Date().toISOString(),\n    note: input.historyEntry.note || null,\n    by: input.historyEntry.by || 'admin',\n  });\n}\npayload.status = nextStatus;\nreturn [{ json: { quoteId: current.id, nextStatus, payloadJson: JSON.stringify(payload) } }];"
+      },
+      "id": "u4000000-0001-4000-9000-000000000004",
+      "name": "Merge state",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE quotes SET status = $2, payload = $3::jsonb WHERE id = $1 RETURNING id, status, payload;",
+        "options": {
+          "queryReplacement": "={{ $json.quoteId }},{{ $json.nextStatus }},{{ $json.payloadJson }}"
+        }
+      },
+      "id": "u4000000-0001-4000-9000-000000000005",
+      "name": "Update row",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nreturn [{ json: { ok: true, quoteId: r.id, status: r.status, payload: r.payload, history: r.payload?.history || [] } }];"
+      },
+      "id": "u4000000-0001-4000-9000-000000000006",
+      "name": "Wrap response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "u4000000-0001-4000-9000-000000000007",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":         { "main": [[{ "node": "Validate input", "type": "main", "index": 0 }]] },
+    "Validate input":  { "main": [[{ "node": "Load current",   "type": "main", "index": 0 }]] },
+    "Load current":    { "main": [[{ "node": "Merge state",    "type": "main", "index": 0 }]] },
+    "Merge state":     { "main": [[{ "node": "Update row",     "type": "main", "index": 0 }]] },
+    "Update row":      { "main": [[{ "node": "Wrap response",  "type": "main", "index": 0 }]] },
+    "Wrap response":   { "main": [[{ "node": "Respond",        "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
