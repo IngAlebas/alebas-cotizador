@@ -1,9 +1,26 @@
 # SOLARHUB — Handoff Claude Chat → Claude Code
 
-> **Estado verificado:** 05 mayo 2026 (PR #120)  
-> **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`  
-> **Versión:** v1.0.0 (tag)  
+> **Estado verificado:** 07 mayo 2026 (PRs #159, #161, #163 mergeados)
+> **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`
+> **Versión:** v1.0.0 (tag)
 > **Deploy:** `solar-hub.co` via Vercel (auto-deploy en push a main)
+> **PR abierto pendiente:** [#162](https://github.com/IngAlebas/alebas-cotizador/pull/162) — admin auth server-side (bloqueado por infra n8n).
+
+---
+
+## Documentos de referencia (todos en root)
+
+| Doc | Cuándo leerlo |
+|---|---|
+| [`CLAUDE.md`](./CLAUDE.md) (este) | Onboarding rápido, estado general |
+| [`AUDIT.md`](./AUDIT.md) | Auditoría estratégica del producto (compliance, marketplace, madurez) |
+| [`REVIEW.md`](./REVIEW.md) | Bugs y deuda línea-a-línea contra `main@0cdaf18` |
+| [`ROADMAP-FLUXAI.md`](./ROADMAP-FLUXAI.md) | Integración SolarHub ↔ FluxAI (5 capas con criterios de aceptación) |
+| [`SECURITY-HEADERS.md`](./SECURITY-HEADERS.md) | Política CSP/HSTS/etc., rationale, deuda y rollback |
+| [`DEPLOY.md`](./DEPLOY.md) | Setup Postgres + n8n en Railway |
+| [`DEPLOY-ADMIN-AUTH.md`](./DEPLOY-ADMIN-AUTH.md) | (en branch `claude/admin-auth-server-side`, vendrá al merge de #162) Bootstrap del admin con bcrypt + JWT |
+
+**Tracking issues:** [#160](https://github.com/IngAlebas/alebas-cotizador/issues/160) — checklist de las 5 capas FluxAI.
 
 ---
 
@@ -144,14 +161,23 @@ PNG transparente en `src/logo.png` y `public/logo.png`.
 
 ## Admin Panel
 
-Protegido por contraseña hardcodeada en `App.jsx`:
+> ⚠️ **En migración** — hoy todavía usa `'sh_' + btoa(...)` en `App.jsx:15` (legacy). PR [#162](https://github.com/IngAlebas/alebas-cotizador/pull/162) reemplaza esto por **bcrypt + JWT firmado server-side en n8n**. El PR está abierto y bloqueado por prep de infraestructura — ver [`DEPLOY-ADMIN-AUTH.md`](https://github.com/IngAlebas/alebas-cotizador/blob/claude/admin-auth-server-side/DEPLOY-ADMIN-AUTH.md) en el branch.
 
+**Estado legacy (vigente hasta merge de #162):**
 ```js
 const ADMIN_HASH = 'sh_' + btoa('hoJSDU2!kaiv337c');
 ```
 
 Sesión en `localStorage` via `storage.set('sh:admin', '1')`.
-**Para cambiar:** editar el string dentro de `btoa()`.
+La pwd está en el bundle público — riesgo Habeas Data hasta que se mergee #162.
+
+**Pasos antes de mergear #162** (ver `DEPLOY-ADMIN-AUTH.md` para detalle):
+1. Crear tablas `admin_users` + `admin_audit` en Postgres Railway.
+2. Generar hash bcrypt con pwd nueva (NO la legacy) e insertar fila en `admin_users`.
+3. En Railway → servicio n8n → env vars: `JWT_SECRET` (≥32 chars) y `NODE_FUNCTION_ALLOW_EXTERNAL=bcryptjs,jsonwebtoken`.
+4. Importar `n8n/admin-login.json` y `n8n/admin-verify.json` en la UI de n8n.
+5. Smoke test con curl al `/webhook/admin-login`.
+6. **Recién entonces mergear** #162. Vercel redeploya y el panel pide la pwd nueva contra n8n.
 
 ---
 
@@ -254,17 +280,31 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 
 ---
 
-## Próximos pasos verificados (de DEPLOY.md)
+## Próximos pasos (estado al 2026-05-07)
 
-1. **Vincular PostgreSQL con n8n** en Railway (ver `DEPLOY.md`)
-2. **Importar y activar** los 15 workflows en `n8n/` → `api.solar-hub.co`
-3. **Configurar** `REACT_APP_N8N_BASE_URL` en Vercel → Environment Variables
-4. **Poblar DB** con catálogo CEC: `node n8n/seed/load-cec.js`
-5. **Agregar keys** en n8n: Google Maps, Google Solar, Groq, Gemini
-6. **Activar** `save-quote` + `list-quotes` → persistencia de cotizaciones
-7. **Push notifications** → backend suscripciones
+### 🔴 Bloqueado por infra — PR #162 abierto
+1. **Auth admin server-side** ([#162](https://github.com/IngAlebas/alebas-cotizador/pull/162)). Pasos en `DEPLOY-ADMIN-AUTH.md` (en branch). Hasta que se haga, la pwd admin sigue pública en el bundle.
 
-### Fase 6 (PR #118 — mergeado a main 2026-05-02) ✅ COMPLETADA 2026-05-05
+### 🟡 Sin PR todavía — REVIEW.md residual
+2. **Idempotencia `save-quote`** (bloqueante #4 de REVIEW.md). Doble-click duplica leads. Schema migration (`dedupe_key UNIQUE`) + workflow `n8n/save-quote.json` con `ON CONFLICT (dedupe_key) DO NOTHING`.
+3. **JWT enforcement en `list-quotes` y `update-quote`** (cierra hilo de #162). Hoy aceptan `x-alebas-token` que está en bundle público. Una vez mergeado #162, agregar guard JWT a esos workflows + sacar `REACT_APP_N8N_TOKEN` del frontend.
+4. **`solar_cache.expires_at` default** (menor #7 de REVIEW.md). Verificar que el schema actual tiene `DEFAULT NOW() + INTERVAL '90 days'`. Si no, ALTER coordinado.
+5. **Eliminar carpeta `api/`** (DEPRECATED desde 2026-04-20). Hoy es 2026-05-07 — pasó la fecha sugerida. Auditar logs Railway, luego `rm -rf api/` + remover bloque dinámico de `server.js`.
+
+### 🟢 Estratégico — `AUDIT.md` y `ROADMAP-FLUXAI.md`
+6. **Carril A — Compliance + Seguridad** (mes 1): política Habeas Data publicada, registro SIC, log de auditoría n8n. Detalle en `AUDIT.md`.
+7. **Carril B — Rigor de ingeniería** (mes 1-2): tarifa CREG real por estrato, PR calibrado por región/tilt vía PVGIS, motor fiscal Ley 1715 (deducción renta 50% + depreciación acelerada), degradación anual.
+8. **Carril C — Marketplace real** (mes 2-4): matching instalador↔lead, reviews, contratos digitales, escrow.
+9. **Integración FluxAI** (`ROADMAP-FLUXAI.md` + issue [#160](https://github.com/IngAlebas/alebas-cotizador/issues/160)): 5 capas, hoy en estado "logo + branding compartido" — sin flujo de datos.
+
+### Histórico (no requiere acción)
+
+#### Sesión 2026-05-07 (PRs #159, #161, #163) ✅
+- **#159** docs: AUDIT, REVIEW, ROADMAP-FLUXAI, issue #160 abierto.
+- **#161** fixes: Bogotá D.C. en DEPTS, kgTotal usa `inv.kg` (no kW), IVA solo sobre lo gravable (transporte ya viene con IVA), splash lee `sh:theme` raw. Cierra bloqueantes 2/5/6.
+- **#163** seguridad: CSP + HSTS + X-Frame-Options + Permissions-Policy en `vercel.json`, `helmet()` en `server.js`, CORS de `*` a allowlist, `Cache-Control` para `/static/*` y `/sw.js`. Doc completo en `SECURITY-HEADERS.md`. Cierra bloqueante #3.
+
+#### Fase 6 (PR #118 — mergeado a main 2026-05-02) ✅ COMPLETADA 2026-05-05
 
 Todo activado en `api.solar-hub.co`:
 
@@ -301,4 +341,4 @@ npm start
 
 *Claude Chat (claude.ai) — construcción inicial PWA, branding SolarHub, responsive mobile*  
 *Claude Code — workflows n8n, API integrations, DEPLOY.md, arquitectura backend*  
-*Última actualización: 05 mayo 2026 — PR #120: Google Solar Platform Fases 2-5 (paneles reales en mapa, heatmap irradiancia GeoTIFF, slider de paneles, gráfico mensual Ene-Dic); geotiff@3.0.5; solar-datalayers.json workflow*
+*Última actualización: 07 mayo 2026 — PRs #159 (review docs), #161 (4 fixes de cálculo + UX), #163 (CSP/HSTS/helmet/CORS) mergeados. PR #162 (admin auth bcrypt+JWT) abierto a la espera de prep de infra n8n. Helmet ^7.2.0 agregado al package.json server-side.*
