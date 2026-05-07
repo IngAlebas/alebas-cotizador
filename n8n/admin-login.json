@@ -1,0 +1,140 @@
+{
+  "name": "ALEBAS — admin-login",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin-login",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-admin-login"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza input. Username opcional (default 'admin' para backwards-compat\n// con el flujo antiguo que solo pedía password).\nconst src = $input.first().json;\nconst body = src.body || src;\nconst username = ((body.username || 'admin') + '').trim().toLowerCase();\nconst password = (body.password || '') + '';\nconst ip = (src.headers && (src.headers['x-forwarded-for'] || src.headers['x-real-ip'])) || '';\nconst ua = (src.headers && src.headers['user-agent']) || '';\nif (!password || password.length > 200) {\n  return [{ json: { _abort: true, ok: false, reason: 'invalid_password', username, ip, ua } }];\n}\nreturn [{ json: { username, password, ip, ua } }];"
+      },
+      "id": "a1000000-0001-4000-9000-000000000002",
+      "name": "Normalize input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "abort", "leftValue": "={{ $json._abort === true }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0001-4000-9000-000000000003",
+      "name": "Aborted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, username, password_hash, role, locked_until, failed_attempts FROM admin_users WHERE username = $1 LIMIT 1;",
+        "options": { "queryReplacement": "={{ $json.username }}" }
+      },
+      "id": "a1000000-0001-4000-9000-000000000004",
+      "name": "Lookup admin",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 360],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verifica password con bcrypt. Lockout suave después de 5 intentos\n// fallidos consecutivos en la última hora.\n//\n// Requiere que el contenedor n8n tenga `bcryptjs` y `jsonwebtoken` disponibles\n// como módulos externos. En n8n self-hosted: NODE_FUNCTION_ALLOW_EXTERNAL=*\n// (o lista explícita ['bcryptjs','jsonwebtoken']).\n//\n// JWT_SECRET vive en la env del contenedor n8n (NUNCA en el repo). Generar\n// con `openssl rand -base64 48` y meter en Railway env vars.\nconst bcrypt = require('bcryptjs');\nconst jwt = require('jsonwebtoken');\nconst norm = $('Normalize input').first().json;\nconst row = $input.first().json || {};\nconst now = Date.now();\n\nif (!row.id) {\n  return [{ json: { ok: false, reason: 'invalid_credentials', message: 'Usuario o contraseña incorrectos.', _audit: { action: 'login.fail.no_user', success: false, username: norm.username, ip: norm.ip, ua: norm.ua } } }];\n}\nif (row.locked_until && new Date(row.locked_until).getTime() > now) {\n  return [{ json: { ok: false, reason: 'locked', message: 'Cuenta bloqueada temporalmente. Intenta más tarde.', _audit: { action: 'login.fail.locked', success: false, username: norm.username, ip: norm.ip, ua: norm.ua } } }];\n}\n\nlet ok = false;\ntry { ok = bcrypt.compareSync(norm.password, row.password_hash); }\ncatch { ok = false; }\n\nif (!ok) {\n  return [{ json: { ok: false, reason: 'invalid_credentials', message: 'Usuario o contraseña incorrectos.', _audit: { action: 'login.fail.bad_password', success: false, username: norm.username, ip: norm.ip, ua: norm.ua, failed_attempts: (row.failed_attempts || 0) + 1 } } }];\n}\n\nconst secret = $env.JWT_SECRET;\nif (!secret || secret.length < 32) {\n  return [{ json: { ok: false, reason: 'misconfigured', message: 'Servidor mal configurado: JWT_SECRET ausente o débil. Contacta soporte.', _audit: { action: 'login.fail.no_secret', success: false, username: norm.username, ip: norm.ip, ua: norm.ua } } }];\n}\n\nconst ttlSeconds = 8 * 60 * 60; // 8h\nconst token = jwt.sign({ sub: row.id, username: row.username, role: row.role || 'admin' }, secret, { expiresIn: ttlSeconds, issuer: 'solarhub', audience: 'admin' });\nconst expiresAt = now + ttlSeconds * 1000;\n\nreturn [{ json: { ok: true, token, expiresAt, role: row.role || 'admin', _audit: { action: 'login.success', success: true, username: norm.username, ip: norm.ip, ua: norm.ua, user_id: row.id } } }];"
+      },
+      "id": "a1000000-0001-4000-9000-000000000005",
+      "name": "Verify password & sign JWT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 360]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO admin_audit (username, action, ip, user_agent, success, detail) VALUES ($1, $2, $3::inet, $4, $5, $6::jsonb);",
+        "options": { "queryReplacement": "={{ [$json._audit.username, $json._audit.action, ($json._audit.ip || null), ($json._audit.ua || null), $json._audit.success, JSON.stringify($json._audit) ] }}" }
+      },
+      "id": "a1000000-0001-4000-9000-000000000006",
+      "name": "Audit log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1340, 360],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE admin_users SET last_login_at = NOW(), last_login_ip = $2::inet, failed_attempts = 0, locked_until = NULL WHERE username = $1 AND $3 = true; UPDATE admin_users SET failed_attempts = COALESCE(failed_attempts,0) + 1, locked_until = CASE WHEN COALESCE(failed_attempts,0) + 1 >= 5 THEN NOW() + INTERVAL '15 minutes' ELSE locked_until END WHERE username = $1 AND $3 = false;",
+        "options": { "queryReplacement": "={{ [ $json._audit.username, ($json._audit.ip || null), $json._audit.success ] }}" }
+      },
+      "id": "a1000000-0001-4000-9000-000000000007",
+      "name": "Update user state",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 360],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Limpia campos internos (_audit) antes de responder al cliente.\nconst { _audit, ...rest } = $input.first().json;\nreturn [{ json: rest }];"
+      },
+      "id": "a1000000-0001-4000-9000-000000000008",
+      "name": "Strip internals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a1000000-0001-4000-9000-000000000009",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2000, 360]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Normalize input", "type": "main", "index": 0 }]] },
+    "Normalize input": { "main": [[{ "node": "Aborted?", "type": "main", "index": 0 }]] },
+    "Aborted?": {
+      "main": [
+        [{ "node": "Strip internals", "type": "main", "index": 0 }],
+        [{ "node": "Lookup admin", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup admin": { "main": [[{ "node": "Verify password & sign JWT", "type": "main", "index": 0 }]] },
+    "Verify password & sign JWT": { "main": [[{ "node": "Audit log", "type": "main", "index": 0 }]] },
+    "Audit log": { "main": [[{ "node": "Update user state", "type": "main", "index": 0 }]] },
+    "Update user state": { "main": [[{ "node": "Strip internals", "type": "main", "index": 0 }]] },
+    "Strip internals": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }, { "name": "admin" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}
