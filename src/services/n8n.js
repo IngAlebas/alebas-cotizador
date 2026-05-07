@@ -1,6 +1,10 @@
 // Thin wrapper to call n8n webhooks.
 // Base URL is configured via REACT_APP_N8N_BASE_URL (e.g. https://n8n-xxx.up.railway.app/webhook).
 // Optional shared secret via REACT_APP_N8N_TOKEN is sent as x-alebas-token header — n8n validates.
+// Per-call options:
+//   - opts.authToken : Authorization: Bearer <jwt> (admin endpoints).
+//   - opts.skipAuth  : omite ambos headers (login endpoints donde el cliente
+//                      todavía no tiene credenciales).
 
 const RAW_BASE = (process.env.REACT_APP_N8N_BASE_URL || '').replace(/\/+$/, '');
 const TOKEN = process.env.REACT_APP_N8N_TOKEN || '';
@@ -21,7 +25,7 @@ export const n8nConfigured = () => BASE.length > 0;
 export const n8nBaseUrl = () => BASE;
 export const n8nPlaceholderDetected = () => isPlaceholder ? RAW_BASE : '';
 
-export async function n8nPost(path, body, { timeoutMs = 45000 } = {}) {
+export async function n8nPost(path, body, { timeoutMs = 45000, authToken = null, skipAuth = false } = {}) {
   if (!BASE) throw new Error('Servicio backend no configurado.');
   const url = `${BASE}/${String(path).replace(/^\/+/, '')}`;
   const ctrl = new AbortController();
@@ -32,12 +36,14 @@ export async function n8nPost(path, body, { timeoutMs = 45000 } = {}) {
     catch { ctrl.abort(); }
   }, timeoutMs);
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (!skipAuth) {
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+      if (TOKEN) headers['x-alebas-token'] = TOKEN;
+    }
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(TOKEN ? { 'x-alebas-token': TOKEN } : {}),
-      },
+      headers,
       body: JSON.stringify(body || {}),
       signal: ctrl.signal,
     });

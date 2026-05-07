@@ -11,17 +11,27 @@ import InstallPrompt from './components/InstallPrompt';
 import QuoteTracking from './components/QuoteTracking';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import { listQuotesRemote, quotesConfigured } from './services/quotes';
+import { adminLogin, adminLogout, adminVerify, isAdminAuthenticated } from './services/adminAuth';
 import logo from './logo.svg';
-
-const ADMIN_HASH = 'sh_' + btoa('hoJSDU2!kaiv337c');
 
 function AdminLogin({ onSuccess }) {
   const [pwd, setPwd] = React.useState('');
-  const [err, setErr] = React.useState(false);
+  const [err, setErr] = React.useState(null);
   const [show, setShow] = React.useState(false);
-  const check = () => {
-    if ('sh_' + btoa(pwd) === ADMIN_HASH) { storage.set('sh:admin','1'); onSuccess(); }
-    else { setErr(true); setPwd(''); setTimeout(()=>setErr(false),2000); }
+  const [loading, setLoading] = React.useState(false);
+  const check = async () => {
+    if (!pwd || loading) return;
+    setLoading(true);
+    setErr(null);
+    const res = await adminLogin(pwd);
+    setLoading(false);
+    if (res.ok) {
+      onSuccess();
+    } else {
+      setErr(res.message || 'Contraseña incorrecta.');
+      setPwd('');
+      setTimeout(() => setErr(null), 3000);
+    }
   };
   return (
     <div style={{minHeight:'calc(100vh - 56px)',display:'flex',alignItems:'center',justifyContent:'center',background:C.dark,padding:24}}>
@@ -31,12 +41,12 @@ function AdminLogin({ onSuccess }) {
         <div style={{fontSize:11,color:C.muted,marginBottom:26,fontFamily:'monospace'}}>solar-hub.co · acceso restringido</div>
         <div style={{position:'relative',marginBottom:14}}>
           <input type={show?'text':'password'} value={pwd} onChange={e=>setPwd(e.target.value)}
-            onKeyDown={e=>e.key==='Enter'&&check()} placeholder="Contraseña de administrador"
-            style={{width:'100%',background:C.dark,border:`1px solid ${err?'#f87171':C.border}`,borderRadius:8,padding:'10px 44px 10px 14px',color:C.text,fontSize:13,boxSizing:'border-box'}} autoFocus/>
+            onKeyDown={e=>e.key==='Enter'&&check()} placeholder="Contraseña de administrador" disabled={loading}
+            style={{width:'100%',background:C.dark,border:`1px solid ${err?'#f87171':C.border}`,borderRadius:8,padding:'10px 44px 10px 14px',color:C.text,fontSize:13,boxSizing:'border-box',opacity:loading?0.6:1}} autoFocus/>
           <button onClick={()=>setShow(!show)} style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:14,padding:0}}>{show?'🙈':'👁'}</button>
         </div>
-        {err&&<div style={{fontSize:11,color:'#f87171',background:'#f8717115',border:'1px solid #f8717133',borderRadius:6,padding:'7px 12px',marginBottom:14}}>Contraseña incorrecta.</div>}
-        <button onClick={check} style={{width:'100%',background:C.teal,color:'#fff',border:'none',borderRadius:8,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',opacity:!pwd?0.5:1}}>Ingresar al panel →</button>
+        {err&&<div style={{fontSize:11,color:'#f87171',background:'#f8717115',border:'1px solid #f8717133',borderRadius:6,padding:'7px 12px',marginBottom:14}}>{err}</div>}
+        <button onClick={check} disabled={!pwd || loading} style={{width:'100%',background:C.teal,color:'#fff',border:'none',borderRadius:8,padding:'11px',fontWeight:700,fontSize:13,cursor:loading?'wait':'pointer',opacity:(!pwd || loading)?0.5:1}}>{loading ? 'Verificando…' : 'Ingresar al panel →'}</button>
         <div style={{marginTop:18,fontSize:10,color:'#2a4050',fontFamily:'monospace'}}>Solo personal autorizado</div>
       </div>
     </div>
@@ -108,7 +118,13 @@ export default function App() {
         setLoadsSource(d.source || 'n8n');
       }
     }).catch(() => {});
-    try { const ra = storage.get('sh:admin'); if (ra?.value==='1') setAdminAuth(true); } catch {}
+    // Hidrata sesión admin desde el JWT en localStorage. Si el TTL local está
+    // vigente, mostramos el panel inmediatamente y verificamos contra n8n en
+    // background — si el server rechaza, adminVerify() llama adminLogout().
+    if (isAdminAuthenticated()) {
+      setAdminAuth(true);
+      adminVerify().then(valid => { if (!valid) setAdminAuth(false); });
+    }
   }, []);
 
   // Tema de la app — light/dark/auto, persistente en localStorage. Default: dark.
@@ -183,7 +199,7 @@ export default function App() {
   // Sincroniza cotizaciones cuando el admin se autentica
   useEffect(() => { if (adminAuth) loadRemoteQuotes(); }, [adminAuth, loadRemoteQuotes]);
 
-  const logout = () => { storage.set('sh:admin','0'); setAdminAuth(false); setView('quoter'); };
+  const logout = () => { adminLogout(); setAdminAuth(false); setView('quoter'); };
 
   const NAV = [
     ['quoter', '☀', 'Cotizador Solar'],
