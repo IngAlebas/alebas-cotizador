@@ -146,3 +146,38 @@ CREATE INDEX IF NOT EXISTS idx_solar_cache_key      ON solar_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_solar_cache_expires  ON solar_cache(expires_at);
 CREATE INDEX IF NOT EXISTS idx_solar_cache_coords   ON solar_cache(lat, lon);
 CREATE INDEX IF NOT EXISTS idx_solar_cache_response ON solar_cache USING gin(response);
+
+-- ==================== ADMIN AUTH (REVIEW.md bloqueante #1) ====================
+-- Reemplaza el legacy `'sh_' + btoa(pwd)` que vivía en el bundle público.
+-- password_hash es bcrypt (cost factor 12 mínimo). NUNCA committear hashes
+-- al repo. Generar el primer admin con un script local + insertar via psql.
+--
+-- Ver DEPLOY-ADMIN-AUTH.md para el procedimiento de bootstrap.
+CREATE TABLE IF NOT EXISTS admin_users (
+  id              SERIAL PRIMARY KEY,
+  username        TEXT UNIQUE NOT NULL,
+  password_hash   TEXT NOT NULL,
+  role            TEXT NOT NULL DEFAULT 'admin',
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  last_login_at   TIMESTAMPTZ,
+  last_login_ip   INET,
+  failed_attempts INT DEFAULT 0,
+  locked_until    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_admin_users_username ON admin_users(username);
+
+-- Auditoría de acceso admin: cada login (exitoso o fallido) deja rastro.
+-- Útil para Habeas Data (saber quién consultó qué cliente y cuándo) y para
+-- detectar intentos de brute force.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id          BIGSERIAL PRIMARY KEY,
+  username    TEXT,
+  action      TEXT NOT NULL,
+  ip          INET,
+  user_agent  TEXT,
+  success     BOOLEAN NOT NULL,
+  detail      JSONB,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_user_time ON admin_audit(username, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_ip_time ON admin_audit(ip, created_at DESC);
