@@ -519,7 +519,7 @@ export const DEFAULT_PRICING = {
 };
 
 export const DEPTS = [
-  'Amazonas','Antioquia','Arauca','Atlántico','Bolívar','Boyacá','Caldas',
+  'Amazonas','Antioquia','Arauca','Atlántico','Bogotá D.C.','Bolívar','Boyacá','Caldas',
   'Caquetá','Casanare','Cauca','Cesar','Chocó','Córdoba','Cundinamarca',
   'Guainía','Guaviare','Huila','La Guajira','Magdalena','Meta','Nariño',
   'Norte de Santander','Putumayo','Quindío','Risaralda','San Andrés',
@@ -637,7 +637,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
   const kgTotal = (numPanels * (panel.kg || 25.5))
     + (numPanels * 7.5)  // estructura
-    + (noInverter ? 0 : invKw)  // inversor aprox (0 si no hay disponible)
+    + (noInverter ? 0 : (invObj?.kg ?? 20))  // peso del inversor en kg (no kW)
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
   const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
@@ -684,9 +684,11 @@ export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   const ca = sys.actKwp * pricing.cabling_per_kwp;
   const pt = sys.actKwp * pricing.protections_per_kwp;
   const ins = sys.actKwp * pricing.installation_per_kwp;
-  const bBase = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites + (transport || 0);
-  const iva = Math.round(bBase * (pricing.iva / 100));
-  const sB = bBase + iva;
+  const bBaseTaxable = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites;
+  const transportCost = transport || 0;
+  const iva = Math.round(bBaseTaxable * (pricing.iva / 100));
+  const bBase = bBaseTaxable + transportCost;
+  const sB = bBaseTaxable + iva + transportCost;
   const tot = sA + sB;
   return { pC, iC, bC, sA, st, ca, pt, ins, eng: pricing.engineering, emsa: pricing.emsa_tramites, transport: transport || 0, bBase, iva, sB, tot };
 }

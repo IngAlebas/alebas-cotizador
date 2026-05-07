@@ -121,13 +121,11 @@
     <div id="root"></div>
     <script>
       // Aplicar tema antes de mostrar splash para que coincida con la preferencia.
+      // storage.set('sh:theme', theme) en constants.js guarda string raw (sin prefijo, sin JSON wrap).
       try {
-        var stored = localStorage.getItem('al:sh:theme');
-        if (stored) {
-          var v = JSON.parse(stored).value;
-          if (v === 'light' || (v === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches)) {
-            document.documentElement.setAttribute('data-theme', 'light');
-          }
+        var v = localStorage.getItem('sh:theme');
+        if (v === 'light' || (v === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'light');
         }
       } catch (_) {}
       // Splash con MINIMUM display time para que la animación sea visible
