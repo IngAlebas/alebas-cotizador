@@ -735,6 +735,18 @@ export const DEPTS = [
   'Santander','Sucre','Tolima','Valle del Cauca','Vaupés','Vichada'
 ];
 
+// Materiales de cubierta — tipo de montaje recomendado, peso y notas RETIE/estructurales
+export const ROOF_MATERIALS = {
+  teja_eternit:  { label: 'Teja fibrocemento (Eternit)', mountingType: 'Perfil aluminio gancho', weightKgM2: 16, notes: 'Verificar estado de la teja antes de instalar. Usar tornillos autoperforantes con neopreno.' },
+  teja_zinc:     { label: 'Teja zinc / acero galvanizado', mountingType: 'Gancho S o grapa directa', weightKgM2: 5, notes: 'Estructura ligera. Protección anticorrosión en puntos de fijación.' },
+  teja_barro:    { label: 'Teja de barro / colonial', mountingType: 'Gancho de teja + perfil', weightKgM2: 42, notes: 'Requiere revisión estructural. Teja frágil — no pisar. Considerar refuerzo de pares.' },
+  concreto:      { label: 'Losa de concreto (plana)', mountingType: 'Lastrado o anclaje químico', weightKgM2: null, notes: 'Impermeabilizar perforaciones si se ancla. Opción lastrado evita perforaciones.' },
+  lamina_acero:  { label: 'Lámina acero / cubierta industrial', mountingType: 'Grapa trapecio o gancho', weightKgM2: 8, notes: 'Verificar perfil (trapezoidal, ondulada). Carga de viento calculada según NSR-10.' },
+  madera:        { label: 'Estructura de madera', mountingType: 'Riel aluminio + tornillo lag', weightKgM2: 12, notes: 'Revisar estado de vigas y correas. Tratar la madera con sellante en puntos de fijación.' },
+  membrana_pvc:  { label: 'Membrana impermeabilizante (PVC/TPO)', mountingType: 'Lastrado pedestal', weightKgM2: null, notes: 'No perforar. Sistema de pedestales regulables con lastrado en zonas sin viento extremo.' },
+  otro:          { label: 'Otro / no aplica', mountingType: 'Por definir', weightKgM2: null, notes: 'El instalador evaluará el tipo de montaje en visita técnica.' },
+};
+
 // ==================== CALCULATIONS ====================
 export const fmt = n => new Intl.NumberFormat('es-CO').format(Math.round(n));
 export const fmtCOP = n => `$${fmt(n)}`;
