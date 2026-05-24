@@ -243,7 +243,10 @@ function AppShell() {
         />
       )}
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
-      {/* view=proveedor is now full-page in App() — not rendered inside the shell */}
+      {/* Render inline en el shell para que el tab "Proveedores" de la navbar
+          muestre algo. La versión full-page (con navbar/footer ocultos) se sigue
+          activando cuando hay token de sesión: /?view=proveedor&token=UUID. */}
+      {view === 'proveedor' && <SupplierPortal />}
       {view === 'backoffice' && hydrated && (
         adminAuth
           ? <BackOffice
