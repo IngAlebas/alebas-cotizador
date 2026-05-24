@@ -265,13 +265,15 @@ describe('calcBudget', () => {
     expect(budget.tot).toBe(budget.sA + budget.sB);
   });
 
-  it('transport is included in bBase but IVA is applied on all of bBase including transport', () => {
+  it('transport is included in bBase but IVA is NOT applied on transport (carrier prices ya vienen con IVA)', () => {
     const transport = 500000;
     const budget = calcBudget(sys, mockPanel, mockInverter, null, 0, mockPricing, transport);
     expect(budget.transport).toBe(transport);
-    expect(budget.bBase).toBeGreaterThan(0);
-    // The budget includes transport in bBase which has IVA applied
-    expect(budget.iva).toBe(Math.round(budget.bBase * (mockPricing.iva / 100)));
+    expect(budget.bBase).toBeGreaterThan(transport);
+    // bBase = servicios gravables + transporte (bruto, con IVA propio del transportador)
+    // iva = solo sobre la porción gravable (servicios) → NO duplica el IVA del flete
+    const ivaBaseGravable = budget.bBase - transport;
+    expect(budget.iva).toBe(Math.round(ivaBaseGravable * (mockPricing.iva / 100)));
   });
 
   it('ivaAhorrado ≈ sA × 0.19 (IVA on equipment)', () => {

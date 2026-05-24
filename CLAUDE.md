@@ -1,11 +1,10 @@
 # SOLARHUB — Handoff Claude Chat → Claude Code
 
-> **Estado verificado:** 24 mayo 2026 — Sesión 2 completada (PR #164 draft abierto con 29+ commits; PRs #159, #161, #163 mergeados)
+> **Estado verificado:** 24 mayo 2026 — Sesión 3 completada (PRs #164, #165 mergeados a main)
 > **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`
 > **Versión:** v1.0.0 (tag)
 > **Deploy:** `solar-hub.co` via Vercel (auto-deploy en push a main)
 > **PRs abiertos:**
-> - [#164](https://github.com/IngAlebas/alebas-cotizador/pull/164) — rama `claude/apply-ai-recommendations-qc5TD` — **PR principal activo** (29 commits; marketplace, transporte, memoria técnica, CI, seguridad, matching, reviews, credenciales RETIE)
 > - [#162](https://github.com/IngAlebas/alebas-cotizador/pull/162) — admin auth server-side (bloqueado por infra n8n — ver `DEPLOY-ADMIN-AUTH.md`)
 
 ---
@@ -388,6 +387,26 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 ---
 
 ## Histórico (no requiere acción)
+
+### Sesión 2026-05-24 — Sesión 3 — Fix regresión estimador de techo (PR #165 mergeado)
+
+**Problema identificado:** screenshot del usuario mostraba que el campo de dirección aceptaba texto libre sin autocomplete y el mapa interactivo de techo nunca aparecía.
+
+**Root cause:** `src/services/places.js` y `src/components/InteractiveRoofMap.jsx` ya existían completamente implementados pero **nunca se importaron en `Quoter.jsx`**.
+
+**Fix (`fix/quoter-roof-autocomplete`, PR #165):**
+- Import `autocompleteAddress`, `placesConfigured`, `newPlacesSessionToken` desde `services/places`
+- Import `InteractiveRoofMap` componente
+- State: `placesSuggestions`, `showSuggestions`, `placesSessionRef`
+- `useEffect` debounced 350ms → llama `/webhook/places-autocomplete` cuando el usuario tipea ≥3 chars
+- Dropdown sugerencias: `mainText` (negrita) + `secondaryText` (gris), `onMouseDown` → `onLookupRoof(addr)`
+- `onLookupRoof(overrideQuery)`: acepta dirección override desde sugerencia o por query actual
+- `onMapPinMove(lat, lon)`: handler para pin arrastrable → re-estima área del techo por coordenadas
+- `<InteractiveRoofMap>` renderizado cuando `f.lat && f.lon` disponibles post-lookup
+
+**CI:** build ✅ + Vercel preview ✅ → mergeado a main (commit `46592474`)
+
+---
 
 ### Sesión 2026-05-24 — Sesión 2 — Marketplace B2B + transporte + seguridad + credenciales RETIE (branch `apply-ai-recommendations-qc5TD`, PR #164)
 

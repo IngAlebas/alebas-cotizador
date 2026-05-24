@@ -12,6 +12,8 @@ export const C = {
   oBorder: '#FF8C0030',                               // border naranja
   text:   '#e8f4f7', muted: '#7a9eaa',
   green:  '#4ade80', red: '#f87171',
+  // FluxAI brand (plataforma de monitoreo integrada)
+  fluxGreen: '#10B981', fluxBlue: '#3B82F6',
 };
 
 // ==================== OPERATORS DE RED (OR) ====================
@@ -68,8 +70,18 @@ export function tariffCU(op, voltageLevel = 'N1') {
   return splitCU(op, voltageLevel).total;
 }
 
-// Precio de remuneración de excedentes AGPE Menor = CU − G (CREG 174/2021 art. 7).
-// Incluye T + D + Cv + PR + R; excluye generación.
+// Precio de remuneración del excedente exportado a la red bajo CREG 174/2021
+// art. 23 (AGPE Tipo 1, ≤ 100 kW). Corresponde a CU − G del comercializador:
+// componentes T + D + Cv + PR + R de Res. CREG 119/2007. Excluye generación.
+//
+// IMPORTANTE — NO escalar por estrato. El subsidio/contribución (factor ESTRATO)
+// solo aplica sobre la energía IMPORTADA neta del periodo (consumo facturado),
+// nunca sobre el crédito del kWh exportado:
+//   - E1/E2/E3 con factor < 1: subsidiar al usuario por VENDER energía no está
+//     contemplado en Ley 142/1994 art. 99.6 (subsidio cubre consumo ≤ CBS).
+//   - E5/E6 con factor 1.20: cobrar contribución sobre un crédito que el
+//     comercializador paga al usuario es regulatoriamente incoherente.
+// Refs: CREG 174/2021 art. 23 + Concepto CREG 6730/2020 + Ley 142/1994 art. 99.6.
 export function excedentePriceFor(op, voltageLevel = 'N1') {
   const c = splitCU(op, voltageLevel);
   return c.T + c.D + c.Cv + c.PR + c.R;
@@ -735,6 +747,20 @@ export const DEPTS = [
   'Santander','Sucre','Tolima','Valle del Cauca','Vaupés','Vichada'
 ];
 
+// Materiales de cubierta — tipo de montaje recomendado, peso y notas RETIE/estructurales.
+// `risk` (bajo|medio|crítico|evaluar) alimenta la advertencia NSR-10 en Quoter; `structuralRisk`
+// es flag derivado para el cue visual ⚠.
+export const ROOF_MATERIALS = {
+  teja_eternit:  { label: 'Teja fibrocemento (Eternit)',      mountingType: 'Perfil aluminio gancho',       weightKgM2: 16,   risk: 'medio',   structuralRisk: false, icon: '▦', notes: 'Verificar estado de la teja antes de instalar. Usar tornillos autoperforantes con neopreno. Eternit frágil — no pisar.' },
+  teja_zinc:     { label: 'Teja zinc / acero galvanizado',    mountingType: 'Gancho S o grapa directa',     weightKgM2: 5,    risk: 'bajo',    structuralRisk: false, icon: '⌇', notes: 'Estructura ligera. Protección anticorrosión en puntos de fijación.' },
+  teja_barro:    { label: 'Teja de barro / colonial',         mountingType: 'Gancho de teja + perfil',      weightKgM2: 42,   risk: 'crítico', structuralRisk: true,  icon: '◇', notes: 'Requiere revisión estructural. Teja frágil — no pisar. Considerar refuerzo de pares. NSR-10 obliga cálculo por ingeniero civil.' },
+  concreto:      { label: 'Losa de concreto (plana)',         mountingType: 'Lastrado o anclaje químico',   weightKgM2: null, risk: 'bajo',    structuralRisk: false, icon: '▭', notes: 'Impermeabilizar perforaciones si se ancla. Opción lastrado evita perforaciones.' },
+  lamina_acero:  { label: 'Lámina acero / cubierta industrial', mountingType: 'Grapa trapecio o gancho',    weightKgM2: 8,    risk: 'medio',   structuralRisk: false, icon: '⌒', notes: 'Verificar perfil (trapezoidal, ondulada). Carga de viento calculada según NSR-10. Lámina <0.7 mm requiere refuerzo.' },
+  madera:        { label: 'Estructura de madera',             mountingType: 'Riel aluminio + tornillo lag', weightKgM2: 12,   risk: 'medio',   structuralRisk: false, icon: '▥', notes: 'Revisar estado de vigas y correas. Tratar la madera con sellante en puntos de fijación.' },
+  membrana_pvc:  { label: 'Membrana impermeabilizante (PVC/TPO)', mountingType: 'Lastrado pedestal',        weightKgM2: null, risk: 'bajo',    structuralRisk: false, icon: '─', notes: 'No perforar. Sistema de pedestales regulables con lastrado en zonas sin viento extremo.' },
+  otro:          { label: 'Otro / no aplica',                 mountingType: 'Por definir',                  weightKgM2: null, risk: 'evaluar', structuralRisk: false, icon: '○', notes: 'El instalador evaluará el tipo de montaje en visita técnica.' },
+};
+
 // ==================== CALCULATIONS ====================
 export const fmt = n => new Intl.NumberFormat('es-CO').format(Math.round(n));
 export const fmtCOP = n => `$${fmt(n)}`;
@@ -885,15 +911,20 @@ export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIE
 
 export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   const pC = sys.numPanels * panel.price;
-  const iC = inv.price;
+  const iC = inv ? inv.price : 0;
   const bC = bUnit && bQty ? bQty * bUnit.price : 0;
   const sA = pC + iC + bC;
   const st = sys.numPanels * pricing.structure_per_panel;
   const ca = sys.actKwp * pricing.cabling_per_kwp;
   const pt = sys.actKwp * pricing.protections_per_kwp;
   const ins = sys.actKwp * pricing.installation_per_kwp;
-  const bBase = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites + (transport || 0);
-  const iva = Math.round(bBase * (pricing.iva / 100));
+  // Las tarifas de las transportadoras (CARRIERS) están cotizadas BRUTAS con IVA
+  // incluido — el cliente final paga el precio mostrado al transportador. No se
+  // aplica IVA otra vez sobre `transport`, solo sobre los servicios propios
+  // (estructura, cableado, protecciones, instalación, ingeniería, trámites).
+  const ivaBaseGravable = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites;
+  const iva = Math.round(ivaBaseGravable * (pricing.iva / 100));
+  const bBase = ivaBaseGravable + (transport || 0);
   const sB = bBase + iva;
   const tot = sA + sB;
   return { pC, iC, bC, sA, st, ca, pt, ins, eng: pricing.engineering, emsa: pricing.emsa_tramites, transport: transport || 0, bBase, iva, sB, tot };

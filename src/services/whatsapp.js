@@ -1,4 +1,9 @@
-import { n8nPost } from './n8n';
+import { n8nPost, n8nConfigured } from './n8n';
+
+// True cuando hay un n8n base configurado — si es false, la verificación OTP
+// no se puede ejecutar y el flujo cae a modo dev-bypass de forma explícita
+// (no silenciosa por cualquier excepción).
+export const whatsappConfigured = () => n8nConfigured();
 
 // Normaliza número colombiano a formato de display +57 XXX XXX XXXX
 export function formatColombianPhone(raw) {
