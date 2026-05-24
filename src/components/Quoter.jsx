@@ -1638,7 +1638,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             const area = parseFloat(f.availableArea) || 0;
             const monthly = parseFloat(f.monthlyKwh) || 0;
             if (area > 0 && monthly > 0 && panel?.wp) {
-              const reqKwp = (monthly / 30) / (psh * 0.78);
+              const reqKwp = (monthly / 30) / (psh * regionalPR);
               const reqArea = Math.ceil(reqKwp * 1000 / panel.wp) * m2PerPanel;
               const pct = Math.min(Math.round((area / reqArea) * 100), 999);
               const enough = pct >= 100;
@@ -2615,7 +2615,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           )}
         </div>
         {f.monthlyKwh && (() => {
-          const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78);
+          const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * regionalPR);
           const reqPanels = Math.ceil(reqKwp * 1000 / panel.wp);
           const reqArea = reqPanels * m2PerPanel;
           const area = parseFloat(f.availableArea);
@@ -4534,7 +4534,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             }
           }
           // ════════════ PACK 2 — Soiling, degradación, lifecycle ════════════
-          obs.push({ type: 'info', title: 'Pérdidas reales no mostradas en cobertura', text: `El cálculo aplica PR (Performance Ratio) 0.78 que ya incluye pérdidas eléctricas/térmicas/inversor. PERO no incluye: SOILING (3-8% año por suciedad acumulada — limpiar 2 veces/año recupera 90%) ni DEGRADACIÓN del panel (~0.5%/año, así pierde ~12% en 25 años). Considera estos al proyectar ahorros a 25 años.` });
+          obs.push({ type: 'info', title: 'Pérdidas reales no mostradas en cobertura', text: `El cálculo aplica PR (Performance Ratio) ${regionalPR.toFixed(2)} para ${dest?.dept || 'tu región'} (ajuste regional sobre el 0.78 nacional). Ya incluye pérdidas eléctricas/térmicas/inversor. PERO no incluye: SOILING (3-8% año por suciedad acumulada — limpiar 2 veces/año recupera 90%) ni DEGRADACIÓN del panel (~0.5%/año, así pierde ~12% en 25 años). Considera estos al proyectar ahorros a 25 años.` });
           if (res.inv && bgt?.tot > 0) {
             obs.push({ type: 'info', title: 'Reemplazo de inversor a los 10-12 años', text: `Vida útil típica del inversor: 10-15 años (paneles 25-30). Reservar el costo de reemplazo en el ROI a 25 años. Inversor actual ${res.inv.brand} ${res.inv.model} de ${res.inv.kw} kW — costo aproximado de reemplazo ~10-15% del valor de equipos en pesos del año 10.` });
           }
@@ -5224,14 +5224,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <tr>
                   <td><strong>2. Recurso solar</strong></td>
                   <td>
-                    PSH (Peak Sun Hours) sitio: <strong>{psh} h/día</strong> · Performance Ratio (PR): <strong>0.78</strong> (pérdidas térmicas + cableado + inversor)
+                    PSH (Peak Sun Hours) sitio: <strong>{psh} h/día</strong> · Performance Ratio (PR): <strong>{regionalPR.toFixed(2)}</strong> ({dest?.dept || 'región'} — pérdidas térmicas + cableado + inversor)
                     {f.googleSolarEstimate?.specificYieldKwhPerKwpYear && <> · Yield real Google: <strong>{f.googleSolarEstimate.specificYieldKwhPerKwpYear} kWh/kWp·año</strong></>}
                   </td>
                 </tr>
                 <tr>
                   <td><strong>3. Cálculo kWp</strong></td>
                   <td>
-                    kWp = consumo_diario / (PSH × PR) = {(Number(f.monthlyKwh || 0) / 30).toFixed(1)} / ({psh} × 0.78) = <strong>{(Number(f.monthlyKwh || 0) / 30 / (psh * 0.78)).toFixed(2)} kWp</strong> teórico → ajustado a yield real: <strong>{res.actKwp} kWp</strong>
+                    kWp = consumo_diario / (PSH × PR) = {(Number(f.monthlyKwh || 0) / 30).toFixed(1)} / ({psh} × {regionalPR.toFixed(2)}) = <strong>{(Number(f.monthlyKwh || 0) / 30 / (psh * regionalPR)).toFixed(2)} kWp</strong> teórico → ajustado a yield real: <strong>{res.actKwp} kWp</strong>
                   </td>
                 </tr>
                 <tr>

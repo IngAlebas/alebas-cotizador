@@ -901,15 +901,20 @@ export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIE
 
 export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   const pC = sys.numPanels * panel.price;
-  const iC = inv.price;
+  const iC = inv ? inv.price : 0;
   const bC = bUnit && bQty ? bQty * bUnit.price : 0;
   const sA = pC + iC + bC;
   const st = sys.numPanels * pricing.structure_per_panel;
   const ca = sys.actKwp * pricing.cabling_per_kwp;
   const pt = sys.actKwp * pricing.protections_per_kwp;
   const ins = sys.actKwp * pricing.installation_per_kwp;
-  const bBase = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites + (transport || 0);
-  const iva = Math.round(bBase * (pricing.iva / 100));
+  // Las tarifas de las transportadoras (CARRIERS) están cotizadas BRUTAS con IVA
+  // incluido — el cliente final paga el precio mostrado al transportador. No se
+  // aplica IVA otra vez sobre `transport`, solo sobre los servicios propios
+  // (estructura, cableado, protecciones, instalación, ingeniería, trámites).
+  const ivaBaseGravable = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites;
+  const iva = Math.round(ivaBaseGravable * (pricing.iva / 100));
+  const bBase = ivaBaseGravable + (transport || 0);
   const sB = bBase + iva;
   const tot = sA + sB;
   return { pC, iC, bC, sA, st, ca, pt, ins, eng: pricing.engineering, emsa: pricing.emsa_tramites, transport: transport || 0, bBase, iva, sB, tot };
