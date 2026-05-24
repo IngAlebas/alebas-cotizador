@@ -91,7 +91,7 @@
 - [ ] Verificar cascade: desactivar Groq → cae a Gemini; desactivar ambos → cae a Claude
 
 ### 0.5 Limpiar deuda técnica inmediata
-- [ ] Eliminar carpeta `api/` (DEPRECATED desde 2026-04-20): auditar logs Railway → `rm -rf api/` → remover bloque dinámico de `server.js` `[RV-4]`
+- [x] Eliminar carpeta `api/` (DEPRECATED desde 2026-04-20): auditar logs Railway → `rm -rf api/` → remover bloque dinámico de `server.js` `[RV-4]`
 - [ ] `solar-cache.json`: verificar que `schema.sql` tiene `expires_at DEFAULT NOW() + INTERVAL '90 days'`; si no, pasar valor explícito en INSERT `[RV-5]`
 - [ ] `solar-cache.json`: agregar logging cuando `continueOnFail` oculta un error real de Postgres (hoy un MISS por error de DB es indistinguible de un MISS normal → golpea Google Solar sin control) `[RV-6]`
 - [x] Fix logout: `localStorage.removeItem('sh:admin')` en lugar de `storage.set('sh:admin', '0')` `[RV-7]`
@@ -148,9 +148,9 @@
 - [x] ROI ajustado con degradación incluida (`roiWithDegradation`)
 
 ### 1.5 Compliance CREG 174/2021 + 175/2021 `[AU-CREG]`
-- [ ] Diferenciación clara AGPE (≤100 kW) vs AGGE (>100 kW) en resultados
-- [ ] Informar trámite con OR según tipo (AGPE: ~30 días hábiles, AGGE: proceso más largo)
-- [ ] CREG 030/2018: modelar net metering / créditos de energía con resolución mensual
+- [x] Diferenciación clara AGPE (≤100 kW) vs AGGE (>100 kW) en resultados — badge AGPE Menor/Mayor con Art.22/23 CREG 174/2021
+- [x] Informar trámite con OR según tipo (AGPE: ~30 días hábiles, AGGE: proceso más largo)
+- [x] CREG 030/2018: modelar net metering / créditos de energía con resolución mensual — `calcMonthlyNetMetering()` en constants.js + UI Quoter
 - [ ] Indicar cuándo aplica registro UPME según capacidad
 - [ ] Advertir sobre requisitos RETIE 2013 + RETILAP en el diseño entregado
 
@@ -172,8 +172,8 @@
 - [ ] Política de retención: TTL para datos de leads (ej. 2 años) con proceso de borrado bajo solicitud
 
 ### 2.2 Rate-limiting y anti-bot `[RV-SEC]`
-- [ ] `validate-contact.json`: rate-limit por IP (N=20/hora)
-- [ ] `save-quote.json`: límite N=5 cotizaciones/hora por IP
+- [x] `validate-contact.json`: rate-limit por IP (N=20/hora) — Postgres COUNT últimas cotizaciones
+- [x] `save-quote.json`: límite N=5 cotizaciones/hora por IP — Postgres COUNT + 429
 - [ ] Considerar Cloudflare Turnstile en formularios públicos (Quoter, InstallerReg, SupplierPortal)
 - [ ] Timestamp de carga de página en payload: validar `submitTime - pageLoadTime > 3s` como señal anti-bot
 
@@ -183,9 +183,9 @@
 - [ ] Comparación de token en constant-time (evitar timing attacks)
 
 ### 2.4 Formularios con validación client-side `[RV-UX]`
-- [ ] Helper compartido de validación email/teléfono para InstallerReg + SupplierPortal
-- [ ] Disparar `validate-contact` desde InstallerReg y SupplierPortal antes del submit final
-- [ ] Mostrar lista de campos faltantes en rojo (hoy fallan silenciosamente con opacity 0.4)
+- [x] Helper compartido de validación email/teléfono para InstallerReg + SupplierPortal — `src/services/validation.js` (validatePhone/Email/NIT/formatPhoneCO/validateContactForm)
+- [x] Disparar `validate-contact` desde InstallerReg — inline errors en rojo antes del submit
+- [ ] Mostrar lista de campos faltantes en rojo en SupplierPortal (hoy falla silenciosamente)
 - [ ] Inputs numéricos: `min="0"` y `max` relevante en todos los formularios
 
 ### 2.5 SupplierPortal: PDFs a storage externo `[RV-SEC-3]`
@@ -193,17 +193,17 @@
 - [ ] Un solo PDF de 4 MB → 5.4 MB en base64 puede saturar la quota de localStorage (5–10 MB total)
 
 ### 2.6 Hidratación y race conditions UI `[RV-RACE]`
-- [ ] Flag `hydrated` en App.jsx: bloquear inputs hasta que `useEffect` de localStorage termine
+- [x] Flag `hydrated` en App.jsx: bloquear backoffice hasta que `useEffect` de localStorage termine
 - [ ] Flag `loadsTouched`: cancelar fetch remoto de cargas si el admin ya empezó a editar el catálogo
-- [ ] `gMerge` anti-tombstone: `al:panels:tombstones` en localStorage para que panels borrados no reaparezcan al re-hidratarse con `DEFAULT_PANELS`
+- [x] `gMerge` anti-tombstone: `al:panels:tombstones` en localStorage para que panels borrados no reaparezcan al re-hidratarse con `DEFAULT_PANELS`
 
 ---
 
 ## FASE 3 — Mes 2: madurez técnica y observabilidad
 
 ### 3.1 CI/CD real `[AU-OPS-1]`
-- [ ] GitHub Actions workflow: lint + build en cada PR (actualmente 0 checks automáticos)
-- [ ] Tests unitarios de funciones de cálculo (`calcSystem`, `calcBudget`, `selectCompatibleInverter`)
+- [x] GitHub Actions workflow: lint + build en cada PR — `.github/workflows/ci.yml` Node 20
+- [x] Tests unitarios de funciones de cálculo (`calcSystem`, `calcBudget`, `selectCompatibleInverter`) — 95 tests en `src/__tests__/constants.test.js`
 - [ ] Ambiente de staging: rama `staging` → deploy Vercel preview fijo con datos de prueba
 - [ ] Estrategia de rollback: tags de release + revert documentado, o feature flags para cambios de riesgo
 
@@ -213,7 +213,7 @@
 - [ ] Tests E2E básicos (Playwright): happy path cotizador completo + submit + email confirmación
 
 ### 3.3 Observabilidad `[AU-OPS-3]`
-- [ ] Integrar Sentry (o Logtail) para errores frontend en producción
+- [x] Integrar Sentry para errores frontend en producción — init en `src/index.js`, activar con `REACT_APP_SENTRY_DSN` en Vercel
 - [ ] n8n: tabla `n8n_executions_log` — workflow + duración + estado + error
 - [ ] Alertas: notificación si cascade IA falla los 3 proveedores, si cache hit-rate < 30%, si save-quote falla >5% de intentos
 - [ ] Dashboard métricas: cotizaciones/día, tasa conversión lead→ganada, usuarios activos, departamentos con más demanda
@@ -233,17 +233,26 @@
 ## FASE 4 — Mes 2–4: marketplace real
 
 ### 4.1 Matching instalador ↔ lead `[AU-MKT-1]`
-- [ ] Algoritmo de matching: departamento + capacidad certificada (kWp/mes) + RETIE vigente + rating
-- [ ] `InstallerReg`: agregar campos de cobertura geográfica, capacidad máxima (kWp/mes), tipos de sistema que instala
-- [ ] Tabla `installer_matches` en Postgres: `(quote_id, installer_id, score, status, assigned_at)`
-- [ ] Notificación email al instalador cuando hay lead nuevo en su zona (workflow n8n)
-- [ ] BackOffice: vista de asignación + seguimiento de leads por instalador
+- [x] Algoritmo de matching: score = rating×50% + disponibilidad×40% + experiencia×10% — `n8n/matching-installer.json`
+- [x] Tabla `installer_matches` en Postgres + columnas `rating_avg`, `rating_count`, `coverage_depts`, `max_kwp_month`, `active_jobs` en `technicians`
+- [x] BackOffice: botón "Sugerir instaladores" → top-3 candidatos con score + "Asignar"
+- [ ] `InstallerReg`: agregar campos de cobertura geográfica, capacidad máxima (kWp/mes), tipos de sistema (pendiente)
+- [ ] Notificación email al instalador cuando hay lead nuevo en su zona (workflow n8n — pendiente)
+
+### 4.1b Validación credenciales RETIE `[nuevo]`
+- [x] `InstallerReg.jsx`: selector tipo instalador (Técnico/Ingeniero) con campos condicionales
+- [x] Técnico: upload certificado CONTE vigente + hoja de vida
+- [x] Ingeniero: upload diploma + hoja de vida + tarjeta profesional COPNIA
+- [x] Tabla `installer_documents` + columnas `installer_type`, `copnia_number`, `conte_number`, `credential_status`, `verified_at` en `technicians`
+- [x] Workflow `n8n/installer-credentials.json` — SUBMIT/GET/REVIEW
+- [x] BackOffice: `CredReviewPanel` con visor docs inline, Aprobar/Rechazar + badge estado
 
 ### 4.2 Reviews y reputación `[AU-MKT-2]`
-- [ ] Tabla `installer_reviews`: `(installer_id, quote_id, rating 1–5, comment, verified, created_at)`
-- [ ] Solo clientes con cotización en estado `ganada` + instalación confirmada pueden dejar review
-- [ ] `QuoteTracking.jsx`: formulario de review post-instalación (aparece 30 días después de `ganada`)
-- [ ] Perfil público del instalador: rating promedio, número de instalaciones, departamentos cubiertos
+- [x] Tabla `installer_reviews` con UNIQUE (quote_id, installer_id) + recomputo automático rating_avg/count
+- [x] `QuoteTracking.jsx`: formulario de calificación con estrellas — visible cuando `status=ganada && technician_id`
+- [x] Workflow `n8n/installer-review.json` — GET (con distribución 1-5) + POST (actualiza rating en technicians)
+- [ ] Perfil público del instalador: página dedicada con historial de reviews (pendiente)
+- [ ] Solo mostrar review form si instalación confirmada hace >7 días (pendiente)
 
 ### 4.3 Contratos digitales `[AU-MKT-3]`
 - [ ] Integrar firma electrónica certificada (Certicámara Colombia / Firma Virtual / DocuSign)
@@ -255,6 +264,22 @@
 - [ ] Definir modelo de negocio: ¿comisión por lead? ¿porcentaje de la instalación? ¿suscripción instalador?
 - [ ] Integrar PSP colombiano (PayU / ePayco) para pagos en COP
 - [ ] Flujo de escrow: 50% al firmar contrato, 50% al completar instalación con foto + firma del cliente
+
+### 4.5 Portal Proveedor B2B (Marketplace on-demand) `[nuevo]` ✅
+- [x] `src/components/SupplierPortal.jsx` — portal standalone full-page (~55KB): login email/token, 5 tabs
+- [x] Tab Dashboard: métricas en tiempo real, alertas stock crítico (qty<5), últimos 5 pedidos
+- [x] Tab Inventario: CRUD equipos inline, filas críticas ámbar, formulario agregar con campo condicional Wp/kW/kWh
+- [x] Tab Pedidos: timeline 7 estados, desglose financiero (bruto→-10% SH→neto), botones contextuales, código guía
+- [x] Tab Comisiones: historial por PO con pill pendiente/pagada
+- [x] Tab Empresa: perfil, cuenta bancaria, token de acceso copiable
+- [x] `src/services/supplier.js` — PLATFORM_FEE_EQUIPMENT_PCT=10, TECH_EARNINGS_PCT=80, SH_INSTALL_FEE_PCT=20
+- [x] `n8n/supplier-auth.json` — JWT 7d (bcryptjs + jsonwebtoken), email/pass o token URL
+- [x] `n8n/supplier-stock.json` — CRUD inventario (GET/POST/PATCH) con JWT
+- [x] `n8n/supplier-po.json` — GET/POST_CREATE/PATCH_STATUS; comisiones calculadas server-side
+- [x] `n8n/supplier-analytics.json` — 3 queries paralelas: métricas, comisiones, stock crítico
+- [x] Schema: `suppliers`, `supplier_stock`, `purchase_orders` (po_seq PO-2026-XXXX), `po_items`, `commissions`
+- [x] BackOffice: sección "Crear Orden de Compra" + panel "Comisiones SolarHub estimadas"
+- [ ] Setup requerido: ejecutar schema.sql, importar 4 workflows, agregar JWT_SECRET en Railway
 
 ---
 
@@ -473,3 +498,4 @@
 | 2026-05-24 | v1.3 | Agrega Fase 7 completa — WhatsApp: setup Meta Cloud API, 7 plantillas, OTP por WhatsApp en validación de cliente, notificaciones automáticas por cambio de estado, chatbot conversacional con IA cascade, canal interno para admin/instalador, compliance Habeas Data + opt-out, KPIs esperados |
 | 2026-05-24 | v1.4 | Marca implementados: sw.js (self.clients + network-first manifest/logo), logout fix, dedupe_key idempotencia save-quote, motor fiscal Ley 1715 (IVA ahorrado + deducción renta 50% + depreciación acelerada), degradación 0.5%/año 25 años, cobertura >100% fix, Habeas Data checkbox (Ley 1581/2012) |
 | 2026-05-24 | v1.5 | Fase 6 avanzada: DEPT_PR 33 departamentos + getPR() reemplaza 0.78 constante; aranceles Ley 1715 (5% estimado); UnifileGenerator.jsx RETIE/IEC + layout cliente; TechnicianPortal.jsx + BackOffice asignación técnico + kanban pipeline + CSV export; QuoteTracking layout cliente lazy-load; pdfGenerator.js 15 páginas completo con unifilar, gráfico 25 años, motor fiscal, normativa; string design Voc-frío/Vmp-caliente NEC 690.7; n8n assign-technician + tech-review; schema technicians |
+| 2026-05-24 | v1.6 | Sesión marketplace + calidad + seguridad: (1) Portal proveedor B2B completo (SupplierPortal.jsx reescritura ~55KB, supplier.js, App.jsx full-page, 4 workflows n8n supplier-*); (2) +75 ciudades transporte, peso volumétrico, factor km zona, badge AGPE; (3) Memoria Técnica Eléctrica RETIE/CREG automática (memoriaGenerator.js ~1541 líneas, 10 secciones); (4) 95 tests unitarios constants.js; (5) Matching instalador-lead (algoritmo score + tabla installer_matches + BackOffice); (6) Reviews instaladores (installer_reviews, QuoteTracking stars, rating_avg); (7) Validación credenciales RETIE: InstallerReg.jsx selector Ingeniero(diploma+COPNIA)/Técnico(CONTE), upload docs, BackOffice review panel; (8) GitHub Actions CI; (9) Sentry init; (10) api/ deprecated eliminada; (11) Net metering CREG 030/2018 mensual (calcMonthlyNetMetering); (12) DEPT_SOILING 32 deptos + getSoiling() en calcSystem; (13) Rate-limit Postgres save-quote(5/h) + validate-contact(20/h); (14) JWT guard list-quotes; (15) src/services/validation.js compartido; (16) Schema: installer_documents, installer_matches, installer_reviews, suppliers, supplier_stock, purchase_orders, po_items, commissions |

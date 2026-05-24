@@ -1,10 +1,12 @@
 # SOLARHUB — Handoff Claude Chat → Claude Code
 
-> **Estado verificado:** 24 mayo 2026 (PRs #159, #161, #163 mergeados; branch `apply-ai-recommendations-qc5TD` pendiente de merge)
+> **Estado verificado:** 24 mayo 2026 — Sesión 2 completada (PR #164 draft abierto con 29+ commits; PRs #159, #161, #163 mergeados)
 > **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`
 > **Versión:** v1.0.0 (tag)
 > **Deploy:** `solar-hub.co` via Vercel (auto-deploy en push a main)
-> **PR abierto pendiente:** [#162](https://github.com/IngAlebas/alebas-cotizador/pull/162) — admin auth server-side (bloqueado por infra n8n).
+> **PRs abiertos:**
+> - [#164](https://github.com/IngAlebas/alebas-cotizador/pull/164) — rama `claude/apply-ai-recommendations-qc5TD` — **PR principal activo** (29 commits; marketplace, transporte, memoria técnica, CI, seguridad, matching, reviews, credenciales RETIE)
+> - [#162](https://github.com/IngAlebas/alebas-cotizador/pull/162) — admin auth server-side (bloqueado por infra n8n — ver `DEPLOY-ADMIN-AUTH.md`)
 
 ---
 
@@ -387,6 +389,64 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 
 ## Histórico (no requiere acción)
 
+### Sesión 2026-05-24 — Sesión 2 — Marketplace B2B + transporte + seguridad + credenciales RETIE (branch `apply-ai-recommendations-qc5TD`, PR #164)
+
+**Marketplace B2B Proveedor (on-demand tipo Uber):**
+- `SupplierPortal.jsx` reescritura completa (~55KB): login email/token, 5 tabs (Dashboard/Inventario/Pedidos/Comisiones/Empresa), timeline 7 estados, desglose comisiones 10%/20%/80%
+- `src/services/supplier.js`: constantes comisiones + funciones API
+- `App.jsx`: full-page render `?view=proveedor` o `?view=proveedor&token=UUID`
+- 4 workflows n8n: `supplier-auth.json` (JWT 7d), `supplier-stock.json` (CRUD), `supplier-po.json` (PO lifecycle + comisiones server-side), `supplier-analytics.json` (métricas paralelas)
+- Schema: `suppliers`, `supplier_stock`, `purchase_orders` (PO-2026-XXXX), `po_items`, `commissions`
+- BackOffice: "Crear Orden de Compra" + panel "Comisiones SolarHub estimadas"
+
+**Transporte de precisión:**
+- +75 ciudades (total ~158), `getZoneKmFactor()` interpolación ±25% por zona, `calcDimensionalWeight()`, `getBillableWeight()`
+- Badge AGPE Menor/Mayor (CREG 174/2021 Art.22/23) en Quoter
+
+**Memoria Técnica Eléctrica RETIE/CREG:**
+- `src/services/memoriaGenerator.js` (~1541 líneas): documento formal 10 secciones para OR, descargable como HTML/PDF
+
+**95 tests unitarios:**
+- `src/__tests__/constants.test.js`: cubre calcSystem, calcBudget, validateLayout, pickBestTransport, etc.
+
+**Matching instalador-lead:**
+- `n8n/matching-installer.json`: score rating×50% + carga×40% + experiencia×10%, tabla `installer_matches`
+- BackOffice: "Sugerir instaladores" → top-3 con score
+
+**Reviews de instaladores:**
+- `n8n/installer-review.json`: GET (distribución 1-5) + POST (recomputa rating_avg en technicians)
+- `QuoteTracking.jsx`: formulario stars visible cuando `status=ganada`
+- Tabla `installer_reviews` con UNIQUE (quote_id, installer_id)
+
+**Validación credenciales RETIE (Ingeniero vs Técnico):**
+- `InstallerReg.jsx`: selector tipo instalador + campos condicionales COPNIA/CONTE + upload documentos (PDF/JPG/PNG ≤5MB)
+- Técnico: certificado CONTE + hoja de vida; Ingeniero: diploma + hoja de vida + tarjeta profesional COPNIA
+- `n8n/installer-credentials.json`: SUBMIT/GET/REVIEW; tabla `installer_documents`
+- BackOffice: `CredReviewPanel` con visor inline, Aprobar/Rechazar + badge estado
+
+**Calidad de ingeniería:**
+- `.github/workflows/ci.yml`: GitHub Actions build+test automático en cada PR
+- `src/index.js`: Sentry init (activar con `REACT_APP_SENTRY_DSN`)
+- `api/` deprecated eliminada (9 archivos + server.js limpio)
+
+**Motor de cálculo mejorado:**
+- `calcMonthlyNetMetering()`: net metering CREG 030/2018 mensual con créditos a precio bolsa (80% tarifa)
+- `DEPT_SOILING` 32 departamentos + `getSoiling()`: factor soiling en `calcSystem` (Caribe 3-5%, Andina 1-2%, Pacífico 0.5%)
+
+**Seguridad:**
+- Rate-limit Postgres: `save-quote` máx 5/hora/IP, `validate-contact` máx 20/hora/IP → 429
+- JWT guard en `list-quotes.json` admin (token Bearer en header)
+- `src/services/validation.js`: validatePhone/Email/NIT/formatPhoneCO colombianos
+
+**Setup pendiente para activar (Railway):**
+```bash
+psql $DATABASE_URL < n8n/schema.sql   # nuevas tablas marketplace + credentials
+# Importar en n8n UI: installer-credentials, matching-installer, installer-review,
+#   supplier-auth, supplier-stock, supplier-po, supplier-analytics
+# Vercel env: REACT_APP_SENTRY_DSN (opcional)
+# Railway env: JWT_SECRET, NODE_FUNCTION_ALLOW_EXTERNAL=bcryptjs,jsonwebtoken
+```
+
 ### Sesión 2026-05-24 — IA aplicable + cascade + inversor null-safety (branch `apply-ai-recommendations-qc5TD`)
 - **feat(ai)**: Botón "Aplicar mejoras y recalcular" — `applyAiActions()` + `coerceActionValue()` en Quoter. Las acciones IA se aplican al estado y recalculan el sistema.
 - **feat(cascade)**: Groq llama-3.3-70b → Gemini 2.0 Flash → Claude Haiku 4.5 con `attempts[]` logging y `GOOGLE_AI_KEY` como alias de `GEMINI_API_KEY`.
@@ -450,5 +510,5 @@ npm start
 ---
 
 *Claude Chat (claude.ai) — construcción inicial PWA, branding SolarHub, responsive mobile*
-*Claude Code — workflows n8n, API integrations, DEPLOY.md, arquitectura backend, IA cascade*
-*Última actualización: 24 mayo 2026 — IA cascade (Groq→Gemini→Claude) + acciones aplicables + inversor null-safety (branch apply-ai-recommendations-qc5TD). PRs #155-#163 mergeados (BackOffice 4 fases + mapa estabilizado + docs + security). PR #162 (admin auth bcrypt+JWT) abierto a la espera de prep de infra n8n.*
+*Claude Code — workflows n8n, API integrations, DEPLOY.md, arquitectura backend, IA cascade, marketplace B2B*
+*Última actualización: 24 mayo 2026 — Sesión 2: Marketplace B2B proveedores + matching instaladores + reviews + credenciales RETIE (Ingeniero/CONTE) + CI/CD + Sentry + net metering CREG 030 + soiling regional + seguridad rate-limit. PR #164 draft abierto (29 commits). PR #162 (admin auth) pendiente de infra n8n.*
