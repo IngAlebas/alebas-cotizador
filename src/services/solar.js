@@ -58,6 +58,7 @@ async function fetchDirectGoogle({ address, lat, lon }) {
   const sp = data.solarPotential || {};
   const wholeRoof = sp.wholeRoofStats || {};
   const roofSegs = Array.isArray(sp.roofSegmentStats) ? sp.roofSegmentStats : [];
+  const rawPanels = Array.isArray(sp.solarPanels) ? sp.solarPanels : [];
   const configs = Array.isArray(sp.solarPanelConfigs) ? sp.solarPanelConfigs : [];
   // El último config es el que maximiza panelsCount, no el de mejor yield.
   // Usamos el de mayor yearlyEnergyDcKwh para el cross-check con PVWatts.
@@ -86,7 +87,25 @@ async function fetchDirectGoogle({ address, lat, lon }) {
       pitchDegrees: s.pitchDegrees,
       areaMeters2: s.stats?.areaMeters2,
       sunshineHoursPerYear: quantile(s.stats?.sunshineQuantiles, 5),
+      // CRITICAL: Google Solar API devuelve center y boundingBox con
+      // shape {latitude, longitude}. La app espera {lat, lng}.
+      // Transformar acá para que InteractiveRoofMap renderice los
+      // polígonos correctamente. Sin esto, segmentos sin coords →
+      // ningún polígono visible en el mapa (page sin cubiertas).
+      center: s.center ? { lat: Number(s.center.latitude), lng: Number(s.center.longitude) } : null,
+      boundingBox: s.boundingBox && s.boundingBox.sw && s.boundingBox.ne ? {
+        sw: { lat: Number(s.boundingBox.sw.latitude), lng: Number(s.boundingBox.sw.longitude) },
+        ne: { lat: Number(s.boundingBox.ne.latitude), lng: Number(s.boundingBox.ne.longitude) },
+      } : null,
     })),
+    solarPanels: rawPanels.map(p => ({
+      center: p.center ? { lat: Number(p.center.latitude), lng: Number(p.center.longitude) } : null,
+      orientation: p.orientation || 'LANDSCAPE',
+      yearlyEnergyDcKwh: p.yearlyEnergyDcKwh != null ? Number(p.yearlyEnergyDcKwh) : null,
+      segmentIndex: p.segmentIndex != null ? Number(p.segmentIndex) : null,
+    })),
+    panelHeightMeters: sp.panelHeightMeters != null ? Number(sp.panelHeightMeters) : 1.65,
+    panelWidthMeters: sp.panelWidthMeters != null ? Number(sp.panelWidthMeters) : 0.99,
     imagery: data.imageryDate ? {
       imageryDate: data.imageryDate,
       imageryQuality: data.imageryQuality,
@@ -108,8 +127,15 @@ export async function lookupRoof({ address, lat, lon } = {}) {
   let norm;
   if (n8nConfigured()) {
     try {
-      const data = await n8nPost('solar-roof', { address, lat, lon });
-      if (!data || typeof data !== 'object') throw new Error('Respuesta inválida de n8n (solar-roof)');
+      const data = await n8nPost('solar-roof-cached', { address, lat, lon });
+      if (!data || typeof data !== 'object') throw new Error('Servicio de análisis de techo no disponible. Intenta de nuevo en unos minutos.');
+      // El workflow puede devolver {ok:false, reason, detail} cuando geocoding falla,
+      // input es inválido, o falta GOOGLE_API_KEY. Sin este check los Number(undefined)
+      // de abajo producen NaN silenciosos que rompen el render aguas abajo.
+      if (data.ok === false) {
+        const detail = data.detail || `solar-roof: ${data.reason || 'error desconocido'}`;
+        throw new Error(detail);
+      }
       norm = {
         lat: Number(data.lat),
         lon: Number(data.lon),
@@ -126,14 +152,45 @@ export async function lookupRoof({ address, lat, lon } = {}) {
         shadeIndex: data.shadeIndex != null ? Number(data.shadeIndex) : null,
         shadeSource: data.shadeSource || null,
         roofSegments: Array.isArray(data.roofSegments) ? data.roofSegments : [],
+        // Normalizar shape de center: aceptar {lat, lng} (frontend) y
+        // {latitude, longitude} (raw Google API) — n8n a veces pasa raw.
+        solarPanels: Array.isArray(data.solarPanels)
+          ? data.solarPanels.map(p => ({
+              ...p,
+              center: p.center
+                ? {
+                    lat: Number(p.center.lat ?? p.center.latitude),
+                    lng: Number(p.center.lng ?? p.center.longitude),
+                  }
+                : null,
+              orientation: p.orientation || 'LANDSCAPE',
+              yearlyEnergyDcKwh: p.yearlyEnergyDcKwh != null ? Number(p.yearlyEnergyDcKwh) : null,
+              segmentIndex: p.segmentIndex != null ? Number(p.segmentIndex) : null,
+            }))
+          : [],
+        panelHeightMeters: data.panelHeightMeters != null ? Number(data.panelHeightMeters) : null,
+        panelWidthMeters: data.panelWidthMeters != null ? Number(data.panelWidthMeters) : null,
         imagery: data.imagery || null,
+        staticMapUrl: data.staticMapUrl || null,
+        staticMapRoadUrl: data.staticMapRoadUrl || null,
+        staticMapHDUrl: data.staticMapHDUrl || null,
+        imageryQuality: data.imageryQuality || null,
+        wholeRoofAreaM2: data.wholeRoofAreaM2 != null ? Number(data.wholeRoofAreaM2) : null,
+        groundAreaM2: data.groundAreaM2 != null ? Number(data.groundAreaM2) : null,
+        panelsDetected: data.panelsDetected != null ? Number(data.panelsDetected) : null,
+        coordinatesPrecisionHint: data.coordinatesPrecisionHint || null,
         source: data.source || 'unknown',
         confidence: data.confidence != null ? Number(data.confidence) : null,
         notes: data.notes || '',
       };
     } catch (e) {
-      if (GOOGLE_KEY) norm = await fetchDirectGoogle({ address, lat, lon });
-      else throw e;
+      // n8n es la fuente de verdad — el workflow ya tiene su propio fallback Claude.
+      // El antiguo fallback fetchDirectGoogle usaba REACT_APP_GOOGLE_API_KEY desde el
+      // navegador, pero esa key DEBE tener restricción por referrer (seguridad), y
+      // Google Solar API NO acepta keys con restricciones de referrer → producía el
+      // confuso error "API keys with referer restrictions cannot be used with this API".
+      // Ahora propagamos el error real de n8n para que el usuario sepa qué pasó.
+      throw e;
     }
   } else {
     norm = await fetchDirectGoogle({ address, lat, lon });

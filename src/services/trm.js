@@ -45,7 +45,7 @@ export async function fetchTRM() {
   if (n8nConfigured()) {
     try {
       data = await n8nPost('trm', {});
-      if (!data?.cop_per_usd) throw new Error('TRM n8n: respuesta sin cop_per_usd');
+      if (!data?.cop_per_usd) throw new Error('TRM no disponible.');
     } catch (e) {
       data = await fetchDirect();
     }

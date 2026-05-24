@@ -93,7 +93,7 @@ export async function fetchNASAPower(lat, lon) {
   if (n8nConfigured()) {
     try {
       data = await n8nPost('nasa-power', { lat, lon });
-      if (!data?.annualPsh) throw new Error('NASA POWER n8n: respuesta sin annualPsh');
+      if (!data?.annualPsh) throw new Error('Modelo de temperatura no disponible.');
     } catch (e) {
       data = await fetchDirect(lat, lon);
     }

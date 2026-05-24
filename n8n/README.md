@@ -7,6 +7,7 @@ Webhooks que el frontend (`src/services/`) consume vía `REACT_APP_N8N_BASE_URL`
 En la UI de n8n: **Workflows → Import from File** y carga cada JSON.
 
 - `solar-roof.json` → `POST /webhook/solar-roof`
+- `solar-cache.json` → `POST /webhook/solar-roof-cached` *(Fase 6 — wrapper con cache 90 días)*
 - `ai-recommend.json` → `POST /webhook/ai-recommend`
 - `validate-contact.json` → `POST /webhook/validate-contact`
 - `save-quote.json` → `POST /webhook/save-quote`
@@ -20,6 +21,8 @@ Activa cada workflow (toggle **Active** arriba a la derecha).
 2. En n8n crea credencial **Postgres** con id `ALEBAS_POSTGRES` (name `ALEBAS Postgres`) apuntando a `DATABASE_URL`.
 3. Corre una sola vez el DDL de `schema.sql` (nodo manual Postgres → Execute Query) — crea tablas `users` y `quotes` con índices.
 
+   **Fase 6 (re-importación):** el `schema.sql` añade columnas idempotentes a `quotes` (`solar_panels JSONB`, `panel_height_meters`, `panel_width_meters`, `area_m2`, `whole_roof_area_m2`, `imagery_quality`, `google_yearly_kwh`, `ai_provider`) y crea la tabla `solar_cache`. El DDL es idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`) — re-ejecutarlo es seguro sobre instalaciones previas.
+
 Política de anti-abuso codificada en `validate-contact`:
 - Honeypot (`website`) → rechazo silencioso.
 - Email/teléfono con formato válido obligatorios.
@@ -32,6 +35,8 @@ Política de anti-abuso codificada en `validate-contact`:
 GOOGLE_API_KEY=...        # Geocoding API + Solar API habilitadas
 ANTHROPIC_API_KEY=sk-ant-...
 DATABASE_URL=...          # inyectado por plugin Postgres de Railway
+N8N_INTERNAL_BASE_URL=    # opcional, default http://localhost:5678
+                          # solar-cache lo usa para llamar internamente a /webhook/solar-roof
 ```
 
 Google Cloud Console → habilitar:
@@ -67,6 +72,29 @@ REACT_APP_N8N_TOKEN=           # opcional, si validas x-alebas-token en n8n
 
 Flujo: Geocoding (si falta coords) → Google Solar API `buildingInsights:findClosest` → si devuelve sin `solarPotential`, fallback a Claude con prompt de estimación conservadora.
 
+### `/webhook/solar-roof-cached` *(Fase 6)*
+**Request:** idéntico a `solar-roof` (`{ address?, lat?, lon? }`).
+
+**Response:** misma forma que `solar-roof` + metadata de cache:
+```json
+{
+  "...": "(todos los campos de solar-roof)",
+  "cacheHit": true,
+  "cacheAgeSec": 86400,
+  "cacheExpiresAt": "2026-07-30T...",
+  "cacheHitCount": 3
+}
+```
+
+Flujo:
+1. Calcula `cache_key` por lat/lon redondeado a 5 decimales (≈ 1 m) o por dirección normalizada.
+2. Si hay registro en `solar_cache` no expirado → devuelve inmediato (latencia <50 ms, cero costo Google).
+3. Si miss → llama internamente a `/webhook/solar-roof`, guarda la respuesta (TTL 90 días) y la devuelve.
+
+Respuestas con `ok:false` (geocode_no_results, missing_env) **no se cachean** — el siguiente intento las re-procesa por si el problema fue transitorio.
+
+**Switching frontend:** cambia `n8nPost('solar-roof', ...)` → `n8nPost('solar-roof-cached', ...)` en `src/services/solar.js` para activarlo. Cae automáticamente al solar-roof original si el cache no encuentra el registro.
+
 ### `/webhook/ai-recommend`
 **Request:** `{ context: "review" | "sizing" | "explain", payload: {...} }`
 
@@ -95,9 +123,11 @@ Se llama en el paso 2 del wizard (Contacto), **antes** de orquestar APIs pesadas
 ### `/webhook/save-quote`
 **Request:** payload completo de la cotización (incluye `results`, `budget`, `agpe`, `regulatory`, `lat/lon`, `shadeIndex`, etc.).
 
-**Response:** `{ ok: true, quoteId, userId, createdAt, contact, totals }`
+**Response:** `{ ok: true, quoteId, userId, createdAt, contact, totals, solar }`
 
 Hace `UPSERT users` por email + `INSERT quotes` con todas las métricas planas y el payload completo en `payload JSONB` para auditoría.
+
+**Fase 6:** persiste columnas adicionales si el frontend las envía: `solar_panels JSONB` (lista de paneles individuales con `center`, `orientation`, `segmentIndex`, `yearlyEnergyDcKwh`), `panel_height_meters`, `panel_width_meters`, `area_m2`, `whole_roof_area_m2`, `imagery_quality`, `google_yearly_kwh`, `ai_provider`. El bloque `solar` de la respuesta indica cuántos paneles se persistieron — útil para verificar que el frontend está enviando el dato correcto.
 
 ### `/webhook/list-quotes`
 **Request:** `{ status?: string, search?: string, limit?: number }`
@@ -134,4 +164,14 @@ curl -X POST $BASE/validate-contact \
 curl -X POST $BASE/list-quotes \
   -H 'content-type: application/json' \
   -d '{"limit":10}'
+
+# Fase 6 — verificar cache (1ª llamada miss + insert, 2ª hit)
+curl -X POST $BASE/solar-roof-cached \
+  -H 'content-type: application/json' \
+  -d '{"address":"Cra 36 # 24A-44, Villavicencio, Meta, Colombia"}'
+# Respuesta esperada: ... "cacheHit": false, "cacheStored": true
+curl -X POST $BASE/solar-roof-cached \
+  -H 'content-type: application/json' \
+  -d '{"address":"Cra 36 # 24A-44, Villavicencio, Meta, Colombia"}'
+# Respuesta esperada: ... "cacheHit": true, "cacheAgeSec": <seg>, "cacheHitCount": 1
 ```

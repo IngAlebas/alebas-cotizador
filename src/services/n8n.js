@@ -21,11 +21,16 @@ export const n8nConfigured = () => BASE.length > 0;
 export const n8nBaseUrl = () => BASE;
 export const n8nPlaceholderDetected = () => isPlaceholder ? RAW_BASE : '';
 
-export async function n8nPost(path, body, { timeoutMs = 25000 } = {}) {
-  if (!BASE) throw new Error('n8n no configurado (REACT_APP_N8N_BASE_URL vacío)');
+export async function n8nPost(path, body, { timeoutMs = 45000 } = {}) {
+  if (!BASE) throw new Error('Servicio backend no configurado.');
   const url = `${BASE}/${String(path).replace(/^\/+/, '')}`;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  // Pasamos un reason explícito al abort para que el AbortError lleve un mensaje
+  // accionable en lugar del genérico "signal is aborted without reason" del DOM.
+  const timer = setTimeout(() => {
+    try { ctrl.abort(new DOMException(`Tiempo de espera agotado (${timeoutMs}ms).`, 'TimeoutError')); }
+    catch { ctrl.abort(); }
+  }, timeoutMs);
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -41,9 +46,18 @@ export async function n8nPost(path, body, { timeoutMs = 25000 } = {}) {
     try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
     if (!res.ok) {
       const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-      throw new Error(`n8n ${path}: ${msg}`);
+      throw new Error(`Servicio (${path}) no disponible: ${msg}`);
     }
     return data;
+  } catch (e) {
+    // Reescribe los AbortError sin reason para que la UI no muestre el críptico
+    // "signal is aborted without reason".
+    if (e?.name === 'AbortError' || /aborted/i.test(e?.message || '')) {
+      const reason = ctrl.signal.reason;
+      const detail = reason?.message || `Tiempo de espera agotado (${timeoutMs}ms).`;
+      throw new Error(detail);
+    }
+    throw e;
   } finally {
     clearTimeout(timer);
   }

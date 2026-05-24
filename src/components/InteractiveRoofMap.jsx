@@ -1,0 +1,945 @@
+// Mapa Google interactivo con marcador arrastrable + círculo del área analizada.
+// El cliente afina la posición sobre el techo y, al soltar el pin, se dispara
+// onPinMove(lat, lon) para que el padre re-llame lookupRoof y refresque
+// áreas/segmentos/confianza con las nuevas coordenadas.
+
+import React, { useEffect, useRef, useState } from 'react';
+import { loadGoogleMaps } from '../services/gmapsLoader';
+
+export default function InteractiveRoofMap({
+  lat, lon, areaM2, onPinMove, height = 240, busy = false,
+  segments = null,        // [{ azimuthDegrees, areaMeters2, center, boundingBox, _idx, ... }]
+  showSunPath = true,     // arco azimutal del sol (oriente → cenit → poniente)
+  onSegmentToggle = null, // (idx) => void — tap en círculo o label toggle inclusión
+  onSegmentMove = null,   // (idx, {lat, lng}) => void — drag de cubiertas custom
+  panelW = 1.0,           // ancho del panel (m) — para renderizar grid sintético
+  panelH = 2.0,           // alto del panel (m)
+  googlePanels = [],      // paneles reales Google Solar API [{center:{lat,lng}, orientation, yearlyEnergyDcKwh, segmentIndex}]
+  heatmapLayer = null,   // { dataUrl, bounds:{sw:{lat,lng},ne:{lat,lng}}, minVal, maxVal } — PNG irradiancia
+}) {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const circleRef = useRef(null);
+  const polygonsRef = useRef([]);       // Polígonos de cada segmento
+  const labelsRef = useRef([]);         // Labels con área de cada segmento
+  const syntheticPanelsRef = useRef([]);// Grid azul sintético — clearable sin tocar segmentos
+  const googlePanelsRef = useRef([]);   // Polígonos de paneles reales Google Solar
+  const heatmapOverlayRef = useRef(null); // GroundOverlay de irradiancia
+  const sunPathRef = useRef(null); // Polyline del arco solar
+  const zoomLockedRef = useRef(false); // true tras primer setZoom — preserva pinch del usuario
+  const lastEmittedRef = useRef({ lat, lon });
+  const [error, setError] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [moved, setMoved] = useState(false);
+  const [mapType, setMapType] = useState('hybrid');
+  const [showLabels, setShowLabels] = useState(true);
+
+  // Init mapa una sola vez. lat/lon iniciales se capturan en este efecto;
+  // las actualizaciones posteriores se aplican en el efecto de sync de abajo.
+  useEffect(() => {
+    let cancelled = false;
+    if (lat == null || lon == null) return;
+    loadGoogleMaps()
+      .then((maps) => {
+        if (cancelled || !containerRef.current) return;
+        const center = { lat: Number(lat), lng: Number(lon) };
+        const map = new maps.Map(containerRef.current, {
+          center,
+          zoom: 19,  // 19 da más contexto que 20 — todavía se ve el techo claro
+          minZoom: 16,
+          maxZoom: 22,
+          mapTypeId: 'hybrid',  // satélite + nombres de calles + edificios delineados
+          tilt: 0,
+          disableDefaultUI: true,
+          zoomControl: true,
+          mapTypeControl: false,  // labels "Satélite/Mapa" estorbaban — usuario pidió quitarlas
+          gestureHandling: 'greedy',  // un dedo arrastra (no requiere 2 dedos)
+          clickableIcons: false,
+        });
+        const marker = new maps.Marker({
+          map, position: center, draggable: true,
+          title: 'Arrastra para ajustar la ubicación exacta del techo',
+          animation: maps.Animation.DROP,
+        });
+        marker.addListener('dragend', () => {
+          const p = marker.getPosition();
+          if (!p) return;
+          const newLat = p.lat(), newLon = p.lng();
+          map.panTo({ lat: newLat, lng: newLon });
+          setMoved(true);
+          lastEmittedRef.current = { lat: newLat, lon: newLon };
+          onPinMove && onPinMove(newLat, newLon);
+        });
+        // Click en el mapa también recoloca el pin (más rápido que arrastrar).
+        map.addListener('click', (e) => {
+          if (!e?.latLng) return;
+          const newLat = e.latLng.lat(), newLon = e.latLng.lng();
+          marker.setPosition({ lat: newLat, lng: newLon });
+          map.panTo({ lat: newLat, lng: newLon });
+          setMoved(true);
+          lastEmittedRef.current = { lat: newLat, lon: newLon };
+          onPinMove && onPinMove(newLat, newLon);
+        });
+        mapRef.current = map;
+        markerRef.current = marker;
+        setReady(true);
+      })
+      .catch((e) => setError(e?.message || 'No se pudo cargar el mapa'));
+    return () => {
+      cancelled = true;
+      try { circleRef.current && circleRef.current.setMap(null); } catch (_) {}
+    };
+  }, []); // eslint-disable-line
+
+  // Sync externo: si el padre cambia lat/lon (ej. tras re-lookup, GPS, autocomplete),
+  // mover marcador y recentrar. Evita reposicionar si la coord es la que acabamos
+  // de emitir nosotros mismos (loop de feedback).
+  useEffect(() => {
+    if (!ready || !mapRef.current || !markerRef.current) return;
+    if (lat == null || lon == null) return;
+    const last = lastEmittedRef.current;
+    const epsilon = 1e-7;
+    if (last && Math.abs(last.lat - lat) < epsilon && Math.abs(last.lon - lon) < epsilon) return;
+    const pos = { lat: Number(lat), lng: Number(lon) };
+    markerRef.current.setPosition(pos);
+    mapRef.current.panTo(pos);
+    setMoved(false);
+  }, [lat, lon, ready]);
+
+  // Círculo proporcional al área (sqrt(area/π)) — feedback visual de cobertura.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    if (circleRef.current) { circleRef.current.setMap(null); circleRef.current = null; }
+    if (!areaM2 || !lat || !lon) return;
+    const r = Math.sqrt(Number(areaM2) / Math.PI);
+    if (!Number.isFinite(r) || r <= 0) return;
+    circleRef.current = new maps.Circle({
+      map: mapRef.current,
+      center: { lat: Number(lat), lng: Number(lon) },
+      radius: r,
+      strokeColor: '#FF8C00', strokeOpacity: 0.95, strokeWeight: 2,
+      fillColor: '#FF8C00', fillOpacity: 0.18,
+      clickable: false,
+    });
+  }, [areaM2, lat, lon, ready]);
+
+  // Marcadores por segmento — círculo centrado proporcional al área + label.
+  // Antes usábamos polygons del bounding box pero el bbox es eje-alineado y
+  // raramente coincide con la forma real del segmento (techos suelen estar
+  // rotados). Los círculos son más HONESTOS: solo indican posición + tamaño
+  // relativo, sin sugerir una forma incorrecta.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    polygonsRef.current.forEach(p => p.setMap(null));
+    polygonsRef.current = [];
+    syntheticPanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    syntheticPanelsRef.current = [];
+    labelsRef.current.forEach(l => l.setMap(null));
+    labelsRef.current = [];
+    if (!Array.isArray(segments) || segments.length === 0) return;
+    const ACTIVE = '#4ade80';     // verde lima — cubierta activa (se usará)
+    const AVAILABLE = '#FB923C';  // naranja — cubierta detectada pero no activa
+    // PIN COORDS — referencia universal para fallback. Las computamos una sola
+    // vez fuera del loop para garantizar que NO sean shadowed por variables
+    // internas (bug histórico de la versión anterior).
+    const pinLatRef = Number(lat);
+    const pinLngRef = Number(lon);
+    const pinValid = Number.isFinite(pinLatRef) && Number.isFinite(pinLngRef);
+    // Helper para extraer coords de cualquier objeto (acepta lat/lng o
+    // latitude/longitude). Definido fuera del forEach para evitar recreación
+    // en cada iteración.
+    const pickCoords = (obj) => {
+      if (!obj) return null;
+      const la = obj.lat ?? obj.latitude;
+      const lo = obj.lng ?? obj.longitude;
+      if (Number.isFinite(la) && Number.isFinite(lo)) return { lat: la, lng: lo };
+      return null;
+    };
+    let renderedCount = 0;
+    segments.forEach((s, i) => {
+      // Cubiertas INACTIVAS no se dibujan en el mapa: ni marker ni polígono
+      // ni paneles. El usuario las activa/desactiva desde la lista de
+      // 'Cubiertas del techo' debajo del mapa, y al desactivar desaparecen
+      // completamente para no contaminar la visualización.
+      if (s.selected === false) return;
+      try {
+      let center = pickCoords(s.center);
+      if (!center && s.boundingBox) {
+        const sw = pickCoords(s.boundingBox.sw);
+        const ne = pickCoords(s.boundingBox.ne);
+        if (sw && ne) center = { lat: (sw.lat + ne.lat) / 2, lng: (sw.lng + ne.lng) / 2 };
+      }
+      // FALLBACK FINAL: si el segmento NO trae coords (n8n viejo, datos
+      // truncados, custom segments sin center), generar uno alrededor del
+      // pin principal. Distribución radial para que cubiertas adyacentes
+      // no se superpongan.
+      if (!center && pinValid) {
+        const baseR = 8;
+        const angle = (i / Math.max(1, segments.length)) * 2 * Math.PI;
+        const offM = baseR + (i % 3) * 4;
+        const dLatF = (Math.cos(angle) * offM) / 111000;
+        const dLngF = (Math.sin(angle) * offM) / (111000 * Math.cos(pinLatRef * Math.PI / 180));
+        center = { lat: pinLatRef + dLatF, lng: pinLngRef + dLngF };
+      }
+      if (!center) return;
+      // FALLBACK MARKER (siempre visible): marcador Google estándar en el
+      // center del segmento. Garantiza que el cliente vea AL MENOS un
+      // pin por cada cubierta detectada, aunque el polígono falle más
+      // abajo por cualquier razón. El marker queda detrás del polígono.
+      const fallbackCol = !!s.selected ? ACTIVE : AVAILABLE;
+      const fallbackMarker = new maps.Marker({
+        map: mapRef.current,
+        position: center,
+        icon: {
+          path: maps.SymbolPath.CIRCLE,
+          scale: 7,
+          fillColor: fallbackCol,
+          fillOpacity: 0.85,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
+        title: `Cubierta ${i + 1} · ${(s.areaMeters2 || 0).toFixed(0)} m²`,
+        clickable: !!onSegmentToggle && s._idx != null,
+        zIndex: 4,
+      });
+      if (onSegmentToggle && s._idx != null) {
+        fallbackMarker.addListener('click', (e) => {
+          if (e && typeof e.stop === 'function') e.stop();
+          onSegmentToggle(s._idx);
+        });
+      }
+      polygonsRef.current.push(fallbackMarker);
+      const isActive = !!s.selected;
+      const col = isActive ? ACTIVE : AVAILABLE;
+      const areaM2 = s.areaMeters2 || 0;
+      const isClickable = !!onSegmentToggle && s._idx != null;
+      // Solo las cubiertas CUSTOM (_custom: true) son arrastrables. Las
+      // detectadas por Google Solar tienen posición fija.
+      const isDraggable = !!onSegmentMove && s._custom && s._idx != null;
+      const azDegSeg = s.azimuthDegrees != null ? Number(s.azimuthDegrees) : 180;
+      const azRadSeg = (azDegSeg * Math.PI) / 180;
+      const cosA = Math.cos(azRadSeg), sinA = Math.sin(azRadSeg);
+      const latM = 1 / 111000;
+      const lngM = 1 / (111000 * Math.cos(center.lat * Math.PI / 180));
+      // POLÍGONO QUE GOOGLE DETECTÓ
+      // Si Google dio boundingBox real → uso esos 4 corners (axis-aligned
+      // pero EXACTOS — la extensión real que Google identificó como techo).
+      // Si solo hay center + areaMeters2 (custom o sin bbox) → fallback a
+      // un rectángulo rotado por azimut con dimensiones desde sqrt(area).
+      let corners;
+      let widthM, heightM;
+      // Bbox: aceptar ambos formatos (lat/lng y latitude/longitude).
+      const bbSw = pickCoords(s.boundingBox?.sw);
+      const bbNe = pickCoords(s.boundingBox?.ne);
+      const bbValid = bbSw && bbNe;
+      if (bbValid && !s._custom) {
+        corners = [
+          { lat: bbSw.lat, lng: bbSw.lng },
+          { lat: bbSw.lat, lng: bbNe.lng },
+          { lat: bbNe.lat, lng: bbNe.lng },
+          { lat: bbNe.lat, lng: bbSw.lng },
+        ];
+        const baseSide = Math.sqrt(Math.max(4, areaM2));
+        widthM = baseSide;
+        heightM = baseSide;
+      } else {
+        // Fallback: rectángulo rotado por azimut.
+        const baseSide = Math.sqrt(Math.max(4, areaM2));
+        widthM = baseSide * 1.18;
+        heightM = baseSide * 0.85;
+        corners = [
+          [-widthM / 2, -heightM / 2],
+          [ widthM / 2, -heightM / 2],
+          [ widthM / 2,  heightM / 2],
+          [-widthM / 2,  heightM / 2],
+        ].map(([lx, ly]) => {
+          const dx = lx * cosA - ly * sinA;
+          const dy = lx * sinA + ly * cosA;
+          return {
+            lat: center.lat + dy * latM,
+            lng: center.lng + dx * lngM,
+          };
+        });
+      }
+      const polygon = new maps.Polygon({
+        map: mapRef.current,
+        paths: corners,
+        // Halo BLANCO para todos (activos e inactivos) — máximo contraste
+        // sobre satellite. Antes solo activos tenían halo. Ahora todos
+        // los polígonos son claramente distinguibles, pero los activos
+        // se diferencian por color verde + outline interno + fill más denso.
+        strokeColor: '#ffffff',
+        strokeOpacity: isActive ? 1 : 0.85,
+        strokeWeight: isActive ? 3 : 2,
+        fillColor: col,
+        // Activos transparentes para que el grid de paneles azules sea visible
+        // arriba; inactivos un poco más opacos para distinguirlos.
+        fillOpacity: isActive ? 0.18 : 0.25,
+        clickable: isClickable || isDraggable,
+        draggable: isDraggable,
+        zIndex: isActive ? 6 : 5,
+      });
+      if (isClickable) polygon.addListener('click', (e) => {
+        // STOP propagation: el map.addListener('click') mueve el pin si no
+        // detenemos el evento aquí, lo que disparaba un re-lookup que
+        // descartaba el toggle del segmento.
+        if (e && typeof e.stop === 'function') e.stop();
+        onSegmentToggle(s._idx);
+      });
+      if (isDraggable) {
+        // Al terminar el drag, calcular el nuevo centroide del polígono
+        // y emitirlo al padre para que actualice f.customSegments.center.
+        polygon.addListener('dragend', () => {
+          const path = polygon.getPath();
+          let sumLat = 0, sumLng = 0;
+          path.forEach(pt => { sumLat += pt.lat(); sumLng += pt.lng(); });
+          const n = path.getLength();
+          if (n > 0) onSegmentMove(s._idx, { lat: sumLat / n, lng: sumLng / n });
+        });
+      }
+      polygonsRef.current.push(polygon);
+      // Borde interno en color del segmento (verde para activo, naranja
+      // para inactivo) sobre el halo blanco — DOBLE BORDE estilo
+      // 'highlighter' que distingue cubiertas en cualquier satellite.
+      const innerOutline = new maps.Polygon({
+        map: mapRef.current,
+        paths: corners,
+        strokeColor: col,
+        strokeOpacity: isActive ? 0.95 : 0.85,
+        strokeWeight: isActive ? 1.5 : 1.2,
+        fillOpacity: 0,
+        clickable: false,
+        zIndex: isActive ? 7 : 6,
+      });
+      polygonsRef.current.push(innerOutline);
+      // GRID DE PANELES SINTÉTICO (estilo Google Solar Platform)
+      // SOLO se renderiza en cubiertas ACTIVAS — al desactivar una cubierta
+      // los paneles desaparecen, dejando solo el contorno verde/naranja para
+      // diferenciar segmentos activos vs descartados.
+      const effectiveAreaM2 = areaM2 > 0 ? areaM2 : 25;
+      if (isActive && effectiveAreaM2 > 0) {
+        const PANEL_COLOR = '#3b82f6';
+        // Cuántos paneles caben en este segmento (con packing 65%)
+        const panelArea = panelW * panelH;
+        const panelsCount = Math.max(1, Math.floor((effectiveAreaM2 * 0.65) / panelArea));
+        // Si areaM2 vino en 0, recalcular widthM/heightM desde el área efectiva
+        // para que el grid tenga dónde caber.
+        const gridWidthM = widthM > 2 ? widthM : Math.sqrt(effectiveAreaM2) * 1.18;
+        const gridHeightM = heightM > 2 ? heightM : Math.sqrt(effectiveAreaM2) * 0.85;
+        if (panelsCount > 0) {
+          // Dimensiones del grid (cols × rows) para que ~quepa en gridWidthM × gridHeightM
+          const cols = Math.max(1, Math.floor(gridWidthM / panelW));
+          const rows = Math.max(1, Math.ceil(panelsCount / cols));
+          // Comenzar grid en esquina inferior-izquierda local
+          const totalGridW = cols * panelW;
+          const totalGridH = rows * panelH;
+          const startX = -totalGridW / 2;
+          const startY = -totalGridH / 2;
+          let drawn = 0;
+          for (let r = 0; r < rows && drawn < panelsCount; r++) {
+            for (let c = 0; c < cols && drawn < panelsCount; c++) {
+              const lx = startX + c * panelW + panelW / 2;
+              const ly = startY + r * panelH + panelH / 2;
+              // Paneles a tamaño casi completo (94%) para máxima visibilidad
+              // — antes 0.45 (= 90%) los hacía invisibles a zooms < 21.
+              const halfW = panelW * 0.47, halfH = panelH * 0.47;
+              const localCorners = [
+                [lx - halfW, ly - halfH],
+                [lx + halfW, ly - halfH],
+                [lx + halfW, ly + halfH],
+                [lx - halfW, ly + halfH],
+              ];
+              const panelCorners = localCorners.map(([px, py]) => {
+                const dx = px * cosA - py * sinA;
+                const dy = px * sinA + py * cosA;
+                return {
+                  lat: center.lat + dy * latM,
+                  lng: center.lng + dx * lngM,
+                };
+              });
+              const panelPoly = new maps.Polygon({
+                map: mapRef.current,
+                paths: panelCorners,
+                strokeColor: '#0b1d4f',
+                strokeOpacity: 1,
+                strokeWeight: 1,
+                fillColor: PANEL_COLOR,
+                fillOpacity: 0.95,
+                clickable: false,
+                zIndex: 12,
+              });
+              syntheticPanelsRef.current.push(panelPoly);
+              drawn++;
+            }
+          }
+        }
+        // FLECHA DE ORIENTACIÓN AL SOL sobre la cubierta — desde el lomo
+        // (lado norte del techo) hacia el azimut (down-slope, donde el
+        // techo "mira"). Visualiza dónde caen los rayos del sol en este
+        // techo específico. Color naranja distinto al del polígono para
+        // que destaque sin confundirse con el borde verde.
+        // Inicio de la flecha: punto a -heightM/2 en el sistema local
+        //   (en sentido contrario al azimut), traducido al mapa.
+        // Fin de la flecha: punto a +heightM/2 en el sistema local.
+        const arrowStartLocal = [0, -heightM * 0.45];
+        const arrowEndLocal = [0, heightM * 0.45];
+        const toLatLng = ([lx, ly]) => {
+          const dx = lx * cosA - ly * sinA;
+          const dy = lx * sinA + ly * cosA;
+          return { lat: center.lat + dy * latM, lng: center.lng + dx * lngM };
+        };
+        const sunArrow = new maps.Polyline({
+          map: mapRef.current,
+          path: [toLatLng(arrowStartLocal), toLatLng(arrowEndLocal)],
+          geodesic: false,
+          strokeColor: '#FFD93D',
+          strokeOpacity: 0.95,
+          strokeWeight: 2.5,
+          clickable: false,
+          zIndex: 8,
+          icons: [{
+            icon: {
+              path: maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 3.5,
+              fillColor: '#FF8C00',
+              fillOpacity: 1,
+              strokeColor: '#fff',
+              strokeWeight: 1.2,
+            },
+            offset: '100%',
+          }],
+        });
+        polygonsRef.current.push(sunArrow);
+      }
+      // Label flotante clickable con número + área.
+      const labelEl = document.createElement('div');
+      labelEl.style.cssText = `
+        background: rgba(7, 9, 15, 0.78); color: ${col}; padding: 2px 8px; border-radius: 12px;
+        font-size: 10.5px; font-weight: 800; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+        white-space: nowrap; transform: translate(-50%, -50%);
+        pointer-events: ${isClickable ? 'auto' : 'none'};
+        cursor: ${isClickable ? 'pointer' : 'default'};
+        user-select: none;
+        opacity: ${isActive ? '0.95' : '0.65'};
+        border: 1px solid ${col};
+        transition: transform 0.12s, opacity 0.12s;
+      `;
+      // Prefijo 'M' (manual) en cubiertas custom para distinguirlas + ícono
+      // ✥ que sugiere arrastrabilidad.
+      const prefix = s._custom ? 'M' : (i + 1);
+      const dragIcon = isDraggable ? ' ✥' : '';
+      labelEl.textContent = `${isActive ? '✓ ' : '○ '}${prefix} · ${areaM2.toFixed(0)} m²${dragIcon}`;
+      if (isClickable) {
+        const onTap = (e) => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); onSegmentToggle(s._idx); };
+        labelEl.addEventListener('click', onTap);
+        labelEl.addEventListener('touchend', onTap);
+        labelEl.addEventListener('mouseenter', () => { labelEl.style.transform = 'translate(-50%, -50%) scale(1.1)'; });
+        labelEl.addEventListener('mouseleave', () => { labelEl.style.transform = 'translate(-50%, -50%) scale(1)'; });
+      }
+      const label = new maps.OverlayView();
+      label.onAdd = function () { this.getPanes().overlayLayer.appendChild(labelEl); };
+      // Offset del label hacia AFUERA del techo (en dirección del azimut,
+      // o sea down-slope) — es donde típicamente hay espacio libre entre
+      // techos contiguos. Sign alterna para que cubiertas adyacentes no
+      // queden encima si están alineadas.
+      const perpDeg = (azDegSeg + 90) % 360;  // lateral al lomo
+      const offsetM = baseSide * 0.85 + 3;    // fuera del polígono
+      const useAxis = i % 2 === 0 ? 'down-slope' : 'lateral';
+      const azChoice = useAxis === 'down-slope' ? azDegSeg : perpDeg;
+      const dirRad = (azChoice * Math.PI) / 180;
+      const sign = (i % 4) < 2 ? 1 : -1;
+      const dLat = (Math.cos(dirRad) * offsetM * sign) / 111000;
+      const dLng = (Math.sin(dirRad) * offsetM * sign) / (111000 * Math.cos(center.lat * Math.PI / 180));
+      const labelCenter = { lat: center.lat + dLat, lng: center.lng + dLng };
+      // LÍNEA GUÍA: del centro del polígono al label, así el cliente sabe
+      // QUÉ label corresponde a QUÉ cubierta sin ambigüedad. Línea delgada
+      // del color del segmento, semi-transparente.
+      const leader = new maps.Polyline({
+        map: mapRef.current,
+        path: [center, labelCenter],
+        geodesic: false,
+        strokeColor: col,
+        strokeOpacity: isActive ? 0.7 : 0.35,
+        strokeWeight: 1,
+        clickable: false,
+        zIndex: isActive ? 4 : 3,
+      });
+      polygonsRef.current.push(leader);
+      label.draw = function () {
+        const proj = this.getProjection();
+        if (!proj) return;
+        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(labelCenter.lat, labelCenter.lng));
+        if (pt) { labelEl.style.position = 'absolute'; labelEl.style.left = pt.x + 'px'; labelEl.style.top = pt.y + 'px'; }
+      };
+      label.onRemove = function () { if (labelEl.parentNode) labelEl.parentNode.removeChild(labelEl); };
+      label.setMap(mapRef.current);
+      labelsRef.current.push(label);
+      } catch (e) {
+        // Si un segmento malformado tira (coord NaN, bbox null, etc),
+        // saltar SOLO ese segmento sin romper el render del resto del
+        // mapa ni del step 3 entero.
+        console.warn('Segmento ' + i + ' no se pudo renderizar:', e?.message);
+      }
+    });
+    // Aplicar visibilidad inicial de etiquetas según el estado actual del toggle.
+    if (!showLabels) {
+      labelsRef.current.forEach(l => { try { l.setMap(null); } catch (_) {} });
+    }
+    // Auto-fit a los círculos.
+    // validCenters acepta ambos formatos (lat/lng y latitude/longitude).
+    const validCenters = segments.map(s => {
+      const c = s.center || {};
+      const lat = c.lat ?? c.latitude;
+      const lng = c.lng ?? c.longitude;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { center: { lat, lng } };
+      return null;
+    }).filter(Boolean);
+    if (validCenters.length > 0) {
+      // Solo recentrar y fijar zoom la PRIMERA VEZ que se renderizan segments.
+      // En renders subsiguientes (slider, toggle, etc.) respetamos el pan/zoom
+      // actual del usuario — antes el efecto se disparaba siempre y mover el
+      // slider hacía "saltar" el mapa al centroide + zoom 22.
+      if (!zoomLockedRef.current) {
+        const avgLat = validCenters.reduce((a, s) => a + s.center.lat, 0) / validCenters.length;
+        const avgLng = validCenters.reduce((a, s) => a + s.center.lng, 0) / validCenters.length;
+        mapRef.current.setCenter({ lat: avgLat, lng: avgLng });
+        mapRef.current.setZoom(22);
+        zoomLockedRef.current = true;
+      }
+    }
+  }, [segments, ready]);
+
+  // Toggle de etiquetas — añade/quita los OverlayView del mapa (onAdd/onRemove lifecycle correcto).
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    labelsRef.current.forEach(l => {
+      try { l.setMap(showLabels ? mapRef.current : null); } catch (_) {}
+    });
+  }, [showLabels, ready]);
+
+  // Ruta del sol DELGADA sobre el mapa — arco de E (oriente) → cenit → O
+  // (poniente). Diseño minimal: línea amarilla 1.5px con sun emoji 🌞 en
+  // ambos extremos para que se identifique como ruta solar sin dominar
+  // visualmente. El diagrama detallado sigue debajo del mapa.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    if (sunPathRef.current) {
+      try { sunPathRef.current.line && sunPathRef.current.line.setMap(null); } catch (_) {}
+      try { sunPathRef.current.east && sunPathRef.current.east.setMap(null); } catch (_) {}
+      try { sunPathRef.current.zenith && sunPathRef.current.zenith.setMap(null); } catch (_) {}
+      try { sunPathRef.current.west && sunPathRef.current.west.setMap(null); } catch (_) {}
+      sunPathRef.current = null;
+    }
+    if (!showSunPath || lat == null || lon == null) return;
+    // RUTA DEL SOL: arco que curva SOBRE el techo. En el hemisferio norte
+    // (Colombia +4°N), el sol pasa por el sur durante el día — pero
+    // visualmente lo dibujamos arriba del pin para que se vea claro.
+    // ANTES: northOffset 2.5 × r ≈ 23m al norte → fuera de la pantalla en mobile.
+    // AHORA: ofset pequeño y arco compacto sobre el techo.
+    const r = areaM2 ? Math.sqrt(Number(areaM2) / Math.PI) * 1.4 : 12;
+    const dLat = r / 111000;
+    const dLng = r / (111000 * Math.cos(Number(lat) * Math.PI / 180));
+    const northOffset = 0.6;       // múltiplo de r — apenas arriba del techo (visible en mobile)
+    const arcWidth = 1.8;          // ancho del arco — compacto pero visible
+    const arcHeight = 0.7;         // altura del arco — curvatura visible
+    const points = [];
+    // Iteramos h de -90 (este, amanecer) → +90 (oeste, atardecer). El
+    // sol VIAJA de este a oeste, por eso negamos sin(rad): así el primer
+    // punto está a la DERECHA (este = lng creciente) y el último a la
+    // IZQUIERDA (oeste). La flecha intermedia apuntará hacia el oeste,
+    // alineada con la dirección real del sol durante el día.
+    for (let h = -90; h <= 90; h += 10) {
+      const rad = h * Math.PI / 180;
+      const x = -Math.sin(rad) * arcWidth;  // negativo: este→oeste = derecha→izquierda
+      // y POSITIVO = norte (arriba en pantalla). cos(rad) máximo en h=0
+      // (cenit, centro del arco) → ahí el arco está más arriba.
+      const y = (Math.cos(rad) * arcHeight + northOffset);
+      points.push({ lat: Number(lat) + y * dLat, lng: Number(lon) + x * dLng });
+    }
+    // Línea muy DELGADA con FLECHA prominente en el medio indicando
+    // dirección del sol E→O. Sobre el satellite el amarillo destaca bien
+    // pero la línea queda discreta para no robar foco a las cubiertas.
+    const line = new maps.Polyline({
+      map: mapRef.current,
+      path: points,
+      geodesic: false,
+      strokeColor: '#FFD93D',
+      strokeOpacity: 1,
+      strokeWeight: 3,
+      clickable: false,
+      zIndex: 4,
+      icons: [{
+        icon: {
+          path: maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 3,
+          fillColor: '#FF8C00',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 1,
+        },
+        offset: '50%',
+      }],
+    });
+    // Helper para overlays HTML.
+    const makeOverlay = (pos, html, extraCss = '') => {
+      const el = document.createElement('div');
+      el.innerHTML = html;
+      el.style.cssText = `
+        line-height: 1; pointer-events: none;
+        transform: translate(-50%, -50%); user-select: none;
+        ${extraCss}
+      `;
+      const ov = new maps.OverlayView();
+      ov.onAdd = function () { this.getPanes().overlayMouseTarget.appendChild(el); };
+      ov.draw = function () {
+        const proj = this.getProjection();
+        if (!proj) return;
+        const pt = proj.fromLatLngToDivPixel(new maps.LatLng(pos.lat, pos.lng));
+        if (pt) { el.style.position = 'absolute'; el.style.left = pt.x + 'px'; el.style.top = pt.y + 'px'; }
+      };
+      ov.onRemove = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+      ov.setMap(mapRef.current);
+      return ov;
+    };
+    // Logo SolarHub (sol + 6 rayos + 6 nodos) como icono al INICIO/FIN de la
+    // ruta. Inicio = Este (sale el sol) = grande, opaco. Fin = Oeste (cae) =
+    // pequeño, semi-transparente. Construido con la misma geometría del logo
+    // de la navbar (App.jsx:150) — viewBox 40, sol radio 9, rayos en r=10..18.
+    const solarHubLogo = (size, opacity = 1) => {
+      const rays = [0, 60, 120, 180, 240, 300].map((deg, i) => {
+        const rad = (deg - 90) * Math.PI / 180;
+        const x1 = 20 + 10 * Math.cos(rad), y1 = 20 + 10 * Math.sin(rad);
+        const x2 = 20 + 18 * Math.cos(rad), y2 = 20 + 18 * Math.sin(rad);
+        const color = i % 2 === 0 ? '#FF8C00' : '#FFB800';
+        return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+      }).join('');
+      const nodes = [0, 60, 120, 180, 240, 300].map((deg, i) => {
+        const rad = (deg - 90) * Math.PI / 180;
+        const x = 20 + 18.5 * Math.cos(rad), y = 20 + 18.5 * Math.sin(rad);
+        const color = i % 2 === 0 ? '#FF8C00' : '#FFB800';
+        return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.2" fill="${color}"/>`;
+      }).join('');
+      const gradId = `shGrad${size}`;
+      return `
+        <svg viewBox="0 0 40 40" width="${size}" height="${size}" style="filter: drop-shadow(0 0 5px rgba(255,140,0,0.85)); opacity:${opacity};">
+          <defs>
+            <radialGradient id="${gradId}" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#FFD93D"/>
+              <stop offset="100%" stop-color="#FF8C00"/>
+            </radialGradient>
+          </defs>
+          ${rays}
+          ${nodes}
+          <circle cx="20" cy="20" r="9" fill="url(#${gradId})"/>
+          <circle cx="20" cy="20" r="4.5" fill="#08131f"/>
+          <circle cx="20" cy="20" r="2.2" fill="#FFD93D"/>
+        </svg>`;
+    };
+    const eastPos = points[0];
+    const westPos = points[points.length - 1];
+    const sunStart = makeOverlay(eastPos, `
+      <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+        ${solarHubLogo(28, 1)}
+        <div style="font-size:10px; font-weight:800; color:#FFD93D; background:rgba(7,9,15,0.7); padding:1px 6px; border-radius:9px; letter-spacing:1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6);">E · sale</div>
+      </div>
+    `);
+    const sunEnd = makeOverlay(westPos, `
+      <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+        ${solarHubLogo(16, 0.6)}
+        <div style="font-size:10px; font-weight:800; color:#FFD93D; background:rgba(7,9,15,0.7); padding:1px 6px; border-radius:9px; letter-spacing:1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6);">O · cae</div>
+      </div>
+    `);
+    sunPathRef.current = { line, east: sunStart, west: sunEnd };
+  }, [showSunPath, lat, lon, areaM2, ready]);
+
+  // Paneles reales de Google Solar API — dibujados encima del grid sintético.
+  // Cuando googlePanels[] viene del API, reemplaza visualmente el grid sintético
+  // con rectángulos exactos en las coordenadas reales de cada panel.
+  // Si googlePanels está vacío, este efecto no toca nada → el grid sintético
+  // generado en el efecto de segmentos queda visible como fallback.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    // Limpiar paneles reales anteriores
+    googlePanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    googlePanelsRef.current = [];
+    if (!Array.isArray(googlePanels) || googlePanels.length === 0) return;
+
+    const latM = 1 / 111000;
+    // Aceptar centers en cualquiera de las dos formas (lat/lng frontend o
+    // latitude/longitude raw Google) — n8n a veces pasa raw.
+    const normCenter = (c) => {
+      if (!c) return null;
+      const la = c.lat ?? c.latitude;
+      const lo = c.lng ?? c.longitude;
+      return Number.isFinite(la) && Number.isFinite(lo) ? { lat: Number(la), lng: Number(lo) } : null;
+    };
+    const panels = googlePanels
+      .map(p => ({ ...p, center: normCenter(p.center) }))
+      .filter(p => p.center);
+    if (panels.length === 0) return;
+
+    // Limpiar SOLO el grid sintético azul (los paneles reales lo reemplazan).
+    // No tocar polygonsRef — contiene segmentos, sun arrows y leader lines.
+    syntheticPanelsRef.current.forEach(p => { try { p.setMap(null); } catch (_) {} });
+    syntheticPanelsRef.current = [];
+
+    // Mismo half-size que el grid sintético (panelW * 0.47, panelH * 0.47)
+    // para que paneles reales y sintéticos se vean del mismo tamaño cuando
+    // el usuario mueve el slider entre uno y otro.
+    const halfH = panelH * 0.47;
+    const halfW = panelW * 0.47;
+
+    panels.forEach(panel => {
+      const cLat = Number(panel.center.lat);
+      const cLng = Number(panel.center.lng);
+      if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return;
+      const lngM = 1 / (111000 * Math.cos(cLat * Math.PI / 180));
+      // PORTRAIT: panel más alto que ancho → rotar 90°
+      const isPortrait = panel.orientation === 'PORTRAIT';
+      const hw = isPortrait ? halfH : halfW;
+      const hh = isPortrait ? halfW : halfH;
+      const corners = [
+        { lat: cLat - hh * latM, lng: cLng - hw * lngM },
+        { lat: cLat - hh * latM, lng: cLng + hw * lngM },
+        { lat: cLat + hh * latM, lng: cLng + hw * lngM },
+        { lat: cLat + hh * latM, lng: cLng - hw * lngM },
+      ];
+      // Color por yield relativo — los paneles sin dato usan azul estándar.
+      // Con dato: verde (>p75) → azul (normal) → naranja (<p25) para detectar sombra.
+      const poly = new maps.Polygon({
+        map: mapRef.current,
+        paths: corners,
+        strokeColor: '#1e3a8a',
+        strokeOpacity: 0.7,
+        strokeWeight: 0.5,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.88,
+        clickable: false,
+        zIndex: 10,
+      });
+      googlePanelsRef.current.push(poly);
+    });
+  }, [googlePanels, ready, panelW, panelH]);
+
+  // Heatmap de irradiancia solar (dataLayers GeoTIFF procesado como PNG).
+  // Renderiza un GroundOverlay semi-transparente sobre el satellite con la
+  // escala azul→verde→rojo que muestra flujo solar por m².
+  // Cuando el heatmap está activo, ocultamos los paneles azules sintéticos y
+  // los reales para que el cliente lea la irradiancia sin obstrucción visual.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.google?.maps) return;
+    const maps = window.google.maps;
+    if (heatmapOverlayRef.current) {
+      try { heatmapOverlayRef.current.setMap(null); } catch (_) {}
+      heatmapOverlayRef.current = null;
+    }
+    const isHeatmapActive = !!(heatmapLayer?.dataUrl && heatmapLayer?.bounds);
+    // Mostrar/ocultar paneles sintéticos y reales según el estado del heatmap.
+    const setPanelsVisible = (visible) => {
+      const m = visible ? mapRef.current : null;
+      syntheticPanelsRef.current.forEach(p => { try { p.setMap(m); } catch (_) {} });
+      googlePanelsRef.current.forEach(p => { try { p.setMap(m); } catch (_) {} });
+    };
+    if (!isHeatmapActive) {
+      setPanelsVisible(true);
+      return;
+    }
+    setPanelsVisible(false);
+    const { dataUrl, bounds } = heatmapLayer;
+
+    // Helper: lat/lng corners de un segmento (misma lógica que el efecto de polígonos).
+    const pickC = (obj) => {
+      if (!obj) return null;
+      const la = obj.lat ?? obj.latitude;
+      const lo = obj.lng ?? obj.longitude;
+      return Number.isFinite(la) && Number.isFinite(lo) ? { lat: la, lng: lo } : null;
+    };
+    const getCornersHM = (s) => {
+      const bbSw = pickC(s.boundingBox?.sw);
+      const bbNe = pickC(s.boundingBox?.ne);
+      if (bbSw && bbNe && !s._custom) {
+        return [
+          { lat: bbSw.lat, lng: bbSw.lng }, { lat: bbSw.lat, lng: bbNe.lng },
+          { lat: bbNe.lat, lng: bbNe.lng }, { lat: bbNe.lat, lng: bbSw.lng },
+        ];
+      }
+      const center = pickC(s.center);
+      if (!center) return null;
+      const area = s.areaMeters2 || 16;
+      const azRad = ((s.azimuthDegrees ?? 180) * Math.PI) / 180;
+      const cosA = Math.cos(azRad), sinA = Math.sin(azRad);
+      const latM = 1 / 111000;
+      const lngM = 1 / (111000 * Math.cos(center.lat * Math.PI / 180));
+      const h = Math.sqrt(Math.max(4, area));
+      const hw = h * 1.18 / 2, hh = h * 0.85 / 2;
+      return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([lx, ly]) => ({
+        lat: center.lat + (lx * sinA + ly * cosA) * latM,
+        lng: center.lng + (lx * cosA - ly * sinA) * lngM,
+      }));
+    };
+    // Solo cubiertas activas como área de clip
+    const activeSegs = Array.isArray(segments) ? segments.filter(s => s.selected !== false) : [];
+
+    // Pre-clip la imagen en espacio de imagen (coordenadas lat/lng → píxel de imagen)
+    // antes de pasarla al GroundOverlay. Esto evita dependencia de la proyección del
+    // mapa y funciona correctamente con pan/zoom porque GroundOverlay se actualiza solo.
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      const iw = img.naturalWidth || 512;
+      const ih = img.naturalHeight || 512;
+      const clipCanvas = document.createElement('canvas');
+      clipCanvas.width = iw;
+      clipCanvas.height = ih;
+      const ctx = clipCanvas.getContext('2d');
+      const latRange = bounds.ne.lat - bounds.sw.lat;
+      const lngRange = bounds.ne.lng - bounds.sw.lng;
+      // Convierte lat/lng a píxel de imagen. Y invertido porque norte = arriba de imagen.
+      const toImgPx = (lat, lng) => ({
+        x: ((lng - bounds.sw.lng) / lngRange) * iw,
+        y: ((bounds.ne.lat - lat) / latRange) * ih,
+      });
+      if (latRange > 0 && lngRange > 0 && activeSegs.length > 0) {
+        ctx.beginPath();
+        let hasPath = false;
+        activeSegs.forEach(s => {
+          const corners = getCornersHM(s);
+          if (!corners) return;
+          corners.forEach((corner, i) => {
+            const { x, y } = toImgPx(corner.lat, corner.lng);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            hasPath = true;
+          });
+          ctx.closePath();
+        });
+        if (hasPath) ctx.clip();
+      }
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(img, 0, 0, iw, ih);
+      if (cancelled) return;
+      const clippedUrl = clipCanvas.toDataURL('image/png');
+      const swLL = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
+      const neLL = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
+      heatmapOverlayRef.current = new maps.GroundOverlay(clippedUrl, new maps.LatLngBounds(swLL, neLL), {
+        opacity: 1.0, clickable: false, map: mapRef.current,
+      });
+    };
+    img.onerror = () => {
+      if (cancelled) return;
+      // Fallback sin clip si falla la carga de imagen
+      const swLL = new maps.LatLng(bounds.sw.lat, bounds.sw.lng);
+      const neLL = new maps.LatLng(bounds.ne.lat, bounds.ne.lng);
+      heatmapOverlayRef.current = new maps.GroundOverlay(dataUrl, new maps.LatLngBounds(swLL, neLL), {
+        opacity: 0.78, clickable: false, map: mapRef.current,
+      });
+    };
+    img.src = dataUrl;
+    return () => { cancelled = true; };
+  }, [heatmapLayer, segments, ready]);
+
+  // NOTA: el diagrama detallado de ruta del sol sigue en SunPathDiagram bajo el
+  // mapa. Aquí solo va una indicación delgada visible.
+
+  if (error) {
+    return (
+      <div style={{ padding: 16, fontSize: 11, color: '#ff8a80', background: '#2a0d0d', borderRadius: 6 }}>
+        ⚠ {error}. Verifica que <code>REACT_APP_GOOGLE_API_KEY</code> esté disponible en el frontend con "Maps JavaScript API" habilitada.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div ref={containerRef} style={{ width: '100%', height, background: '#000' }} />
+      {!ready && (
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(7,9,15,0.6)', color: '#7A9EAA', fontSize: 11 }}>
+          Cargando mapa…
+        </div>
+      )}
+      {ready && busy && (
+        <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(7,9,15,0.85)', color: '#FFB800', fontSize: 10, padding: '4px 10px', borderRadius: 14, fontWeight: 600 }}>
+          ⟳ Recalculando…
+        </div>
+      )}
+      {ready && (
+        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 3, zIndex: 5 }}>
+          {[{ id: 'hybrid', icon: '🛰', title: 'Vista satélite' }, { id: 'roadmap', icon: '🗺', title: 'Vista mapa' }].map(({ id, icon, title }) => (
+            <button key={id} title={title} onClick={() => { setMapType(id); mapRef.current?.setMapTypeId(id); }} style={{
+              width: 30, height: 30, background: mapType === id ? 'rgba(1,112,139,0.92)' : 'rgba(7,9,15,0.82)',
+              border: `1px solid ${mapType === id ? '#01708B' : 'rgba(122,158,170,0.35)'}`, borderRadius: 6,
+              cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.5)', transition: 'background 0.15s, border-color 0.15s',
+            }}>{icon}</button>
+          ))}
+          <button title={showLabels ? 'Ocultar etiquetas' : 'Mostrar etiquetas'} onClick={() => setShowLabels(v => !v)} style={{
+            width: 30, height: 30, background: showLabels ? 'rgba(7,9,15,0.82)' : 'rgba(1,112,139,0.92)',
+            border: `1px solid ${showLabels ? 'rgba(122,158,170,0.35)' : '#01708B'}`, borderRadius: 6,
+            cursor: 'pointer', fontSize: 11, fontWeight: 700, color: showLabels ? '#7A9EAA' : '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.5)', transition: 'background 0.15s, border-color 0.15s',
+            fontFamily: 'inherit',
+          }}>Aa</button>
+        </div>
+      )}
+      {ready && (
+        <div style={{
+          marginTop: 6,
+          background: moved ? 'rgba(74,222,128,0.12)' : 'rgba(7,9,15,0.85)',
+          border: `1px solid ${moved ? 'rgba(74,222,128,0.4)' : 'rgba(122,158,170,0.25)'}`,
+          color: moved ? '#4ade80' : '#E8F0F7',
+          fontSize: 10, padding: '5px 10px', borderRadius: 6, lineHeight: 1.35,
+        }}>
+          {moved ? '✓ Ubicación ajustada — el cálculo se actualizó' : '✋ Arrastra el pin (o haz click) para afinar la ubicación exacta sobre el techo'}
+        </div>
+      )}
+      {ready && !heatmapLayer?.dataUrl && (
+        <div style={{
+          marginTop: 6,
+          padding: '6px 10px',
+          background: 'rgba(7,9,15,0.92)',
+          border: '1px solid rgba(122,158,170,0.25)',
+          borderRadius: 8,
+          fontSize: 10,
+          color: '#E8F0F7',
+          display: 'flex', flexWrap: 'wrap', gap: '4px 14px',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <span style={{ fontWeight: 700, color: '#FFB800', letterSpacing: 0.4, fontSize: 9 }}>LEYENDA</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#FF8C00', fontSize: 14, lineHeight: 1 }}>↗</span>
+            Orientación del techo
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#FFD93D', fontSize: 14, lineHeight: 1 }}>☀</span>
+            Trayectoria del sol
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ color: '#3b82f6', fontSize: 14, lineHeight: 1 }}>▪</span>
+            Paneles estimados
+          </span>
+        </div>
+      )}
+      {heatmapLayer?.dataUrl && (
+        <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(7,9,15,0.92)', border: '1px solid rgba(255,184,0,0.35)', borderRadius: 8, fontSize: 10, color: '#E8F0F7', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, color: '#FFB800', letterSpacing: 0.5, fontSize: 9 }}>IRRADIANCIA SOLAR</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 120px', minWidth: 100 }}>
+            <span style={{ fontSize: 9, color: '#7A9EAA' }}>{heatmapLayer.minVal != null ? Math.round(heatmapLayer.minVal) + ' kWh/m²' : 'bajo'}</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 4, background: 'linear-gradient(to right, #0000ff, #0080ff, #00dcb4, #00dc3c, #c8e60a, #ffb400, #ff0000)' }} />
+            <span style={{ fontSize: 9, color: '#7A9EAA' }}>{heatmapLayer.maxVal != null ? Math.round(heatmapLayer.maxVal) + ' kWh/m²' : 'alto'}</span>
+          </div>
+          {heatmapLayer.imageryDate && (
+            <span style={{ fontSize: 9, color: '#7A9EAA' }}>
+              Imagen: {heatmapLayer.imageryDate.year}/{String(heatmapLayer.imageryDate.month).padStart(2,'0')}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

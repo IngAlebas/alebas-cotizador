@@ -54,7 +54,7 @@ export async function fetchPVProduction({ lat, lon, kwp, losses = 14, tilt = 10,
   if (n8nConfigured()) {
     try {
       data = await n8nPost('pvgis', { lat, lon, kwp, tilt, azimuth, losses });
-      if (!data?.annualKwh) throw new Error('PVGIS n8n: respuesta sin annualKwh');
+      if (!data?.annualKwh) throw new Error('Modelo de irradiancia no disponible.');
     } catch (e) {
       data = await fetchDirect({ lat, lon, kwp, losses, tilt, azimuth });
     }
