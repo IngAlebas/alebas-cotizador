@@ -241,7 +241,7 @@ function AppShell() {
         />
       )}
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
-      {view === 'proveedor' && <SupplierPortal addSupplierSubmission={addSupp} />}
+      {/* view=proveedor is now full-page in App() — not rendered inside the shell */}
       {view === 'backoffice' && (
         adminAuth
           ? <BackOffice
@@ -296,12 +296,14 @@ function AppShell() {
 export default function App() {
   const urlParams = new URLSearchParams(window.location.search);
   const urlView = urlParams.get('view');
+  const token = urlParams.get('token');
+  if (urlView === 'proveedor') {
+    return <SupplierPortal token={token} />;
+  }
   if (urlView === 'tecnico') {
-    const token = urlParams.get('token');
     return <TechnicianPortal token={token} />;
   }
   if (urlView === 'seguimiento') {
-    const token = urlParams.get('token');
     return <QuoteTracking token={token} />;
   }
   return <AppShell />;
