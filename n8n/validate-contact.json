@@ -89,7 +89,7 @@
       "name": "Format valid?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [1120, 420]
     },
     {
       "parameters": {
@@ -101,7 +101,7 @@
       "name": "Postgres lookup",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [900, 200],
+      "position": [1340, 320],
       "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
     },
     {
@@ -112,7 +112,7 @@
       "name": "Evaluate policy",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 200]
+      "position": [1560, 320]
     },
     {
       "parameters": {
@@ -124,7 +124,7 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1340, 300]
+      "position": [1780, 420]
     }
   ],
   "connections": {

@@ -8,6 +8,7 @@ import {
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
   getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS,
   getPR, DEPT_PR,
+  getSoiling,
   calcDimensionalWeight, getBillableWeight, getZoneKmFactor
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
@@ -490,7 +491,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sizingKwp = targetKwp || consumptionKwp;
     const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters, { phases: phasesForAcometida(f.acometida) });
     const pr = getPR(dest?.dept);
-    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp, pr });
+    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp, pr, dept: dest?.dept });
 
     let pvgisAnnualKwh = null;
     let pvwattsAnnualKwh = null;
@@ -546,7 +547,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
-      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, pr, ...temps });
+      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, pr, dept: dest?.dept, ...temps });
 
     const eqInfo = { numPanels: sys.numPanels, panel, inv: inv2 };
     const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0, CARRIERS, dest.km || 0, eqInfo);
@@ -2328,7 +2329,9 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               ['Acometida', `${ACOMETIDA_INFO[f.acometida].label} (${ACOMETIDA_INFO[f.acometida].hilos} · ${ACOMETIDA_INFO[f.acometida].volts})`], ['Tipo sistema', f.systemType],
               ['Strings', `${res.ns} × ${res.ppss} paneles`], ['Ratio DC/AC', res.dca],
               ['Área techo', `${res.roof} m²`], ['Peso sistema', `${fmt(res.kgTotal)} kg`],
-              ['PR regional', `${res.pr != null ? (res.pr * 100).toFixed(0) : '78'}% (${dest?.dept || 'N/A'})`], ['Fuente prod.', res.productionSource],
+              ['PR regional', `${res.pr != null ? (res.pr * 100).toFixed(0) : '78'}% (${dest?.dept || 'N/A'})`],
+              ...(dest?.dept ? [['Soiling regional', `${(getSoiling(dest.dept) * 100).toFixed(1)}% polvo/suciedad (${dest.dept})`]] : []),
+              ['Fuente prod.', res.productionSource],
               ...(needsB ? [
                 ['Baterías', `${f.battQty} × ${batt.brand} ${batt.model}`],
                 ['Config. banco', `${bankSeries}S × ${bankParallel}P · ${bankSeries * batt.voltage}V bus`],

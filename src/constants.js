@@ -176,6 +176,54 @@ export function getPR(dept) {
   return DEPT_PR[dept] ?? 0.78;
 }
 
+// ==================== SOILING FACTOR BY REGION ====================
+// Soiling loss factor by region (% annual yield loss from dust/dirt).
+// Caribe dry: 3-5%, Andes: 1-2%, Llanos/Amazonia: 1%, Pacifico: 0.5%.
+// Fuente: análisis literatura PVGIS + IDEAM Colombia + IEC TR 61724-3.
+export const DEPT_SOILING = {
+  // Costa Caribe (dry, high dust)
+  'La Guajira':          5.0,
+  'Cesar':               4.5,
+  'Magdalena':           4.0,
+  'Atlántico':           4.0,
+  'Bolívar':             3.5,
+  'Sucre':               3.5,
+  'Córdoba':             3.5,
+  // Andina interior (moderate)
+  'Cundinamarca':        2.0,
+  'Bogotá D.C.':         2.0,
+  'Boyacá':              1.5,
+  'Santander':           2.0,
+  'Norte de Santander':  2.5,
+  'Antioquia':           1.5,
+  'Caldas':              1.5,
+  'Risaralda':           1.5,
+  'Quindío':             1.5,
+  'Tolima':              2.5,
+  'Huila':               2.5,
+  'Valle del Cauca':     2.0,
+  'Cauca':               1.5,
+  'Nariño':              1.5,
+  // Llanos / Amazonia (heavy rain, low soiling)
+  'Meta':                1.0,
+  'Casanare':            1.5,
+  'Arauca':              1.5,
+  'Vichada':             1.5,
+  'Caquetá':             1.0,
+  'Putumayo':            1.0,
+  'Amazonas':            1.0,
+  'Guainía':             1.0,
+  'Vaupés':              1.0,
+  'Guaviare':            1.0,
+  // Pacifico (very humid, low soiling)
+  'Chocó':               0.5,
+};
+
+/** Returns soiling fraction (0–1) for a department. Default 2% (Andina interior). */
+export function getSoiling(dept) {
+  return (DEPT_SOILING[dept] ?? 2.0) / 100;
+}
+
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
 // Zonas desde Bogotá D.C. como origen
 // Cap regulatorio: AGPE Mayor (CREG 174/2021) hasta 1 MW; usamos 500 kW como
@@ -749,8 +797,11 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const invObj = (typeof inv === 'object' && inv !== null) ? inv : { kw: inv };
   const invKw = invObj.kw;
   const PR = opts.pr ?? 0.78;
+  // Apply soiling factor for the department (additive loss on top of PR).
+  // getSoiling returns e.g. 0.02 for 2% loss. effectivePR = PR × (1 − soiling).
+  const effectivePR = opts.dept ? PR * (1 - getSoiling(opts.dept)) : PR;
   const daily = monthlyKwh / 30;
-  const consumptionKwp = daily / (psh * PR);
+  const consumptionKwp = daily / (psh * effectivePR);
   const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;
   const kwpN = Math.min(rawTarget, MAX_KWP_AGPE);
   const cappedByRegulation = rawTarget > MAX_KWP_AGPE;
@@ -768,7 +819,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   if (usingPVGIS) {
     ap = Math.round(opts.pvgisAnnualKwh);
   } else {
-    dp = parseFloat((actKwp * psh * PR).toFixed(1));
+    dp = parseFloat((actKwp * psh * effectivePR).toFixed(1));
     ap = Math.round(dp * 365);
   }
   // Factor de sombreado local de Google Solar API dataLayers (0–1).
