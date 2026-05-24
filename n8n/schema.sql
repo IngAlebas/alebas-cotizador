@@ -152,3 +152,21 @@ ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS verified_token    TEXT;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS data_consent      JSONB;
 ALTER TABLE users  ADD COLUMN IF NOT EXISTS wa_opt_out        BOOLEAN DEFAULT FALSE;
+
+-- ==================== TECHNICIANS ====================
+CREATE TABLE IF NOT EXISTS technicians (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  email       TEXT UNIQUE NOT NULL,
+  phone       TEXT,
+  retie_cert  TEXT,
+  active      BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS technician_id    INT REFERENCES technicians(id);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_token       UUID DEFAULT gen_random_uuid();
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_approved_at TIMESTAMPTZ;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_notes       TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS doc_status       TEXT DEFAULT 'pendiente';
+-- doc_status values: 'pendiente' | 'en_revision' | 'aprobado' | 'cambios_solicitados'
