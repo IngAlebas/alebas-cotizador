@@ -363,3 +363,34 @@ ALTER TABLE technicians ADD COLUMN IF NOT EXISTS max_kwp_month NUMERIC(8,2) DEFA
 ALTER TABLE technicians ADD COLUMN IF NOT EXISTS active_jobs   INTEGER DEFAULT 0;
 ALTER TABLE technicians ADD COLUMN IF NOT EXISTS retie_expires DATE;
 ALTER TABLE technicians ADD COLUMN IF NOT EXISTS dept         TEXT;
+
+-- ============================================================
+-- FASE VALIDACIÓN CREDENCIALES INSTALADORES (RETIE 2013)
+-- ============================================================
+
+-- Extend technicians table with credential fields
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS installer_type   TEXT DEFAULT 'tecnico' CHECK (installer_type IN ('ingeniero','tecnico'));
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS copnia_number    TEXT;    -- Tarjeta profesional COPNIA (ingenieros)
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS conte_number     TEXT;    -- Certificado CONTE (técnicos)
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS credential_status TEXT DEFAULT 'pendiente'
+  CHECK (credential_status IN ('pendiente','en_revision','aprobado','rechazado','vencido'));
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS credential_notes TEXT;    -- Admin rejection reason
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS verified_at      TIMESTAMPTZ;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS verified_by      TEXT;    -- admin email
+
+-- Credential documents table (store metadata, not the binary — files go to storage)
+CREATE TABLE IF NOT EXISTS installer_documents (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  technician_id  INTEGER NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
+  doc_type       TEXT NOT NULL CHECK (doc_type IN (
+                   'diploma','hoja_de_vida','tarjeta_profesional','certificado_conte','otro')),
+  file_name      TEXT NOT NULL,
+  file_size_kb   INTEGER,
+  file_data_b64  TEXT,    -- base64 for small docs (<500KB), null for large ones
+  storage_url    TEXT,    -- future: S3/R2 URL
+  uploaded_at    TIMESTAMPTZ DEFAULT NOW(),
+  status         TEXT DEFAULT 'pendiente' CHECK (status IN ('pendiente','aprobado','rechazado')),
+  notes          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_installer_docs_tech ON installer_documents(technician_id);
+CREATE INDEX IF NOT EXISTS idx_installer_docs_status ON installer_documents(status);

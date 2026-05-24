@@ -17,13 +17,62 @@
     },
     {
       "parameters": {
-        "jsCode": "// Normaliza payload del quoter a columnas planas + payload JSONB completo.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst q = body || {};\nconst r = q.results || {};\nconst b = q.budget || {};\nconst agpe = q.agpe || {};\nconst panel = q.panel || {};\n\nconst email = (q.email || '').toString().trim().toLowerCase();\nconst phone = (q.phone || '').toString().trim();\nconst name = (q.name || '').toString().trim();\nconst company = (q.company || '').toString().trim();\nif (!email) throw new Error('email requerido');\nif (!name) throw new Error('name requerido');\n\nconst ip = (src.headers && (src.headers['x-forwarded-for'] || src.headers['x-real-ip'])) || null;\nconst userAgent = (src.headers && src.headers['user-agent']) || null;\n\n// Idempotencia: si el frontend envió un dedupe_key, lo usamos; si no, generamos uno.\nconst dedupeKey = q.dedupeKey || null;\n\nreturn [{ json: {\n  email, phone, name, company,\n  system_type: q.systemType || null,\n  monthly_kwh: q.monthlyKwh != null ? Number(q.monthlyKwh) : null,\n  operator: q.operator || null,\n  dept: q.city || q.dept || null,\n  address: q.address || null,\n  lat: q.lat != null ? Number(q.lat) : null,\n  lon: q.lon != null ? Number(q.lon) : null,\n  kwp: r.actKwp != null ? Number(r.actKwp) : null,\n  num_panels: r.numPanels != null ? Math.round(Number(r.numPanels)) : null,\n  panel_id: panel.id || null,\n  production_kwh_month: r.mp != null ? Number(r.mp) : null,\n  coverage_pct: r.cov != null ? Number(r.cov) : null,\n  shade_index: q.shadeIndex != null ? Number(q.shadeIndex) : null,\n  shade_source: q.shadeSource || null,\n  total_cop: b.tot != null ? Math.round(Number(b.tot)) : null,\n  total_usd: b.budgetUsd != null ? Math.round(Number(b.budgetUsd)) : null,\n  section_a_cop: b.sA != null ? Math.round(Number(b.sA)) : null,\n  section_b_cop: b.sB != null ? Math.round(Number(b.sB)) : null,\n  transport_cop: b.transport != null ? Math.round(Number(b.transport)) : null,\n  annual_sav_cop: b.sav != null ? Math.round(Number(b.sav)) : null,\n  roi_years: b.roi != null ? Number(b.roi) : null,\n  has_excedentes: agpe.excedentes != null ? Number(agpe.excedentes) > 0 : null,\n  agpe_category: agpe.agpeCategory || null,\n  regulatory_ids: Array.isArray(q.regulatory) ? q.regulatory : [],\n  payload: q,\n  ip, user_agent: userAgent,\n  dedupe_key: dedupeKey,\n  phone_verified: q.phoneVerified === true,\n  phone_verified_at: q.phoneVerified === true ? new Date().toISOString() : null,\n  verified_token: q.verifiedToken || null,\n  data_consent: q.dataConsent || null,\n} }];"
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS cnt\nFROM quotes\nWHERE ip = $1::inet\n  AND created_at > NOW() - INTERVAL '1 hour'",
+        "options": {
+          "queryReplacement": "={{ [$input.first().json.headers?.['x-forwarded-for'] || $input.first().json.headers?.['x-real-ip'] || '0.0.0.0'] }}"
+        }
+      },
+      "id": "c2000000-0001-4000-9000-000000000008",
+      "name": "Rate Limit Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [460, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "rate-limit-ok",
+              "leftValue": "={{ Number($json.cnt) }}",
+              "rightValue": 5,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c2000000-0001-4000-9000-000000000009",
+      "name": "Exceeded 5/hour?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"error\": \"Demasiadas solicitudes. Intenta más tarde.\", \"retry_after\": 3600 }",
+        "options": { "responseCode": 429 }
+      },
+      "id": "c2000000-0001-4000-9000-000000000010",
+      "name": "Respond 429",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza payload del quoter a columnas planas + payload JSONB completo.\nconst src = $('Webhook').first().json;\nconst body = src.body || src;\nconst q = body || {};\nconst r = q.results || {};\nconst b = q.budget || {};\nconst agpe = q.agpe || {};\nconst panel = q.panel || {};\n\nconst email = (q.email || '').toString().trim().toLowerCase();\nconst phone = (q.phone || '').toString().trim();\nconst name = (q.name || '').toString().trim();\nconst company = (q.company || '').toString().trim();\nif (!email) throw new Error('email requerido');\nif (!name) throw new Error('name requerido');\n\nconst ip = (src.headers && (src.headers['x-forwarded-for'] || src.headers['x-real-ip'])) || null;\nconst userAgent = (src.headers && src.headers['user-agent']) || null;\n\n// Idempotencia: si el frontend envió un dedupe_key, lo usamos; si no, generamos uno.\nconst dedupeKey = q.dedupeKey || null;\n\nreturn [{ json: {\n  email, phone, name, company,\n  system_type: q.systemType || null,\n  monthly_kwh: q.monthlyKwh != null ? Number(q.monthlyKwh) : null,\n  operator: q.operator || null,\n  dept: q.city || q.dept || null,\n  address: q.address || null,\n  lat: q.lat != null ? Number(q.lat) : null,\n  lon: q.lon != null ? Number(q.lon) : null,\n  kwp: r.actKwp != null ? Number(r.actKwp) : null,\n  num_panels: r.numPanels != null ? Math.round(Number(r.numPanels)) : null,\n  panel_id: panel.id || null,\n  production_kwh_month: r.mp != null ? Number(r.mp) : null,\n  coverage_pct: r.cov != null ? Number(r.cov) : null,\n  shade_index: q.shadeIndex != null ? Number(q.shadeIndex) : null,\n  shade_source: q.shadeSource || null,\n  total_cop: b.tot != null ? Math.round(Number(b.tot)) : null,\n  total_usd: b.budgetUsd != null ? Math.round(Number(b.budgetUsd)) : null,\n  section_a_cop: b.sA != null ? Math.round(Number(b.sA)) : null,\n  section_b_cop: b.sB != null ? Math.round(Number(b.sB)) : null,\n  transport_cop: b.transport != null ? Math.round(Number(b.transport)) : null,\n  annual_sav_cop: b.sav != null ? Math.round(Number(b.sav)) : null,\n  roi_years: b.roi != null ? Number(b.roi) : null,\n  has_excedentes: agpe.excedentes != null ? Number(agpe.excedentes) > 0 : null,\n  agpe_category: agpe.agpeCategory || null,\n  regulatory_ids: Array.isArray(q.regulatory) ? q.regulatory : [],\n  payload: q,\n  ip, user_agent: userAgent,\n  dedupe_key: dedupeKey,\n  phone_verified: q.phoneVerified === true,\n  phone_verified_at: q.phoneVerified === true ? new Date().toISOString() : null,\n  verified_token: q.verifiedToken || null,\n  data_consent: q.dataConsent || null,\n} }];"
       },
       "id": "c2000000-0001-4000-9000-000000000002",
       "name": "Normalize payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [900, 420]
     },
     {
       "parameters": {
@@ -37,7 +86,7 @@
       "name": "Upsert user",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [680, 300],
+      "position": [1120, 420],
       "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
     },
     {
@@ -48,7 +97,7 @@
       "name": "Merge userId",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1340, 420]
     },
     {
       "parameters": {
@@ -62,7 +111,7 @@
       "name": "Insert quote",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1120, 300],
+      "position": [1560, 420],
       "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
     },
     {
@@ -73,7 +122,7 @@
       "name": "Build response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 300]
+      "position": [1780, 420]
     },
     {
       "parameters": {
@@ -85,11 +134,18 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1560, 300]
+      "position": [2000, 420]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Normalize payload", "type": "main", "index": 0 }]] },
+    "Webhook": { "main": [[{ "node": "Rate Limit Check", "type": "main", "index": 0 }]] },
+    "Rate Limit Check": { "main": [[{ "node": "Exceeded 5/hour?", "type": "main", "index": 0 }]] },
+    "Exceeded 5/hour?": {
+      "main": [
+        [{ "node": "Respond 429", "type": "main", "index": 0 }],
+        [{ "node": "Normalize payload", "type": "main", "index": 0 }]
+      ]
+    },
     "Normalize payload": { "main": [[{ "node": "Upsert user", "type": "main", "index": 0 }]] },
     "Upsert user": { "main": [[{ "node": "Merge userId", "type": "main", "index": 0 }]] },
     "Merge userId": { "main": [[{ "node": "Insert quote", "type": "main", "index": 0 }]] },
@@ -101,5 +157,5 @@
   "staticData": null,
   "tags": [{ "name": "alebas" }],
   "triggerCount": 0,
-  "versionId": "1"
+  "versionId": "2"
 }
