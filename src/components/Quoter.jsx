@@ -1037,6 +1037,23 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       { gridExport, excedentePrice: cuMinusG });
     const annualSav = benefit.totalAnual;
     const roi = annualSav > 0 ? parseFloat((budget.tot / annualSav).toFixed(1)) : 0;
+    // ROI real considera inflación CU (~6% anual histórico Colombia) y degradación
+    // del panel (~0.5%/año). El ROI nominal usa solo savings año-1, lo que
+    // sobreestima el payback. Aterrizamos a la realidad: SIEMPRE recuperarás
+    // antes que el ROI nominal porque la tarifa eléctrica sube cada año.
+    const INFL_CU = 0.06;
+    const DEGRAD_PANEL = 0.005;
+    let cumSavings = 0;
+    let roiReal = 0;
+    let savings25y = 0;
+    if (annualSav > 0 && budget.tot > 0) {
+      for (let y = 1; y <= 25; y++) {
+        const savY = annualSav * Math.pow(1 + INFL_CU, y - 1) * Math.pow(1 - DEGRAD_PANEL, y - 1);
+        cumSavings += savY;
+        if (roiReal === 0 && cumSavings >= budget.tot) roiReal = y;
+      }
+      savings25y = Math.round(cumSavings);
+    }
 
     const budgetUsd = trmData?.cop_per_usd ? parseFloat((budget.tot / trmData.cop_per_usd).toFixed(0)) : null;
 
@@ -1046,7 +1063,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     setRes({ ...sys, inv: inv3, sizedFor, productionSource, productionSources, productionDispersion, googleSolarEstimate: gse || null });
     setBgt({
       ...budget,
-      sav: annualSav, roi,
+      sav: annualSav, roi, roiReal, savings25y,
       transport: transport.total,
       transportCarrier: transport.label,
       transportCarrierId: transport.carrierId,
@@ -3354,7 +3371,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
         {showResumen && (
         <div className="al-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 9, marginBottom: 12 }}>
-          {[['Paneles', res.numPanels, 'unidades'], ['Prod. mensual', fmt(res.mp), 'kWh/mes'], ['Cobertura', res.cov, '%'], ['Prod. anual', fmt(res.ap), 'kWh/año'], ['CO₂ evitado', fmt(res.co2), 'kg/año'], ['ROI', bgt.roi, 'años']].map(([l, v, u]) => (
+          {[['Paneles', res.numPanels, 'unidades'], ['Prod. mensual', fmt(res.mp), 'kWh/mes'], ['Cobertura', res.cov, '%'], ['Prod. anual', fmt(res.ap), 'kWh/año'], ['CO₂ evitado', fmt(res.co2), 'kg/año'], ['Payback real', bgt.roiReal || bgt.roi, bgt.roiReal ? 'años (con inflación)' : 'años']].map(([l, v, u]) => (
             <div key={l} style={ss.stat}>
               <div style={{ fontSize: 9, color: C.muted, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
               <div style={{ fontSize: 19, fontWeight: 700, color: '#fff' }}>{v}</div>
@@ -4337,7 +4354,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           </div>
           <div style={{ display: 'flex', gap: 9 }}>
-            {[['Ahorro anual', fmtCOP(bgt.sav), C.teal], ['ROI', `${bgt.roi} años`, C.yellow], ['Transporte', fmtCOP(bgt.transport), C.muted]].map(([l, v, col]) => (
+            {[['Ahorro anual (año 1)', fmtCOP(bgt.sav), C.teal], ['Payback real', bgt.roiReal ? `${bgt.roiReal} años (con inflación)` : `${bgt.roi} años`, C.yellow], ['Transporte', fmtCOP(bgt.transport), C.muted]].map(([l, v, col]) => (
               <div key={l} style={{ ...ss.stat, flex: 1 }}><div style={{ fontSize: 9, color: C.muted }}>{l}</div><div style={{ fontSize: 13, fontWeight: 700, color: col, marginTop: 3 }}>{v}</div></div>
             ))}
           </div>
@@ -4557,17 +4574,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           if (agpe?.excedentes > 0 && agpe?.gridExport) {
             obs.push({ type: 'info', title: `Trámite AGPE con ${operator.name}`, text: `Pasos: (1) Solicitud Conexión Simple (Formato CREG 030/2018), (2) Estudio de conexión por el OR, (3) Inscripción en CGM como AGPE ${agpe.agpeCategory}, (4) Instalación de medidor bidireccional (costo asumido por el OR para AGPE Menor ≤100 kWp), (5) Registro UPME-FNCE para beneficios Ley 1715. Tiempo total: 30-90 días. SolarHub gestiona el trámite completo.` });
           }
-          // Proyección 25 años con inflación CU
-          if (bgt?.sav > 0 && bgt?.tot > 0) {
-            const inflRate = 0.06;  // 6% anual CU típico Colombia
-            let acumulado = 0;
-            let yearROI = 0;
-            for (let y = 1; y <= 25; y++) {
-              const savYear = bgt.sav * Math.pow(1 + inflRate, y - 1) * Math.pow(0.995, y - 1); // degradación 0.5%/año
-              acumulado += savYear;
-              if (yearROI === 0 && acumulado >= bgt.tot) yearROI = y;
-            }
-            obs.push({ type: 'info', title: `Proyección 25 años: ahorro acumulado ~${fmtCOP(acumulado)} (ROI real ${yearROI || '>25'} años)`, text: `Asumiendo inflación CU 6%/año (típica histórica Colombia) y degradación panel 0.5%/año, el ahorro acumulado en 25 años sería ~${fmtCOP(acumulado)} vs inversión ${fmtCOP(bgt.tot)}. ROI real considerando inflación: ${yearROI || 'más de 25'} años. El primer año (${fmtCOP(bgt.sav)}) crece anualmente con la tarifa.` });
+          // Proyección 25 años — usa los mismos roiReal/savings25y calculados en
+          // calculate() para mantener consistencia entre headline y observación.
+          if (bgt?.sav > 0 && bgt?.tot > 0 && bgt?.savings25y > 0) {
+            const yearROI = bgt.roiReal;
+            obs.push({ type: 'info', title: `Proyección 25 años: ahorro acumulado ~${fmtCOP(bgt.savings25y)} (ROI real ${yearROI || '>25'} años)`, text: `Asumiendo inflación CU 6%/año (típica histórica Colombia) y degradación panel 0.5%/año, el ahorro acumulado en 25 años sería ~${fmtCOP(bgt.savings25y)} vs inversión ${fmtCOP(bgt.tot)}. ROI real considerando inflación: ${yearROI || 'más de 25'} años (vs ${bgt.roi} años payback simple sin inflación). El primer año (${fmtCOP(bgt.sav)}) crece anualmente con la tarifa.` });
           }
           if (!res.inv) {
             const sysLabel = f.systemType === 'off-grid' ? 'aislado (off-grid)'
@@ -4802,7 +4813,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <div className="al-pdf-kpi"><span>Generación anual</span><strong>{(res.productionSources?.length ? Math.round(res.productionSources.reduce((a,s)=>a+s.kwh,0)/res.productionSources.length) : res.kwhYear || 0).toLocaleString('es-CO')} kWh</strong><small>{res.productionSource}</small></div>
               {bgt?.sav > 0 && <div className="al-pdf-kpi"><span>Ahorro anual</span><strong>{fmtCOP(bgt.sav)}</strong><small>tarifa {operator.name}</small></div>}
               {bgt?.tot > 0 && <div className="al-pdf-kpi"><span>Inversión</span><strong>{fmtCOP(bgt.tot)}</strong><small>{bgt.budgetUsd ? `≈ USD ${fmt(bgt.budgetUsd)}` : ''}</small></div>}
-              {bgt?.roi > 0 && <div className="al-pdf-kpi"><span>Retorno</span><strong>{bgt.roi} años</strong><small>ROI estimado</small></div>}
+              {bgt?.roi > 0 && <div className="al-pdf-kpi"><span>Retorno</span><strong>{bgt.roiReal || bgt.roi} años</strong><small>{bgt.roiReal ? `payback real (inflación 6%/año, degradación 0.5%/año) · simple: ${bgt.roi} años` : 'payback simple'}</small></div>}
               <div className="al-pdf-kpi"><span>Cobertura</span><strong>{res.cov}%</strong><small>{res.sizedFor === 'area' ? 'limitado por área' : res.sizedFor === 'excedentes' ? 'incl. excedentes AGPE' : 'cubre consumo'}</small></div>
             </div>
           </section>
@@ -5192,8 +5203,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   </div>
                   <div className="al-pdf-roi-card">
                     <span>Retorno (payback)</span>
-                    <strong>{bgt.roi} años</strong>
-                    <small>ROI estimado</small>
+                    <strong>{bgt.roiReal || bgt.roi} años</strong>
+                    <small>{bgt.roiReal ? `real (con inflación 6%/año y degradación 0.5%/año) · simple: ${bgt.roi} años` : 'payback simple'}</small>
                   </div>
                   {agpe?.totalAnualCop > 0 && (
                     <div className="al-pdf-roi-card">
@@ -5298,7 +5309,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   <tr>
                     <td><strong>{agpe?.excedentes > 0 ? '11' : (needsB ? '10' : '9')}. Retorno</strong></td>
                     <td>
-                      Inversión / ahorro_anual = {fmtCOP(bgt.tot)} / {fmtCOP(bgt.sav)} = <strong>{bgt.roi} años</strong> de payback
+                      Payback simple: Inversión / ahorro_anual = {fmtCOP(bgt.tot)} / {fmtCOP(bgt.sav)} = <strong>{bgt.roi} años</strong>.
+                      {bgt.roiReal > 0 && bgt.roiReal !== bgt.roi && (
+                        <> Payback real considerando inflación CU 6%/año y degradación panel 0.5%/año: <strong>{bgt.roiReal} años</strong>. Ahorro acumulado 25 años: <strong>{fmtCOP(bgt.savings25y)}</strong>.</>
+                      )}
                     </td>
                   </tr>
                 )}
