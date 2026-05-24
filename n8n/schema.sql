@@ -104,3 +104,50 @@ CREATE TABLE IF NOT EXISTS batteries (
 );
 CREATE INDEX IF NOT EXISTS idx_batteries_mfr_model ON batteries(manufacturer, model);
 CREATE INDEX IF NOT EXISTS idx_batteries_raw ON batteries USING gin(raw);
+
+-- ==================== WHATSAPP ====================
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id          BIGSERIAL PRIMARY KEY,
+  phone       TEXT NOT NULL,
+  code_hash   TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  attempts    INT DEFAULT 0,
+  consumed_at TIMESTAMPTZ,
+  ip          INET,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_otp_phone_expires ON otp_codes(phone, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS wa_messages (
+  id            BIGSERIAL PRIMARY KEY,
+  phone         TEXT NOT NULL,
+  quote_id      BIGINT REFERENCES quotes(id) ON DELETE SET NULL,
+  direction     TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
+  template      TEXT,
+  content       TEXT,
+  wa_message_id TEXT,
+  status        TEXT DEFAULT 'sent',
+  sent_at       TIMESTAMPTZ DEFAULT NOW(),
+  read_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_wa_messages_phone ON wa_messages(phone);
+CREATE INDEX IF NOT EXISTS idx_wa_messages_quote ON wa_messages(quote_id);
+
+CREATE TABLE IF NOT EXISTS wa_conversations (
+  id              BIGSERIAL PRIMARY KEY,
+  phone           TEXT UNIQUE NOT NULL,
+  state           TEXT DEFAULT 'initial',
+  context_json    JSONB DEFAULT '{}',
+  quote_id        BIGINT REFERENCES quotes(id) ON DELETE SET NULL,
+  opt_out         BOOLEAN DEFAULT FALSE,
+  last_message_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wa_conversations_phone ON wa_conversations(phone);
+
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified    BOOLEAN DEFAULT FALSE;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS verified_token    TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS data_consent      JSONB;
+ALTER TABLE users  ADD COLUMN IF NOT EXISTS wa_opt_out        BOOLEAN DEFAULT FALSE;

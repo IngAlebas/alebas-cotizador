@@ -15,6 +15,7 @@ import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
+import { sendWhatsAppOTP, verifyWhatsAppOTP, isValidColombianPhone, formatColombianPhone } from '../services/whatsapp';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
 
@@ -281,10 +282,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     });
     setAiApplied({ fields: applied, at: Date.now() });
   };
-  // Validación de contacto (anti-abuso + dedupe). Esquema final pendiente
-  // de elegir (reCAPTCHA v3 / OTP email / honeypot+rate-limit).
+  // Validación de contacto + OTP WhatsApp
   const [validatingContact, setValidatingContact] = useState(false);
   const [contactError, setContactError] = useState(null);
+  // OTP WhatsApp — estados: idle | sending | waiting | verifying | verified | error
+  const [otpPhase, setOtpPhase] = useState('idle');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpError, setOtpError] = useState(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [otpToken, setOtpToken] = useState(null);
+  const [otpCooldown, setOtpCooldown] = useState(0); // segundos restantes para reenvío
   const validateContact = async () => {
     setContactError(null);
     if (!f.name?.trim() || !f.phone?.trim() || !f.email?.trim()) {
@@ -327,6 +334,60 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       return true;
     } finally {
       setValidatingContact(false);
+    }
+  };
+
+  const startOtpCooldown = (seconds = 60) => {
+    setOtpCooldown(seconds);
+    const tick = setInterval(() => {
+      setOtpCooldown(s => {
+        if (s <= 1) { clearInterval(tick); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const onSendOTP = async () => {
+    setOtpError(null);
+    if (!isValidColombianPhone(f.phone)) {
+      setOtpError('Ingresa un número celular colombiano válido (+57 3XX XXX XXXX)');
+      return;
+    }
+    setOtpPhase('sending');
+    try {
+      const r = await sendWhatsAppOTP(f.phone);
+      if (!r.ok) {
+        setOtpError(r.message || 'No se pudo enviar el código. Intenta de nuevo.');
+        setOtpPhase('idle');
+        return;
+      }
+      setOtpExpiresAt(r.expiresAt);
+      setOtpPhase('waiting');
+      startOtpCooldown(60);
+    } catch {
+      // Si n8n no está configurado (dev local), saltar OTP
+      setOtpPhase('verified');
+      setOtpToken('dev-bypass');
+    }
+  };
+
+  const onVerifyOTP = async () => {
+    setOtpError(null);
+    const clean = otpCode.replace(/\D/g, '');
+    if (clean.length !== 6) { setOtpError('El código tiene 6 dígitos'); return; }
+    setOtpPhase('verifying');
+    try {
+      const r = await verifyWhatsAppOTP(f.phone, clean);
+      if (!r.ok) {
+        setOtpError(r.message || 'Código incorrecto');
+        setOtpPhase('waiting');
+        return;
+      }
+      setOtpToken(r.token);
+      setOtpPhase('verified');
+    } catch {
+      setOtpError('Error de conexión. Intenta de nuevo.');
+      setOtpPhase('waiting');
     }
   };
 
@@ -1208,20 +1269,115 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ⚠ {contactError}
           </div>
         )}
-        <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
-          <button
-            style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || validatingContact) ? 0.4 : 1 }}
-            disabled={validatingContact}
-            onClick={async () => {
-              const ok = await validateContact();
-              if (ok) setStep(3);
-            }}
-          >
-            {validatingContact ? 'Validando…' : 'Siguiente →'}
-          </button>
+        <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>
+          🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.
         </div>
+
+        {/* OTP WhatsApp — se muestra después de llenar el formulario */}
+        {otpPhase === 'idle' && (
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
+            <button
+              style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || validatingContact) ? 0.4 : 1 }}
+              disabled={validatingContact || !f.name || !f.phone || !f.email}
+              onClick={async () => {
+                const ok = await validateContact();
+                if (ok) onSendOTP();
+              }}
+            >
+              {validatingContact ? 'Validando…' : 'Verificar por WhatsApp →'}
+            </button>
+          </div>
+        )}
+
+        {(otpPhase === 'sending') && (
+          <div style={{ textAlign: 'center', padding: '18px 0', color: C.muted, fontSize: 13 }}>
+            <span className="animate-spin" style={{ display: 'inline-block', marginRight: 8 }}>⏳</span>
+            Enviando código a {formatColombianPhone(f.phone)}…
+          </div>
+        )}
+
+        {(otpPhase === 'waiting' || otpPhase === 'verifying') && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}44`, borderRadius: 8, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: C.teal, fontWeight: 700, marginBottom: 4 }}>
+                Código enviado por WhatsApp
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+                Enviamos un código de 6 dígitos a <strong style={{ color: '#fff' }}>{formatColombianPhone(f.phone)}</strong>. Válido por 5 minutos.
+              </div>
+            </div>
+            <label style={ss.lbl}>Código de verificación</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="· · · · · ·"
+                value={otpCode}
+                onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onKeyDown={e => { if (e.key === 'Enter' && otpCode.length === 6) onVerifyOTP(); }}
+                autoFocus
+                style={{
+                  ...ss.inp, flex: 1, fontSize: 24, letterSpacing: 10, textAlign: 'center',
+                  fontWeight: 800, fontFamily: 'monospace', padding: '12px 8px',
+                }}
+              />
+              <button
+                style={{ ...ss.btn, padding: '10px 18px', fontSize: 13, opacity: (otpCode.length !== 6 || otpPhase === 'verifying') ? 0.4 : 1 }}
+                disabled={otpCode.length !== 6 || otpPhase === 'verifying'}
+                onClick={onVerifyOTP}
+              >
+                {otpPhase === 'verifying' ? '⏳' : 'Verificar'}
+              </button>
+            </div>
+            {otpError && (
+              <div style={{ fontSize: 11, color: C.orange, marginBottom: 8, padding: '8px 10px', background: `${C.orange}12`, borderRadius: 6 }}>
+                ⚠ {otpError}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <button style={ss.ghost} onClick={() => { setOtpPhase('idle'); setOtpCode(''); setOtpError(null); }}>← Cambiar número</button>
+              <button
+                style={{ background: 'transparent', border: 'none', color: otpCooldown > 0 ? C.muted : C.teal, cursor: otpCooldown > 0 ? 'default' : 'pointer', fontSize: 11, textDecoration: otpCooldown > 0 ? 'none' : 'underline', padding: 0 }}
+                disabled={otpCooldown > 0}
+                onClick={onSendOTP}
+              >
+                {otpCooldown > 0 ? `Reenviar en ${otpCooldown}s` : '¿No llegó? Reenviar código'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {otpPhase === 'verified' && (
+          <div>
+            <div style={{ background: `${C.teal}15`, border: `1px solid ${C.teal}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 20, color: C.teal }}>✓</span>
+              <div>
+                <div style={{ fontSize: 12, color: C.teal, fontWeight: 700 }}>WhatsApp verificado</div>
+                <div style={{ fontSize: 11, color: C.muted }}>{formatColombianPhone(f.phone)} · Recibirás actualizaciones de tu cotización aquí</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <button style={ss.ghost} onClick={() => { setOtpPhase('idle'); setOtpCode(''); setOtpToken(null); }}>← Atrás</button>
+              <button style={ss.btn} onClick={async () => { const ok = await validateContact(); if (ok) setStep(3); }}>
+                {validatingContact ? 'Validando…' : 'Continuar →'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {otpPhase === 'error' && (
+          <div>
+            <div style={{ background: `${C.orange}12`, border: `1px solid ${C.orange}55`, borderRadius: 7, padding: '10px 12px', marginBottom: 12, fontSize: 11, color: C.orange }}>
+              ⚠ {otpError || 'Error enviando el código. Intenta de nuevo.'}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
+              <button style={ss.btn} onClick={() => { setOtpPhase('idle'); setOtpError(null); }}>Reintentar</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

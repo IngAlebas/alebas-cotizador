@@ -1,0 +1,217 @@
+{
+  "name": "ALEBAS — wa-send-otp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-send-otp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wa-snd-001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-wa-send-otp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\nconst rawPhone = (body.phone || '').toString().trim();\nconst ip = (body.ip || src.headers?.['x-forwarded-for'] || src.headers?.['x-real-ip'] || '').toString().trim();\n\nconst digits = rawPhone.replace(/\\D/g, '');\nlet phone = '';\nif (digits.length === 10) {\n  phone = '+57' + digits;\n} else if (digits.startsWith('57') && digits.length === 12) {\n  phone = '+' + digits;\n} else if (digits.startsWith('57') && digits.length > 12) {\n  phone = '+' + digits.slice(0, 12);\n} else {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\n\nif (!phone.startsWith('+57') || phone.length !== 13) {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\n\nreturn [{ json: { ok: true, phone, ip } }];"
+      },
+      "id": "wa-snd-002",
+      "name": "Normalize phone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-phone", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-snd-003",
+      "name": "Phone valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as cnt FROM otp_codes WHERE phone=$1 AND created_at > NOW() - INTERVAL '1 hour' AND consumed_at IS NULL",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "id": "wa-snd-004",
+      "name": "Rate limit check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 150],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const db = $input.first().json;\nconst norm = $('Normalize phone').first().json;\nconst phone = norm.phone;\nconst ip = norm.ip || '';\nconst cnt = Number(db.cnt || 0);\n\nif (cnt >= 3) {\n  return [{ json: { ok: false, reason: 'rate_limit', message: 'Demasiados intentos. Espera 1 hora.' } }];\n}\n\nconst code = Math.floor(100000 + Math.random() * 900000).toString();\nconst crypto = require('crypto');\nconst salt = process.env.OTP_SALT || 'solarhub2026';\nconst hash = crypto.createHmac('sha256', salt).update(code).digest('hex');\nconst expiresAt = new Date(Date.now() + 5 * 60000).toISOString();\n\nreturn [{ json: { ok: true, phone, ip, code, codeHash: hash, expiresAt } }];"
+      },
+      "id": "wa-snd-005",
+      "name": "Check rate limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 150]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-rate", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-snd-006",
+      "name": "Rate ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 150]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO otp_codes (phone, code_hash, expires_at, ip) VALUES ($1,$2,$3,$4::inet) RETURNING id",
+        "options": {
+          "queryReplacement": "={{ [$json.phone, $json.codeHash, $json.expiresAt, $json.ip || ''] }}"
+        }
+      },
+      "id": "wa-snd-007",
+      "name": "Insert OTP",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 0],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rl = $('Check rate limit').first().json;\nconst phone = rl.phone;\nconst code = rl.code;\nconst phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;\nconst token = process.env.WHATSAPP_ACCESS_TOKEN;\nconst url = 'https://graph.facebook.com/v18.0/' + phoneNumberId + '/messages';\nconst body = JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: phone,\n  type: 'template',\n  template: {\n    name: 'solar_otp',\n    language: { code: 'es' },\n    components: [{ type: 'body', parameters: [{ type: 'text', text: code }] }]\n  }\n});\nreturn [{ json: { phone, code, url, token, body } }];"
+      },
+      "id": "wa-snd-008",
+      "name": "Build WA request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.token }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "id": "wa-snd-009",
+      "name": "Send WA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok:true,expiresAt:$('Check rate limit').first().json.expiresAt,message:'Código enviado a tu WhatsApp'}) }}",
+        "options": {}
+      },
+      "id": "wa-snd-010",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2220, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 429 }
+      },
+      "id": "wa-snd-011",
+      "name": "Respond rate limit error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "wa-snd-012",
+      "name": "Respond phone error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 450]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Normalize phone", "type": "main", "index": 0 }]]
+    },
+    "Normalize phone": {
+      "main": [[{ "node": "Phone valid?", "type": "main", "index": 0 }]]
+    },
+    "Phone valid?": {
+      "main": [
+        [{ "node": "Rate limit check", "type": "main", "index": 0 }],
+        [{ "node": "Respond phone error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Rate limit check": {
+      "main": [[{ "node": "Check rate limit", "type": "main", "index": 0 }]]
+    },
+    "Check rate limit": {
+      "main": [[{ "node": "Rate ok?", "type": "main", "index": 0 }]]
+    },
+    "Rate ok?": {
+      "main": [
+        [{ "node": "Insert OTP", "type": "main", "index": 0 }],
+        [{ "node": "Respond rate limit error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Insert OTP": {
+      "main": [[{ "node": "Build WA request", "type": "main", "index": 0 }]]
+    },
+    "Build WA request": {
+      "main": [[{ "node": "Send WA", "type": "main", "index": 0 }]]
+    },
+    "Send WA": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "meta": { "instanceId": "alebas" },
+  "versionId": "1"
+}

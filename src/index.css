@@ -260,3 +260,36 @@ button:active { transform: scale(0.97); }
 @media (max-width: 375px) {
   .al-topnav { padding: 0 10px !important; }
 }
+
+/* ======= OTP WhatsApp input ======= */
+.otp-input-wrap {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 12px 0;
+}
+.otp-digit {
+  width: 44px;
+  height: 52px;
+  border-radius: 8px;
+  border: 2px solid #1a2e3a;
+  background: #0C1422;
+  color: #E8F0F7;
+  font-size: 24px;
+  font-weight: 800;
+  text-align: center;
+  font-family: monospace;
+  transition: border-color 0.15s;
+  outline: none;
+  caret-color: #01708B;
+}
+.otp-digit:focus { border-color: #01708B; box-shadow: 0 0 0 3px #01708B22; }
+.otp-digit.filled { border-color: #01708B44; }
+
+/* WA verified badge pulse */
+@keyframes waPulse {
+  0%   { box-shadow: 0 0 0 0 #01708B44; }
+  70%  { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.wa-verified-badge { animation: waPulse 1.5s ease-out 1; }
