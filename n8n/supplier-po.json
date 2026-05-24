@@ -1,0 +1,379 @@
+{
+  "name": "ALEBAS — supplier-po",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supplier-po",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d4000000-0003-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "alebas-supplier-po"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\nconst headers = src.headers || {};\n\n// Extract JWT token from Authorization header or body\nlet token = '';\nconst authHeader = headers['authorization'] || headers['Authorization'] || '';\nif (authHeader.startsWith('Bearer ')) {\n  token = authHeader.slice(7).trim();\n} else if (body.token) {\n  token = (body.token || '').toString().trim();\n}\n\nif (!token) {\n  return [{ json: { __authError: true } }];\n}\n\nlet decoded;\ntry {\n  const jwt = require('jsonwebtoken');\n  decoded = jwt.verify(token, process.env.JWT_SECRET);\n} catch (e) {\n  return [{ json: { __authError: true } }];\n}\n\nconst supplier_id = decoded.sub;\nconst body_supplier_id = (body.supplier_id || '').toString();\n\nif (body_supplier_id && String(supplier_id) !== String(body_supplier_id)) {\n  return [{ json: { __authError: true } }];\n}\n\nconst method = (body.method || 'GET').toString().toUpperCase();\nconst status_filter = (body.status_filter || '').toString().trim();\nconst po = body.po || {};\nconst patch = body.patch || {};\n\nreturn [{ json: { method, supplier_id, status_filter, po, patch, verified: true } }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000002",
+      "name": "Code: Auth+Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.method }}",
+                    "rightValue": "GET",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "GET"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.method }}",
+                    "rightValue": "POST_CREATE",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "POST_CREATE"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.method }}",
+                    "rightValue": "PATCH_STATUS",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PATCH_STATUS"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.__authError }}",
+                    "rightValue": true,
+                    "operator": { "type": "boolean", "operation": "true" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "AUTH_ERROR"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "d4000000-0003-4000-9000-000000000003",
+      "name": "Switch: method",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT po.*,\n  json_agg(json_build_object('brand',pi.brand,'model',pi.model,'qty',pi.qty,'unit_price_cop',pi.unit_price_cop,'line_total_cop',pi.line_total_cop)) AS items,\n  json_build_object('name',u.name,'email',u.email,'phone',u.phone,'city',q.dept,'address',q.address) AS client\nFROM purchase_orders po\nLEFT JOIN po_items pi ON pi.po_id = po.id\nLEFT JOIN quotes q ON q.id = po.quote_id\nLEFT JOIN users u ON u.id = q.user_id\nWHERE po.supplier_id = $1\n  AND ($2 = '' OR po.status = $2)\nGROUP BY po.id, u.name, u.email, u.phone, q.dept, q.address\nORDER BY po.created_at DESC\nLIMIT 50",
+        "options": {
+          "queryReplacement": "={{ [$json.supplier_id, $json.status_filter || ''] }}"
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000004",
+      "name": "Postgres: GET orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 100],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nreturn [{ json: { ok: true, orders: rows } }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000005",
+      "name": "Code: Wrap GET",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst po = src.po || {};\nconst supplier_id = src.supplier_id;\n\n// Validate required fields\nif (!po.supplier_id && !supplier_id) throw new Error('supplier_id requerido');\nif (!po.quote_id) throw new Error('quote_id requerido');\nif (!Array.isArray(po.items) || po.items.length === 0) throw new Error('items[] requerido');\nif (po.subtotal_equipment == null) throw new Error('subtotal_equipment requerido');\nif (po.installation_total == null) throw new Error('installation_total requerido');\n\nconst eff_supplier_id = po.supplier_id || supplier_id;\nconst platform_fee_pct = Number(po.platform_fee_pct || 10);\nconst subtotal = Number(po.subtotal_equipment);\nconst installation = Number(po.installation_total);\n\n// Calculate financials\nconst platform_fee_cop = Math.round(subtotal * platform_fee_pct / 100);\nconst supplier_net_cop = subtotal - platform_fee_cop;\nconst tech_fee_pct = Number(po.tech_fee_pct || 80);\nconst tech_earnings_cop = Math.round(installation * tech_fee_pct / 100);\nconst sh_install_fee_cop = installation - tech_earnings_cop;\n\n// Generate PO number: PO-YYYYMMDD-XXXX\nconst now = new Date();\nconst datePart = now.toISOString().slice(0,10).replace(/-/g,'');\nconst randPart = Math.floor(1000 + Math.random() * 9000);\nconst po_number = `PO-${datePart}-${randPart}`;\n\nreturn [{ json: {\n  eff_supplier_id,\n  quote_id: po.quote_id,\n  technician_id: po.technician_id || null,\n  po_number,\n  subtotal_equipment: subtotal,\n  platform_fee_pct,\n  platform_fee_cop,\n  supplier_net_cop,\n  installation_total: installation,\n  tech_fee_pct,\n  tech_earnings_cop,\n  sh_install_fee_cop,\n  tracking_code: po.tracking_code || null,\n  notes: po.notes || null,\n  items: po.items\n} }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000006",
+      "name": "Code: Calc PO",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO purchase_orders\n  (po_number, quote_id, supplier_id, technician_id, status,\n   subtotal_equipment, platform_fee_pct, platform_fee_cop, supplier_net_cop,\n   installation_total, tech_fee_pct, tech_earnings_cop, sh_install_fee_cop,\n   tracking_code, notes)\nVALUES\n  ($1, $2::uuid, $3, $4::uuid, 'pendiente',\n   $5, $6, $7, $8,\n   $9, $10, $11, $12,\n   $13, $14)\nRETURNING id, po_number",
+        "options": {
+          "queryReplacement": "={{ [$json.po_number, $json.quote_id, $json.eff_supplier_id, $json.technician_id, $json.subtotal_equipment, $json.platform_fee_pct, $json.platform_fee_cop, $json.supplier_net_cop, $json.installation_total, $json.tech_fee_pct, $json.tech_earnings_cop, $json.sh_install_fee_cop, $json.tracking_code, $json.notes] }}"
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000007",
+      "name": "Postgres: INSERT PO",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 400],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const poRow = $input.first().json;\nconst calc = $('Code: Calc PO').first().json;\nconst po_id = poRow.id;\nconst po_number = poRow.po_number;\nconst items = calc.items || [];\n\n// Build bulk INSERT for po_items\nif (!items.length) return [{ json: { po_id, po_number, items_inserted: 0 } }];\n\nconst valuePlaceholders = [];\nconst params = [];\nlet p = 1;\nfor (const item of items) {\n  const line_total = Math.round(Number(item.qty || 1) * Number(item.unit_price_cop || 0));\n  valuePlaceholders.push(`($${p++}::uuid, $${p++}::uuid, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++})`);\n  params.push(po_id, item.stock_id || null, item.equipment_type || null, item.brand || null, item.model || null, Number(item.qty || 1), Number(item.unit_price_cop || 0), line_total);\n}\n\n// Store for next node\nreturn [{ json: { po_id, po_number, insert_sql: `INSERT INTO po_items (po_id, stock_id, equipment_type, brand, model, qty, unit_price_cop, line_total_cop) VALUES ${valuePlaceholders.join(', ')}`, params, items_count: items.length, calc } }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000008",
+      "name": "Code: Prep Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.insert_sql }}",
+        "options": {
+          "queryReplacement": "={{ $json.params }}"
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000009",
+      "name": "Postgres: INSERT items",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 400],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Code: Prep Items').first().json;\nconst po_id = prev.po_id;\nconst calc = prev.calc;\n\n// Insert 2 commission rows: platform_equipment + tech_labor\nconst commissions = [\n  {\n    po_id,\n    commission_type: 'platform_equipment',\n    beneficiary: 'ALEBAS SolarHub',\n    tech_id: null,\n    supplier_id: calc.eff_supplier_id,\n    amount_cop: calc.platform_fee_cop,\n    pct: calc.platform_fee_pct,\n    status: 'pendiente'\n  },\n  {\n    po_id,\n    commission_type: 'tech_labor',\n    beneficiary: 'Instalador',\n    tech_id: calc.technician_id || null,\n    supplier_id: calc.eff_supplier_id,\n    amount_cop: calc.tech_earnings_cop,\n    pct: calc.tech_fee_pct,\n    status: 'pendiente'\n  }\n];\n\nconst valuePlaceholders = commissions.map((_, i) => {\n  const b = i * 8 + 1;\n  return `($${b}::uuid, $${b+1}, $${b+2}, $${b+3}::int, $${b+4}::int, $${b+5}, $${b+6}, $${b+7})`;\n});\n\nconst params = commissions.flatMap(c => [\n  c.po_id,\n  c.commission_type,\n  c.beneficiary,\n  c.tech_id,\n  c.supplier_id,\n  c.amount_cop,\n  c.pct,\n  c.status\n]);\n\nreturn [{ json: {\n  insert_sql: `INSERT INTO commissions (po_id, commission_type, beneficiary, tech_id, supplier_id, amount_cop, pct, status) VALUES ${valuePlaceholders.join(', ')}`,\n  params,\n  po_id,\n  po_number: prev.po_number\n} }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000010",
+      "name": "Code: Prep Commissions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.insert_sql }}",
+        "options": {
+          "queryReplacement": "={{ $json.params }}"
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000011",
+      "name": "Postgres: INSERT commissions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2000, 400],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Code: Prep Commissions').first().json;\nreturn [{ json: { ok: true, po_number: prev.po_number, po_id: prev.po_id } }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000012",
+      "name": "Code: Wrap CREATE",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE purchase_orders SET\n  status = $1,\n  tracking_code = COALESCE($2, tracking_code),\n  confirmed_at = CASE WHEN $1='confirmado' THEN NOW() ELSE confirmed_at END,\n  shipped_at = CASE WHEN $1='enviado' THEN NOW() ELSE shipped_at END,\n  delivered_at = CASE WHEN $1='entregado' THEN NOW() ELSE delivered_at END,\n  installed_at = CASE WHEN $1='instalado' THEN NOW() ELSE installed_at END,\n  completed_at = CASE WHEN $1='completado' THEN NOW() ELSE completed_at END\nWHERE id = $3::uuid\n  AND supplier_id = $4\nRETURNING id, status, po_number",
+        "options": {
+          "queryReplacement": "={{ [$json.patch.status, $json.patch.tracking_code || null, $json.patch.po_id, $json.supplier_id] }}"
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000013",
+      "name": "Postgres: PATCH status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 700],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\nif (!row || !row.id) {\n  return [{ json: { ok: false, error: 'Pedido no encontrado o sin permiso' } }];\n}\nreturn [{ json: { ok: true, status: row.status, po_number: row.po_number, po_id: row.id } }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000014",
+      "name": "Code: Wrap PATCH",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ok: false, error: 'Token inválido' } }];"
+      },
+      "id": "d4000000-0003-4000-9000-000000000015",
+      "name": "Code: Auth Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 950]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000016",
+      "name": "Respond GET",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000017",
+      "name": "Respond CREATE",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2440, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000018",
+      "name": "Respond PATCH",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "d4000000-0003-4000-9000-000000000019",
+      "name": "Respond Auth Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 950]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Code: Auth+Parse", "type": "main", "index": 0 }]]
+    },
+    "Code: Auth+Parse": {
+      "main": [[{ "node": "Switch: method", "type": "main", "index": 0 }]]
+    },
+    "Switch: method": {
+      "main": [
+        [{ "node": "Postgres: GET orders", "type": "main", "index": 0 }],
+        [{ "node": "Code: Calc PO", "type": "main", "index": 0 }],
+        [{ "node": "Postgres: PATCH status", "type": "main", "index": 0 }],
+        [{ "node": "Code: Auth Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Postgres: GET orders": {
+      "main": [[{ "node": "Code: Wrap GET", "type": "main", "index": 0 }]]
+    },
+    "Code: Wrap GET": {
+      "main": [[{ "node": "Respond GET", "type": "main", "index": 0 }]]
+    },
+    "Code: Calc PO": {
+      "main": [[{ "node": "Postgres: INSERT PO", "type": "main", "index": 0 }]]
+    },
+    "Postgres: INSERT PO": {
+      "main": [[{ "node": "Code: Prep Items", "type": "main", "index": 0 }]]
+    },
+    "Code: Prep Items": {
+      "main": [[{ "node": "Postgres: INSERT items", "type": "main", "index": 0 }]]
+    },
+    "Postgres: INSERT items": {
+      "main": [[{ "node": "Code: Prep Commissions", "type": "main", "index": 0 }]]
+    },
+    "Code: Prep Commissions": {
+      "main": [[{ "node": "Postgres: INSERT commissions", "type": "main", "index": 0 }]]
+    },
+    "Postgres: INSERT commissions": {
+      "main": [[{ "node": "Code: Wrap CREATE", "type": "main", "index": 0 }]]
+    },
+    "Code: Wrap CREATE": {
+      "main": [[{ "node": "Respond CREATE", "type": "main", "index": 0 }]]
+    },
+    "Postgres: PATCH status": {
+      "main": [[{ "node": "Code: Wrap PATCH", "type": "main", "index": 0 }]]
+    },
+    "Code: Wrap PATCH": {
+      "main": [[{ "node": "Respond PATCH", "type": "main", "index": 0 }]]
+    },
+    "Code: Auth Error": {
+      "main": [[{ "node": "Respond Auth Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }, { "name": "supplier" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}
