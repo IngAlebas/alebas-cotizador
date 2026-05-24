@@ -1,181 +1,376 @@
-import React, { useEffect, useState } from 'react';
-import { C, fmt, fmtCOP } from '../constants';
-import { getPublicQuote, QUOTE_STATUSES } from '../services/quotes';
-import logo from '../logo.svg';
+import React, { useState, useEffect } from 'react';
+import { C } from '../constants';
 
-// Vista pública de seguimiento para el cliente. Validada con token en el query string.
-// El admin genera el link desde el BackOffice y lo envía por email.
-export default function QuoteTracking({ id, token }) {
-  const [state, setState] = useState({ loading: true, quote: null, error: null });
+const STATUS_META = {
+  nuevo:       { label: 'Solicitud recibida',    color: C.muted,    icon: '📋' },
+  asignado:    { label: 'Asignado a técnico',     color: C.yellow,   icon: '👷' },
+  en_revision: { label: 'En revisión técnica',   color: C.orange,   icon: '🔄' },
+  aprobado:    { label: 'Aprobado',               color: C.teal,     icon: '✅' },
+  ganado:      { label: 'Proyecto confirmado',    color: '#4ade80',  icon: '🎉' },
+};
 
+const PIPELINE = ['nuevo', 'asignado', 'en_revision', 'aprobado', 'ganado'];
+
+function StatusTimeline({ status }) {
+  const currentIdx = PIPELINE.indexOf(status);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 24, overflowX: 'auto', paddingBottom: 4 }}>
+      {PIPELINE.map((step, idx) => {
+        const meta = STATUS_META[step] || {};
+        const done = idx <= currentIdx;
+        const active = idx === currentIdx;
+        return (
+          <React.Fragment key={step}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 80, flex: 1 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%',
+                background: done ? `${meta.color}22` : `${C.muted}11`,
+                border: `2px solid ${done ? meta.color : C.muted + '33'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: active ? 18 : 14,
+                transition: 'all 0.3s',
+                boxShadow: active ? `0 0 0 3px ${meta.color}22` : 'none',
+              }}>
+                {meta.icon}
+              </div>
+              <div style={{
+                fontSize: 9, marginTop: 6, textAlign: 'center',
+                color: done ? meta.color : C.muted,
+                fontWeight: active ? 700 : 400,
+                lineHeight: 1.3,
+                maxWidth: 72,
+              }}>
+                {meta.label}
+              </div>
+            </div>
+            {idx < PIPELINE.length - 1 && (
+              <div style={{
+                flex: 1, height: 2, minWidth: 16, maxWidth: 40,
+                background: idx < currentIdx ? C.teal : `${C.muted}22`,
+                margin: '0 2px',
+                marginBottom: 22,
+              }} />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function QuoteTracking({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [quote, setQuote] = useState(null);
+  const [UnifilarComp, setUnifilarComp] = useState(null);
+  const [showLayout, setShowLayout] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Fetch quote data
   useEffect(() => {
-    let cancelled = false;
-    if (!id || !token) {
-      setState({ loading: false, quote: null, error: 'Link incompleto. Verifica el correo recibido.' });
+    if (!token) {
+      setError('Token no proporcionado. Revisa el enlace de seguimiento.');
+      setLoading(false);
       return;
     }
-    getPublicQuote({ id, token })
-      .then(r => {
-        if (cancelled) return;
-        if (!r?.ok || !r.quote) {
-          setState({ loading: false, quote: null, error: r?.reason || 'No se pudo cargar la cotización.' });
+    const base = process.env.REACT_APP_N8N_BASE_URL;
+    if (!base) {
+      setError('Configuración del servidor no disponible.');
+      setLoading(false);
+      return;
+    }
+    fetch(`${base}/quote-public?token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok || !data.quote) {
+          setError('Enlace no válido o expirado. Contacta a ALEBAS Ingeniería.');
         } else {
-          setState({ loading: false, quote: r.quote, error: null });
+          setQuote(data.quote);
         }
       })
-      .catch(e => {
-        if (!cancelled) setState({ loading: false, quote: null, error: e?.message || 'Error de red' });
+      .catch(() => setError('Error de conexión. Verifica tu internet e intenta de nuevo.'))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  // Lazy-load UnifileGenerator
+  useEffect(() => {
+    import('./UnifileGenerator')
+      .then(m => setUnifilarComp(() => m.default))
+      .catch(() => {});
+  }, []);
+
+  async function handleSubmitReview() {
+    if (!reviewRating) return;
+    setSubmittingReview(true);
+    try {
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      await fetch(`${base}/installer-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: 'POST',
+          quote_id: quote.id,
+          installer_id: quote.technician_id,
+          rating: reviewRating,
+          comment: reviewComment,
+          client_name: quote.client_name || 'Cliente SolarHub'
+        })
       });
-    return () => { cancelled = true; };
-  }, [id, token]);
+      setReviewSubmitted(true);
+    } catch(e) { console.error(e); }
+    setSubmittingReview(false);
+  }
 
-  const ss = {
-    wrap: { minHeight: '100vh', background: C.dark, color: C.text, fontFamily: 'inherit', padding: '24px 16px' },
-    card: { maxWidth: 760, margin: '0 auto', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '28px 30px', marginBottom: 16 },
-    h1: { fontSize: 22, fontWeight: 800, color: '#fff', margin: '0 0 4px' },
-    sub: { fontSize: 12, color: C.muted, marginBottom: 18 },
-    section: { fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 18 },
-    statKey: { fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4 },
-    statVal: { fontSize: 15, color: '#fff', fontWeight: 700, marginTop: 2 },
-  };
-
-  if (state.loading) {
+  // ── Loading ──
+  if (loading) {
     return (
-      <div style={ss.wrap}>
-        <div style={{ ...ss.card, textAlign: 'center', padding: '60px 30px' }}>
-          <div style={{ fontSize: 14, color: C.muted }}>Cargando cotización…</div>
+      <div style={{ minHeight: '100vh', background: C.dark, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 40, height: 40, border: `3px solid ${C.teal}33`, borderTop: `3px solid ${C.teal}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ color: C.muted, fontSize: 13 }}>Cargando tu cotización...</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // ── Error ──
+  if (error) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.dark, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.teal}33`, borderRadius: 12, padding: '36px 32px', maxWidth: 440, textAlign: 'center' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>☀</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Seguimiento no disponible</div>
+          <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{error}</div>
+          <div style={{ marginTop: 20, fontSize: 11, color: C.teal }}>ing@alebas.co · solar-hub.co</div>
         </div>
       </div>
     );
   }
 
-  if (state.error || !state.quote) {
-    return (
-      <div style={ss.wrap}>
-        <div style={{ ...ss.card, textAlign: 'center', padding: '50px 30px' }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>🔒</div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 6 }}>No pudimos cargar tu cotización</div>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 18 }}>{state.error}</div>
-          <a href="/?view=quoter" style={{ color: C.teal, fontSize: 12, textDecoration: 'none', borderBottom: `1px solid ${C.teal}55` }}>
-            Solicitar una cotización nueva →
-          </a>
-        </div>
-      </div>
-    );
-  }
+  // ── Data aliases ──
+  const p = quote.payload || {};
+  const status = quote.status || 'nuevo';
+  const statusMeta = STATUS_META[status] || STATUS_META.nuevo;
 
-  const q = state.quote;
-  // Posición del estado actual en el ciclo
-  const stIdx = QUOTE_STATUSES.indexOf(q.status);
-  const isWon = q.status === 'ganada';
-  const isLost = q.status === 'perdida';
-  const isArchived = q.status === 'archivada';
-  const stColor = isWon ? '#4ade80' : isLost ? '#f87171' : isArchived ? C.muted : C.yellow;
+  // System fields — handle both flat fields and nested payload.results
+  const numPanels  = quote.num_panels  || p.results?.numPanels  || null;
+  const kwp        = quote.kwp         || p.results?.actKwp     || null;
+  const mp         = quote.production_kwh_month || p.results?.mp || null;
+  const cov        = quote.coverage_pct || p.results?.cov        || null;
+  const totalCop   = quote.total_cop   || p.budget?.tot          || null;
+  const annualSav  = quote.annual_sav_cop || p.budget?.sav       || null;
+  const roiYears   = quote.roi_years   || p.budget?.roi          || null;
+  const sysType    = quote.system_type || p.systemType           || null;
+
+  const clientName = p.name || quote.name || '—';
+  const city       = p.city || quote.city || '';
+  const dept       = p.dept || quote.dept || '';
+
+  const fmtCOP = v => v ? `$${Number(v).toLocaleString('es-CO')}` : '—';
 
   return (
-    <div style={ss.wrap}>
-      {/* Header */}
-      <div style={{ ...ss.card, paddingBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <img src={logo} alt="SolarHub" style={{ height: 36 }} />
-          <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${stColor}22`, color: stColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            {q.status}
-          </span>
-        </div>
-        <h1 style={ss.h1}>Hola {q.customer?.name || 'cliente'}</h1>
-        <div style={ss.sub}>
-          Aquí puedes ver el estado de tu cotización solar #{q.id} ·
-          {q.createdAt && ` creada el ${new Date(q.createdAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`}
-        </div>
+    <div style={{ minHeight: '100vh', background: C.dark, color: C.text, fontFamily: 'Outfit, sans-serif' }}>
 
-        {/* Step indicator */}
-        {!isLost && !isArchived && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, margin: '14px 0 4px', flexWrap: 'wrap' }}>
-            {['nuevo', 'contactado', 'propuesta', 'negociacion', 'ganada'].map((s, i) => {
-              const cur = QUOTE_STATUSES.indexOf(s);
-              const done = stIdx >= cur;
-              const active = q.status === s;
-              return (
-                <React.Fragment key={s}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <div style={{
-                      width: 22, height: 22, borderRadius: '50%',
-                      background: done ? C.teal : 'transparent',
-                      border: `2px solid ${done ? C.teal : C.border}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 10, fontWeight: 800, color: done ? '#fff' : C.muted,
-                    }}>
-                      {done ? '✓' : i + 1}
-                    </div>
-                    <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? C.teal : (done ? C.text : C.muted) }}>{s}</span>
-                  </div>
-                  {i < 4 && <div style={{ flex: 1, height: 1, background: stIdx > cur ? C.teal : C.border, minWidth: 8 }} />}
-                </React.Fragment>
-              );
-            })}
+      {/* ── Header ── */}
+      <div style={{
+        background: C.card,
+        padding: '16px 24px',
+        borderBottom: `1px solid ${C.teal}33`,
+        display: 'flex', alignItems: 'center', gap: 14,
+        position: 'sticky', top: 0, zIndex: 50,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(12px)',
+      }}>
+        <span style={{ fontSize: 22 }}>☀</span>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: C.yellow, lineHeight: 1 }}>
+            Solar<span style={{ color: '#fff' }}>Hub</span>
           </div>
-        )}
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Seguimiento de cotización · ALEBAS Ingeniería SAS</div>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: C.teal, background: `${C.teal}12`, padding: '4px 12px', borderRadius: 20, border: `1px solid ${C.teal}33` }}>
+          #{quote.id}
+        </div>
       </div>
 
-      {/* Datos del sistema */}
-      <div style={ss.card}>
-        <div style={ss.section}>Tu sistema solar propuesto</div>
-        <div style={ss.grid}>
-          <div><div style={ss.statKey}>Capacidad</div><div style={ss.statVal}>{Number(q.kwp || 0).toFixed(2)} kWp</div></div>
-          <div><div style={ss.statKey}>Paneles</div><div style={ss.statVal}>{q.numPanels || '—'}</div></div>
-          <div><div style={ss.statKey}>Tipo</div><div style={ss.statVal}>{q.systemType || '—'}</div></div>
-          <div><div style={ss.statKey}>Ubicación</div><div style={ss.statVal}>{q.dept || '—'}</div></div>
-        </div>
-        {q.results && (
-          <div style={ss.grid}>
-            <div><div style={ss.statKey}>Producción mensual</div><div style={ss.statVal}>{fmt(q.results.mp || 0)} kWh</div></div>
-            <div><div style={ss.statKey}>Cobertura</div><div style={ss.statVal}>{q.results.cov || 0}%</div></div>
-            <div><div style={ss.statKey}>CO₂ evitado</div><div style={ss.statVal}>{fmt(q.results.co2 || 0)} kg/año</div></div>
-          </div>
-        )}
-        {q.budget && (
-          <>
-            <div style={{ ...ss.section, marginTop: 6 }}>Inversión y retorno</div>
-            <div style={ss.grid}>
-              <div><div style={ss.statKey}>Inversión total</div><div style={{ ...ss.statVal, color: C.yellow }}>{fmtCOP(q.budget.tot || q.totalCop)}</div></div>
-              <div><div style={ss.statKey}>Ahorro anual</div><div style={{ ...ss.statVal, color: '#4ade80' }}>{fmtCOP(q.budget.sav || q.annualSavCop)}</div></div>
-              <div><div style={ss.statKey}>Retorno</div><div style={ss.statVal}>{q.budget.roi || q.roiYears} años</div></div>
-            </div>
-          </>
-        )}
-        {q.panel && (
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
-            Panel propuesto: <strong style={{ color: '#fff' }}>{q.panel.brand} {q.panel.model}</strong> · {q.panel.wp} Wp
-          </div>
-        )}
-      </div>
+      <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 20px 80px' }}>
 
-      {/* Historial de seguimiento */}
-      {Array.isArray(q.history) && q.history.length > 0 && (
-        <div style={ss.card}>
-          <div style={ss.section}>Avances de tu solicitud</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {q.history.slice().reverse().map((h, i) => (
-              <div key={i} style={{ borderLeft: `2px solid ${C.teal}66`, paddingLeft: 12 }}>
-                <div style={{ fontSize: 10, color: C.muted }}>
-                  {h.at ? new Date(h.at).toLocaleString('es-CO') : ''}
-                </div>
-                <div style={{ fontSize: 12, color: '#fff', marginTop: 2 }}>
-                  Estado actualizado: <strong style={{ color: C.teal }}>{h.fromStatus}</strong> → <strong style={{ color: C.teal }}>{h.toStatus}</strong>
-                </div>
+        {/* ── Greeting ── */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+            Hola, {clientName} 👋
+          </div>
+          <div style={{ fontSize: 12, color: C.muted }}>
+            {city && dept ? `${city}, ${dept} · ` : ''}
+            {quote.created_at ? `Cotización del ${new Date(quote.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}` : ''}
+          </div>
+        </div>
+
+        {/* ── Current status badge ── */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 20, fontSize: 13, fontWeight: 700, marginBottom: 24, background: `${statusMeta.color}18`, color: statusMeta.color, border: `1px solid ${statusMeta.color}44` }}>
+          {statusMeta.icon} {statusMeta.label}
+        </div>
+
+        {/* ── Timeline ── */}
+        <div style={{ background: C.card, border: `1px solid ${C.teal}22`, borderRadius: 12, padding: '20px 20px 8px', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 16 }}>
+            Estado del proyecto
+          </div>
+          <StatusTimeline status={status} />
+        </div>
+
+        {/* ── System summary ── */}
+        <div style={{ background: C.card, border: `1px solid ${C.teal}22`, borderRadius: 12, padding: '20px 24px', marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 14 }}>
+            ☀ Tu sistema solar
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+            {[
+              ['Tipo de sistema', sysType],
+              ['Capacidad', kwp ? `${kwp} kWp` : null],
+              ['Paneles', numPanels ? `${numPanels} paneles` : null],
+              ['Producción est.', mp ? `${Math.round(mp)} kWh/mes` : null],
+              ['Cobertura', cov ? `${cov}%` : null],
+              ['Inversión total', fmtCOP(totalCop)],
+              ['Ahorro anual', fmtCOP(annualSav)],
+              ['Retorno (ROI)', roiYears ? `${roiYears} años` : '—'],
+            ].filter(([, v]) => v).map(([label, value]) => (
+              <div key={label} style={{ background: `${C.teal}08`, border: `1px solid ${C.teal}18`, borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{value}</div>
               </div>
             ))}
           </div>
         </div>
-      )}
 
-      {/* CTA contacto */}
-      <div style={{ ...ss.card, textAlign: 'center', padding: '20px 30px' }}>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>¿Tienes preguntas sobre tu cotización?</div>
-        <a href="mailto:info@solar-hub.co" style={{ color: C.teal, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
-          info@solar-hub.co
-        </a>
+        {/* ── Layout del sistema (collapsible) ── */}
+        {quote && p && (
+          <div style={{ marginBottom: 16 }}>
+            <button
+              onClick={() => setShowLayout(s => !s)}
+              style={{
+                width: '100%', background: showLayout ? `${C.teal}22` : C.card,
+                color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 8,
+                padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}
+            >
+              <span>📐 Ver layout de tu sistema</span>
+              <span style={{ color: C.teal }}>{showLayout ? '▲' : '▼'}</span>
+            </button>
+
+            {showLayout && (
+              <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.teal}22` }}>
+                {UnifilarComp ? (
+                  <UnifilarComp
+                    mode="client"
+                    showTitle={false}
+                    system={{
+                      systemType: sysType,
+                      numPanels:  numPanels,
+                      ns:         p.results?.ns,
+                      ppss:       p.results?.ppss,
+                      kwp:        kwp,
+                    }}
+                    panel={p.panel || {}}
+                    inverter={p.results?.inv || p.inverter || {}}
+                    battery={p.battery || null}
+                    results={{
+                      actKwp:    kwp,
+                      numPanels: numPanels,
+                      mp:        mp,
+                      cov:       cov,
+                    }}
+                    location={{ city: p.city || city, dept: p.dept || dept, address: p.address }}
+                    client={{ name: p.name || clientName, company: p.company }}
+                  />
+                ) : (
+                  /* Fallback if UnifileGenerator not available */
+                  <div style={{ background: C.card, padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    {[
+                      ['☀', 'Paneles',     `${numPanels || '—'} × ${p.panel?.wp || '—'} Wp`],
+                      ['⚡', 'Inversor',    `${p.results?.inv?.kw || p.inverter?.kw || kwp || '—'} kW`],
+                      ['📊', 'Producción',  `${mp || '—'} kWh/mes`],
+                      ['✅', 'Cobertura',   `${cov || '—'}%`],
+                    ].map(([icon, label, value]) => (
+                      <div key={label} style={{ background: '#07090F', borderRadius: 8, padding: '12px 16px', border: `1px solid ${C.teal}33` }}>
+                        <div style={{ fontSize: 20 }}>{icon}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{label}</div>
+                        <div style={{ fontSize: 15, color: C.text, fontWeight: 700 }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Notes / observations ── */}
+        {quote.notes && (
+          <div style={{ background: C.card, border: `1px solid ${C.teal}22`, borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Observaciones</div>
+            <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{quote.notes}</div>
+          </div>
+        )}
+
+        {/* ── Review section (appears when installation complete) ── */}
+        {quote.status === 'ganada' && quote.technician_id && !reviewSubmitted && (
+          <div style={{ marginTop: 32, background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.teal}33`, marginBottom: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 4 }}>
+              ¿Cómo fue tu experiencia con la instalación?
+            </div>
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>
+              Tu opinión ayuda a otros clientes a elegir un buen instalador
+            </div>
+            {/* Star rating */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {[1,2,3,4,5].map(s => (
+                <span key={s} onClick={() => setReviewRating(s)}
+                  style={{ fontSize: 28, cursor: 'pointer', color: s <= reviewRating ? C.amber : C.muted, transition: 'color 0.15s' }}>★</span>
+              ))}
+            </div>
+            <textarea
+              placeholder="Cuéntanos sobre el proceso de instalación, el instalador, y cómo funciona tu sistema..."
+              value={reviewComment} onChange={e => setReviewComment(e.target.value)}
+              style={{ width: '100%', background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 10,
+                color: C.text, padding: '10px 12px', fontSize: 14, fontFamily: 'Outfit', minHeight: 80,
+                resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }}
+            />
+            <button onClick={handleSubmitReview} disabled={reviewRating === 0 || submittingReview}
+              style={{ background: reviewRating > 0 ? C.teal : C.muted, color: '#fff', border: 'none',
+                borderRadius: 10, padding: '10px 24px', fontWeight: 600, cursor: reviewRating > 0 ? 'pointer' : 'default',
+                fontSize: 15, fontFamily: 'Outfit' }}>
+              {submittingReview ? 'Enviando...' : 'Enviar calificación'}
+            </button>
+          </div>
+        )}
+        {reviewSubmitted && (
+          <div style={{ marginTop: 24, background: `${'#4ade80'}15`, border: `1px solid ${'#4ade80'}40`, borderRadius: 12,
+            padding: 20, color: '#4ade80', textAlign: 'center', fontWeight: 600, marginBottom: 16 }}>
+            ✓ ¡Gracias por tu calificación! Tu opinión ayuda a la comunidad solar.
+          </div>
+        )}
+
+        {/* ── Contact CTA ── */}
+        <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6 }}>¿Tienes preguntas sobre tu cotización?</div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>Nuestro equipo está disponible para ayudarte</div>
+          <a href="mailto:ing@alebas.co" style={{ display: 'inline-block', padding: '8px 20px', background: C.teal, color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 700, textDecoration: 'none', marginRight: 8 }}>
+            📧 ing@alebas.co
+          </a>
+          <a href="https://solar-hub.co" style={{ display: 'inline-block', padding: '8px 20px', background: 'transparent', color: C.teal, borderRadius: 8, fontSize: 12, fontWeight: 700, textDecoration: 'none', border: `1px solid ${C.teal}66` }}>
+            🌐 solar-hub.co
+          </a>
+        </div>
+
+        {/* ── Footer ── */}
+        <div style={{ marginTop: 24, textAlign: 'center', fontSize: 10, color: C.muted, lineHeight: 1.8 }}>
+          <div>Cotización #{quote.id}</div>
+          <div style={{ color: C.teal }}>ALEBAS Ingeniería SAS · NIT 901.992.450-5 · Ley 1715 · RETIE · CREG 174/2021</div>
+        </div>
       </div>
     </div>
   );

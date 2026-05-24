@@ -44,6 +44,20 @@ self.addEventListener('fetch', event => {
   // API calls — network only
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/webhook/')) return;
 
+  // Metadata assets — always network-first so updates reach users without SW bump
+  if (['/manifest.json', '/logo.svg', '/logo.png'].includes(url.pathname)) {
+    event.respondWith(
+      fetch(request).then(res => {
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(request, clone));
+        }
+        return res;
+      }).catch(() => caches.match(request))
+    );
+    return;
+  }
+
   // HTML — network first, fallback to cache
   if (request.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
@@ -87,5 +101,5 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data.url));
+  event.waitUntil(self.clients.openWindow(event.notification.data.url));
 });

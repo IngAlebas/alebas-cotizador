@@ -46,30 +46,11 @@ CREATE TABLE IF NOT EXISTS quotes (
   regulatory_ids        TEXT[],
   payload               JSONB NOT NULL,
   ip                    INET,
-  user_agent            TEXT,
-  solar_panels          JSONB,
-  panel_height_meters   NUMERIC,
-  panel_width_meters    NUMERIC,
-  area_m2               NUMERIC,
-  whole_roof_area_m2    NUMERIC,
-  imagery_quality       TEXT,
-  google_yearly_kwh     NUMERIC,
-  ai_provider           TEXT
+  user_agent            TEXT
 );
--- Idempotent ALTERs para instalaciones previas (Fase 6).
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS solar_panels        JSONB;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS panel_height_meters NUMERIC;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS panel_width_meters  NUMERIC;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS area_m2             NUMERIC;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS whole_roof_area_m2  NUMERIC;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS imagery_quality     TEXT;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS google_yearly_kwh   NUMERIC;
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS ai_provider         TEXT;
 CREATE INDEX IF NOT EXISTS idx_quotes_user ON quotes(user_id);
 CREATE INDEX IF NOT EXISTS idx_quotes_created ON quotes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);
--- GIN sobre solar_panels permite filtros tipo "cotizaciones con paneles en orientación X".
-CREATE INDEX IF NOT EXISTS idx_quotes_solar_panels ON quotes USING gin(solar_panels);
 
 -- ==================== CEC PANELS ====================
 CREATE TABLE IF NOT EXISTS cec_panels (
@@ -124,25 +105,292 @@ CREATE TABLE IF NOT EXISTS batteries (
 CREATE INDEX IF NOT EXISTS idx_batteries_mfr_model ON batteries(manufacturer, model);
 CREATE INDEX IF NOT EXISTS idx_batteries_raw ON batteries USING gin(raw);
 
--- ==================== SOLAR CACHE (Fase 6) ====================
--- Cachea respuestas de Google Solar API por coordenada (5 dec ≈ 1 m).
--- TTL 90 días — los techos cambian poco; configs nuevas re-cachean al expirar.
--- Reduce costo Google: cada findClosest+dataLayers cuesta ~$0.04 USD.
-CREATE TABLE IF NOT EXISTS solar_cache (
-  id           BIGSERIAL PRIMARY KEY,
-  cache_key    TEXT UNIQUE NOT NULL,
-  address      TEXT,
-  lat          NUMERIC,
-  lon          NUMERIC,
-  response     JSONB NOT NULL,
-  source       TEXT,
-  confidence   NUMERIC,
-  created_at   TIMESTAMPTZ DEFAULT NOW(),
-  expires_at   TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '90 days'),
-  hit_count    INT DEFAULT 0,
-  last_hit_at  TIMESTAMPTZ
+-- ==================== WHATSAPP ====================
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id          BIGSERIAL PRIMARY KEY,
+  phone       TEXT NOT NULL,
+  code_hash   TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  attempts    INT DEFAULT 0,
+  consumed_at TIMESTAMPTZ,
+  ip          INET,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_solar_cache_key      ON solar_cache(cache_key);
-CREATE INDEX IF NOT EXISTS idx_solar_cache_expires  ON solar_cache(expires_at);
-CREATE INDEX IF NOT EXISTS idx_solar_cache_coords   ON solar_cache(lat, lon);
-CREATE INDEX IF NOT EXISTS idx_solar_cache_response ON solar_cache USING gin(response);
+CREATE INDEX IF NOT EXISTS idx_otp_phone_expires ON otp_codes(phone, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS wa_messages (
+  id            BIGSERIAL PRIMARY KEY,
+  phone         TEXT NOT NULL,
+  quote_id      BIGINT REFERENCES quotes(id) ON DELETE SET NULL,
+  direction     TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
+  template      TEXT,
+  content       TEXT,
+  wa_message_id TEXT,
+  status        TEXT DEFAULT 'sent',
+  sent_at       TIMESTAMPTZ DEFAULT NOW(),
+  read_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_wa_messages_phone ON wa_messages(phone);
+CREATE INDEX IF NOT EXISTS idx_wa_messages_quote ON wa_messages(quote_id);
+
+CREATE TABLE IF NOT EXISTS wa_conversations (
+  id              BIGSERIAL PRIMARY KEY,
+  phone           TEXT UNIQUE NOT NULL,
+  state           TEXT DEFAULT 'initial',
+  context_json    JSONB DEFAULT '{}',
+  quote_id        BIGINT REFERENCES quotes(id) ON DELETE SET NULL,
+  opt_out         BOOLEAN DEFAULT FALSE,
+  last_message_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wa_conversations_phone ON wa_conversations(phone);
+
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS dedupe_key        UUID UNIQUE;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified    BOOLEAN DEFAULT FALSE;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS verified_token    TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS data_consent      JSONB;
+ALTER TABLE users  ADD COLUMN IF NOT EXISTS wa_opt_out        BOOLEAN DEFAULT FALSE;
+
+-- ==================== TECHNICIANS ====================
+CREATE TABLE IF NOT EXISTS technicians (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  email       TEXT UNIQUE NOT NULL,
+  phone       TEXT,
+  retie_cert  TEXT,
+  active      BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS technician_id    INT REFERENCES technicians(id);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_token       UUID DEFAULT gen_random_uuid();
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_approved_at TIMESTAMPTZ;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_notes       TEXT;
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS doc_status       TEXT DEFAULT 'pendiente';
+-- doc_status values: 'pendiente' | 'en_revision' | 'aprobado' | 'cambios_solicitados'
+
+-- ============================================================
+-- FASE MARKETPLACE: proveedores, stock, órdenes de compra
+-- ============================================================
+
+-- Ensure suppliers table is complete with B2B marketplace fields
+CREATE TABLE IF NOT EXISTS suppliers (
+  id               SERIAL PRIMARY KEY,
+  company          TEXT NOT NULL,
+  contact          TEXT,
+  email            TEXT UNIQUE NOT NULL,
+  phone            TEXT,
+  nit              TEXT,
+  city             TEXT,
+  dept             TEXT,
+  category         TEXT,
+  notes            TEXT,
+  bank_account     JSONB,
+  platform_fee_pct NUMERIC(5,2) DEFAULT 10.0,
+  supplier_token   UUID DEFAULT gen_random_uuid(),
+  password_hash    TEXT,
+  active           BOOLEAN DEFAULT TRUE,
+  verified         BOOLEAN DEFAULT FALSE,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  status           TEXT DEFAULT 'pendiente'
+);
+-- Extend if table already existed (idempotent)
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS nit              TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS city             TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS dept             TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bank_account     JSONB;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS platform_fee_pct NUMERIC(5,2) DEFAULT 10.0;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS supplier_token   UUID DEFAULT gen_random_uuid();
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS password_hash    TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS active           BOOLEAN DEFAULT TRUE;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS verified         BOOLEAN DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_suppliers_token ON suppliers(supplier_token);
+CREATE INDEX IF NOT EXISTS idx_suppliers_email ON suppliers(email);
+
+-- supplier_stock: inventario del proveedor en la plataforma
+CREATE TABLE IF NOT EXISTS supplier_stock (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  supplier_id     INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  equipment_type  VARCHAR(20) NOT NULL CHECK(equipment_type IN ('panel','inverter','battery','structure','protection','cable','other')),
+  brand           VARCHAR(100) NOT NULL,
+  model           VARCHAR(200) NOT NULL,
+  wp              INTEGER,         -- paneles FV (Wp)
+  kw              NUMERIC(8,2),    -- inversores (kW)
+  kwh             NUMERIC(8,2),    -- baterías (kWh)
+  unit_price_cop  BIGINT NOT NULL,
+  qty_available   INTEGER NOT NULL DEFAULT 0 CHECK(qty_available >= 0),
+  qty_reserved    INTEGER NOT NULL DEFAULT 0 CHECK(qty_reserved >= 0),
+  lead_time_days  INTEGER DEFAULT 3,
+  specs           JSONB,
+  is_active       BOOLEAN DEFAULT true,
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_stock_supplier   ON supplier_stock(supplier_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_stock_type       ON supplier_stock(equipment_type);
+CREATE INDEX IF NOT EXISTS idx_stock_critical   ON supplier_stock(supplier_id, qty_available) WHERE qty_available < 5 AND is_active = true;
+
+-- PO sequence for human-readable order numbers
+CREATE SEQUENCE IF NOT EXISTS po_seq START 1;
+
+-- purchase_orders: órdenes de compra SolarHub → proveedor (modelo on-demand)
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_number         VARCHAR(20) UNIQUE NOT NULL DEFAULT 'PO-' || to_char(NOW(),'YYYY') || '-' || lpad(nextval('po_seq')::TEXT,4,'0'),
+  quote_id          BIGINT REFERENCES quotes(id),
+  supplier_id       INTEGER REFERENCES suppliers(id),
+  technician_id     INTEGER REFERENCES technicians(id),
+  status            VARCHAR(30) DEFAULT 'pendiente' CHECK(status IN ('pendiente','confirmado','preparando','enviado','entregado','instalado','completado','cancelado')),
+  -- Financials (equipment side)
+  subtotal_equipment  BIGINT DEFAULT 0,
+  platform_fee_pct    NUMERIC(5,2) DEFAULT 10.0,
+  platform_fee_cop    BIGINT DEFAULT 0,
+  supplier_net_cop    BIGINT DEFAULT 0,
+  -- Financials (installation side)
+  installation_total  BIGINT DEFAULT 0,
+  tech_fee_pct        NUMERIC(5,2) DEFAULT 80.0,
+  tech_earnings_cop   BIGINT DEFAULT 0,
+  sh_install_fee_cop  BIGINT DEFAULT 0,
+  -- Delivery
+  tracking_code     TEXT,
+  estimated_delivery DATE,
+  -- Timestamps per milestone
+  confirmed_at      TIMESTAMPTZ,
+  shipped_at        TIMESTAMPTZ,
+  delivered_at      TIMESTAMPTZ,
+  installed_at      TIMESTAMPTZ,
+  completed_at      TIMESTAMPTZ,
+  cancelled_at      TIMESTAMPTZ,
+  -- Ratings (1-5)
+  supplier_rating   INTEGER CHECK(supplier_rating BETWEEN 1 AND 5),
+  tech_rating       INTEGER CHECK(tech_rating BETWEEN 1 AND 5),
+  -- Meta
+  notes             TEXT,
+  created_by        TEXT DEFAULT 'admin',
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_supplier   ON purchase_orders(supplier_id, status);
+CREATE INDEX IF NOT EXISTS idx_po_quote      ON purchase_orders(quote_id);
+CREATE INDEX IF NOT EXISTS idx_po_tech       ON purchase_orders(technician_id);
+CREATE INDEX IF NOT EXISTS idx_po_status_ts  ON purchase_orders(status, created_at DESC);
+
+-- po_items: productos en cada orden de compra
+CREATE TABLE IF NOT EXISTS po_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id           UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  stock_id        UUID REFERENCES supplier_stock(id),
+  equipment_type  VARCHAR(20),
+  brand           VARCHAR(100),
+  model           VARCHAR(200),
+  qty             INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
+  unit_price_cop  BIGINT,
+  line_total_cop  BIGINT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_items_po ON po_items(po_id);
+
+-- commissions: registro de comisiones de la plataforma
+CREATE TABLE IF NOT EXISTS commissions (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id            UUID REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  commission_type  VARCHAR(30) NOT NULL, -- 'platform_equipment' | 'platform_install' | 'tech_labor'
+  beneficiary      VARCHAR(20) NOT NULL, -- 'solarhub' | 'technician' | 'supplier'
+  tech_id          INTEGER REFERENCES technicians(id),
+  supplier_id      INTEGER REFERENCES suppliers(id),
+  amount_cop       BIGINT NOT NULL,
+  pct              NUMERIC(5,2),
+  status           VARCHAR(20) DEFAULT 'pendiente' CHECK(status IN ('pendiente','en_proceso','pagada')),
+  paid_at          TIMESTAMPTZ,
+  payment_ref      TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_commissions_po       ON commissions(po_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_tech     ON commissions(tech_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_supplier ON commissions(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_status   ON commissions(status, beneficiary);
+
+-- Add supplier/PO columns to quotes (idempotent)
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS po_id       UUID REFERENCES purchase_orders(id);
+
+-- Trigger to auto-update updated_at on supplier_stock
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS supplier_stock_updated_at ON supplier_stock;
+CREATE TRIGGER supplier_stock_updated_at BEFORE UPDATE ON supplier_stock FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- FASE MARKETPLACE: matching, reviews, reputación instaladores
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS installer_matches (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quote_id     UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  installer_id INTEGER REFERENCES technicians(id),
+  score        NUMERIC(5,2),
+  reason       TEXT,
+  status       TEXT DEFAULT 'suggested' CHECK (status IN ('suggested','notified','accepted','declined','assigned')),
+  notified_at  TIMESTAMPTZ,
+  responded_at TIMESTAMPTZ,
+  assigned_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_installer_matches_quote ON installer_matches(quote_id);
+CREATE INDEX IF NOT EXISTS idx_installer_matches_installer ON installer_matches(installer_id);
+
+CREATE TABLE IF NOT EXISTS installer_reviews (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  installer_id   INTEGER NOT NULL REFERENCES technicians(id),
+  quote_id       UUID REFERENCES quotes(id),
+  client_name    TEXT,
+  rating         SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment        TEXT,
+  response       TEXT,
+  response_at    TIMESTAMPTZ,
+  verified       BOOLEAN DEFAULT FALSE,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_installer ON installer_reviews(installer_id);
+-- Ensure one review per client per installer
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_unique ON installer_reviews(quote_id, installer_id);
+
+-- Add rating fields to technicians if not present
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS rating_avg   NUMERIC(3,2) DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS rating_count INTEGER DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS coverage_depts TEXT[];  -- e.g. '{Cundinamarca,Boyacá}'
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS max_kwp_month NUMERIC(8,2) DEFAULT 100; -- capacity
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS active_jobs   INTEGER DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS retie_expires DATE;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS dept         TEXT;
+
+-- ============================================================
+-- FASE VALIDACIÓN CREDENCIALES INSTALADORES (RETIE 2013)
+-- ============================================================
+
+-- Extend technicians table with credential fields
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS installer_type   TEXT DEFAULT 'tecnico' CHECK (installer_type IN ('ingeniero','tecnico'));
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS copnia_number    TEXT;    -- Tarjeta profesional COPNIA (ingenieros)
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS conte_number     TEXT;    -- Certificado CONTE (técnicos)
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS credential_status TEXT DEFAULT 'pendiente'
+  CHECK (credential_status IN ('pendiente','en_revision','aprobado','rechazado','vencido'));
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS credential_notes TEXT;    -- Admin rejection reason
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS verified_at      TIMESTAMPTZ;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS verified_by      TEXT;    -- admin email
+
+-- Credential documents table (store metadata, not the binary — files go to storage)
+CREATE TABLE IF NOT EXISTS installer_documents (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  technician_id  INTEGER NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
+  doc_type       TEXT NOT NULL CHECK (doc_type IN (
+                   'diploma','hoja_de_vida','tarjeta_profesional','certificado_conte','otro')),
+  file_name      TEXT NOT NULL,
+  file_size_kb   INTEGER,
+  file_data_b64  TEXT,    -- base64 for small docs (<500KB), null for large ones
+  storage_url    TEXT,    -- future: S3/R2 URL
+  uploaded_at    TIMESTAMPTZ DEFAULT NOW(),
+  status         TEXT DEFAULT 'pendiente' CHECK (status IN ('pendiente','aprobado','rechazado')),
+  notes          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_installer_docs_tech ON installer_documents(technician_id);
+CREATE INDEX IF NOT EXISTS idx_installer_docs_status ON installer_documents(status);

@@ -17,13 +17,62 @@
     },
     {
       "parameters": {
-        "jsCode": "// Normaliza input y valida formato/honeypot antes de consultar BD.\nconst src = $input.first().json;\nconst body = src.body || src;\nconst email = (body.email || '').toString().trim().toLowerCase();\nconst phone = (body.phone || '').toString().trim();\nconst name = (body.name || '').toString().trim();\nconst company = (body.company || '').toString().trim();\nconst website = (body.website || '').toString().trim();\nconst ip = (src.headers && (src.headers['x-forwarded-for'] || src.headers['x-real-ip'])) || '';\n\nif (website) {\n  // Honeypot relleno — bot. Respondemos genérico.\n  return [{ json: { ok: false, reason: 'validation_failed' } }];\n}\nif (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {\n  return [{ json: { ok: false, reason: 'invalid_email' } }];\n}\nif (!phone || phone.replace(/\\D/g, '').length < 7) {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\nif (!name) {\n  return [{ json: { ok: false, reason: 'missing_name' } }];\n}\nreturn [{ json: { ok: true, email, phone, name, company, ip } }];"
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS cnt\nFROM quotes\nWHERE ip = $1::inet\n  AND created_at > NOW() - INTERVAL '1 hour'",
+        "options": {
+          "queryReplacement": "={{ [$input.first().json.headers?.['x-forwarded-for'] || $input.first().json.headers?.['x-real-ip'] || '0.0.0.0'] }}"
+        }
+      },
+      "id": "c1000000-0001-4000-9000-000000000007",
+      "name": "IP Rate Limit Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [460, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "ip-rate-limit-exceeded",
+              "leftValue": "={{ Number($json.cnt) }}",
+              "rightValue": 20,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c1000000-0001-4000-9000-000000000008",
+      "name": "Exceeded 20/hour?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"rate_limit\", \"message\": \"Demasiadas solicitudes desde tu red. Intenta más tarde.\", \"retry_after\": 3600 }",
+        "options": { "responseCode": 429 }
+      },
+      "id": "c1000000-0001-4000-9000-000000000009",
+      "name": "Respond 429",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza input y valida formato/honeypot antes de consultar BD.\nconst src = $('Webhook').first().json;\nconst body = src.body || src;\nconst email = (body.email || '').toString().trim().toLowerCase();\nconst phone = (body.phone || '').toString().trim();\nconst name = (body.name || '').toString().trim();\nconst company = (body.company || '').toString().trim();\nconst website = (body.website || '').toString().trim();\nconst ip = (src.headers && (src.headers['x-forwarded-for'] || src.headers['x-real-ip'])) || '';\n\nif (website) {\n  // Honeypot relleno — bot. Respondemos genérico.\n  return [{ json: { ok: false, reason: 'validation_failed' } }];\n}\nif (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {\n  return [{ json: { ok: false, reason: 'invalid_email' } }];\n}\nif (!phone || phone.replace(/\\D/g, '').length < 7) {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\nif (!name) {\n  return [{ json: { ok: false, reason: 'missing_name' } }];\n}\nreturn [{ json: { ok: true, email, phone, name, company, ip } }];"
       },
       "id": "c1000000-0001-4000-9000-000000000002",
       "name": "Normalize & format check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [900, 420]
     },
     {
       "parameters": {
@@ -40,7 +89,7 @@
       "name": "Format valid?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [1120, 420]
     },
     {
       "parameters": {
@@ -52,7 +101,7 @@
       "name": "Postgres lookup",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [900, 200],
+      "position": [1340, 320],
       "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
     },
     {
@@ -63,7 +112,7 @@
       "name": "Evaluate policy",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 200]
+      "position": [1560, 320]
     },
     {
       "parameters": {
@@ -75,11 +124,18 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1340, 300]
+      "position": [1780, 420]
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Normalize & format check", "type": "main", "index": 0 }]] },
+    "Webhook": { "main": [[{ "node": "IP Rate Limit Check", "type": "main", "index": 0 }]] },
+    "IP Rate Limit Check": { "main": [[{ "node": "Exceeded 20/hour?", "type": "main", "index": 0 }]] },
+    "Exceeded 20/hour?": {
+      "main": [
+        [{ "node": "Respond 429", "type": "main", "index": 0 }],
+        [{ "node": "Normalize & format check", "type": "main", "index": 0 }]
+      ]
+    },
     "Normalize & format check": { "main": [[{ "node": "Format valid?", "type": "main", "index": 0 }]] },
     "Format valid?": {
       "main": [

@@ -12,27 +12,6 @@ export const C = {
   oBorder: '#FF8C0030',                               // border naranja
   text:   '#e8f4f7', muted: '#7a9eaa',
   green:  '#4ade80', red: '#f87171',
-
-  // FluxAI brand (marca hermana ALEBAS — monitoreo solar).
-  fluxBlue:  '#0044A4',
-  fluxGreen: '#00C781',
-  fluxAccent:'#0C62DC',
-};
-
-// ==================== MATERIALES DE TECHO ====================
-// Tipos comunes en Colombia con datos para el sistema de montaje y la IA.
-//   weightKgM2       — peso del material existente (datos de carga adicional sobre estructura)
-//   mountingType     — tipo de estructura recomendado para PV
-//   notes            — consideraciones técnicas / normativas
-//   structuralRisk   — bandera para sistemas que requieren cálculo estructural reforzado
-export const ROOF_MATERIALS = {
-  zinc:           { label: 'Zinc / lámina ondulada', icon: '⌒',  weightKgM2: 5,   mountingType: 'gancho-zinc',  notes: 'Estructura metálica simple. Sellantes butyl en cada perforación.' },
-  lamina:         { label: 'Lámina galvanizada',     icon: '〰',  weightKgM2: 7,   mountingType: 'gancho-trapezoidal', notes: 'Trapezoidal/standing-seam con clamps que no perforan.' },
-  termoacustica:  { label: 'Termoacústica',          icon: '▦',   weightKgM2: 12,  mountingType: 'tornillo-autoperforante', notes: 'Sandwich panel. Tornillos especiales con goma EPDM.' },
-  losa:           { label: 'Losa de concreto',       icon: '▰',   weightKgM2: 0,   mountingType: 'lastrado-o-anclaje-quimico', notes: 'Sistema lastrado o anclajes químicos. Permite cualquier orientación con estructura inclinada.' },
-  barro:          { label: 'Teja de barro',          icon: '⌇',   weightKgM2: 50,  mountingType: 'gancho-teja-cerámica', structuralRisk: true, notes: 'Frágil. Estructura debe soportar carga viva + paneles + acceso. Cálculo estructural recomendado.' },
-  eternit:        { label: 'Eternit / fibrocemento', icon: '∿',   weightKgM2: 14,  mountingType: 'gancho-asbesto-cemento', structuralRisk: true, notes: 'Ley 1968/2019 prohíbe NUEVAS instalaciones de asbesto. Si el techo existente es de Eternit con asbesto, requiere protocolo de manejo seguro y considerar reemplazo previo.' },
-  otro:           { label: 'Otro / no sé',           icon: '?',   weightKgM2: null, mountingType: 'evaluar-en-sitio', notes: 'Un ingeniero SolarHub evaluará en visita técnica.' },
 };
 
 // ==================== OPERATORS DE RED (OR) ====================
@@ -118,6 +97,133 @@ export const OPERATORS = [
   { sic: '',     name: 'No sé / Otro',   fullName: '',                                            region: '', tariff: 670, psh: 4.5 },
 ];
 
+// ==================== TARIFA POR ESTRATO (CREG 2024) ====================
+// Factores sobre la tarifa CU base del operador.
+// Estratos 1-3: subsidio (pagan menos); Estratos 5-6: contribución (pagan más).
+// Fuente: CREG 2024 — actualizar con resolución mensual del operador.
+export const ESTRATO_FACTORS = {
+  'E1':   0.50,  // Estrato 1 — subsidio 50%
+  'E2':   0.60,  // Estrato 2 — subsidio 40%
+  'E3':   0.85,  // Estrato 3 — subsidio 15%
+  'E4':   1.00,  // Estrato 4 — tarifa plena
+  'E5':   1.20,  // Estrato 5 — contribución 20%
+  'E6':   1.20,  // Estrato 6 — contribución 20%
+  'COM':  1.00,  // Comercial NT1 — tarifa plena sin subsidio
+  'IND2': 0.90,  // Industrial NT2 — estructura diferente, aprox
+  'IND3': 0.85,  // Industrial NT3 — mayor tensión, menor distribución
+};
+
+export const ESTRATO_LABELS = {
+  'E1':   'Estrato 1 — Subsidio 50%',
+  'E2':   'Estrato 2 — Subsidio 40%',
+  'E3':   'Estrato 3 — Subsidio 15%',
+  'E4':   'Estrato 4 — Tarifa plena',
+  'E5':   'Estrato 5 — Contribución 20%',
+  'E6':   'Estrato 6 — Contribución 20%',
+  'COM':  'Comercial / NT1',
+  'IND2': 'Industrial NT2',
+  'IND3': 'Industrial NT3 (alta tensión)',
+};
+
+// Retorna la tarifa CU efectiva del usuario (COP/kWh) según su estrato.
+export function getEffectiveTariff(operator, estrato = 'E4') {
+  const base = tariffCU(operator);
+  const factor = ESTRATO_FACTORS[estrato] ?? 1.0;
+  return Math.round(base * factor);
+}
+
+// ==================== PR REGIONAL (Performance Ratio por zona climática) ====================
+// Reemplaza el 0.78 constante nacional. Fuente: análisis PVGIS + datos IDEAM Colombia.
+// Zona Andina alta (>2000 msnm): temperaturas bajas → menores pérdidas térmicas → PR alto.
+// Zona Caribe/Pacífico/Orinoquía: temperaturas altas → más pérdidas térmicas → PR bajo.
+export const DEPT_PR = {
+  'Amazonas':            0.73,
+  'Antioquia':           0.81,
+  'Arauca':              0.76,
+  'Atlántico':           0.75,
+  'Bogotá D.C.':         0.83,
+  'Bolívar':             0.75,
+  'Boyacá':              0.83,
+  'Caldas':              0.81,
+  'Caquetá':             0.74,
+  'Casanare':            0.76,
+  'Cauca':               0.80,
+  'Cesar':               0.76,
+  'Chocó':               0.73,
+  'Córdoba':             0.75,
+  'Cundinamarca':        0.82,
+  'Guainía':             0.73,
+  'Guaviare':            0.74,
+  'Huila':               0.79,
+  'La Guajira':          0.74,
+  'Magdalena':           0.75,
+  'Meta':                0.76,
+  'Nariño':              0.80,
+  'Norte de Santander':  0.78,
+  'Putumayo':            0.74,
+  'Quindío':             0.81,
+  'Risaralda':           0.81,
+  'San Andrés y Providencia': 0.76,
+  'Santander':           0.80,
+  'Sucre':               0.75,
+  'Tolima':              0.79,
+  'Valle del Cauca':     0.81,
+  'Vaupés':              0.73,
+  'Vichada':             0.75,
+};
+
+export function getPR(dept) {
+  return DEPT_PR[dept] ?? 0.78;
+}
+
+// ==================== SOILING FACTOR BY REGION ====================
+// Soiling loss factor by region (% annual yield loss from dust/dirt).
+// Caribe dry: 3-5%, Andes: 1-2%, Llanos/Amazonia: 1%, Pacifico: 0.5%.
+// Fuente: análisis literatura PVGIS + IDEAM Colombia + IEC TR 61724-3.
+export const DEPT_SOILING = {
+  // Costa Caribe (dry, high dust)
+  'La Guajira':          5.0,
+  'Cesar':               4.5,
+  'Magdalena':           4.0,
+  'Atlántico':           4.0,
+  'Bolívar':             3.5,
+  'Sucre':               3.5,
+  'Córdoba':             3.5,
+  // Andina interior (moderate)
+  'Cundinamarca':        2.0,
+  'Bogotá D.C.':         2.0,
+  'Boyacá':              1.5,
+  'Santander':           2.0,
+  'Norte de Santander':  2.5,
+  'Antioquia':           1.5,
+  'Caldas':              1.5,
+  'Risaralda':           1.5,
+  'Quindío':             1.5,
+  'Tolima':              2.5,
+  'Huila':               2.5,
+  'Valle del Cauca':     2.0,
+  'Cauca':               1.5,
+  'Nariño':              1.5,
+  // Llanos / Amazonia (heavy rain, low soiling)
+  'Meta':                1.0,
+  'Casanare':            1.5,
+  'Arauca':              1.5,
+  'Vichada':             1.5,
+  'Caquetá':             1.0,
+  'Putumayo':            1.0,
+  'Amazonas':            1.0,
+  'Guainía':             1.0,
+  'Vaupés':              1.0,
+  'Guaviare':            1.0,
+  // Pacifico (very humid, low soiling)
+  'Chocó':               0.5,
+};
+
+/** Returns soiling fraction (0–1) for a department. Default 2% (Andina interior). */
+export function getSoiling(dept) {
+  return (DEPT_SOILING[dept] ?? 2.0) / 100;
+}
+
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
 // Zonas desde Bogotá D.C. como origen
 // Cap regulatorio: AGPE Mayor (CREG 174/2021) hasta 1 MW; usamos 500 kW como
@@ -139,42 +245,74 @@ export const DESTINOS_COURIER = [
   { id: 'fusagasuga',    dept: 'Cundinamarca',       city: 'Fusagasugá',       zona: 'R',  km: 65,   tiempo: '24-48h', lat: 4.3333, lon: -74.3667 },
   { id: 'girardot',      dept: 'Cundinamarca',       city: 'Girardot',         zona: 'R',  km: 134,  tiempo: '24-48h', lat: 4.3001, lon: -74.8000 },
   { id: 'chia',          dept: 'Cundinamarca',       city: 'Chía',             zona: 'R',  km: 23,   tiempo: '24h',    lat: 4.8625, lon: -74.0525 },
+  { id:'mosquera',      dept:'Cundinamarca', city:'Mosquera',      zona:'L', km:22,  tiempo:'24h',    lat:4.7062, lon:-74.2283 },
+  { id:'madrid-cund',   dept:'Cundinamarca', city:'Madrid',         zona:'L', km:30,  tiempo:'24h',    lat:4.7320, lon:-74.2671 },
+  { id:'cajica',        dept:'Cundinamarca', city:'Cajicá',         zona:'L', km:28,  tiempo:'24h',    lat:4.9175, lon:-74.0228 },
+  { id:'la-mesa',       dept:'Cundinamarca', city:'La Mesa',        zona:'R', km:55,  tiempo:'24h',    lat:4.6333, lon:-74.4666 },
+  { id:'villeta',       dept:'Cundinamarca', city:'Villeta',        zona:'R', km:95,  tiempo:'24-48h', lat:5.0156, lon:-74.4724 },
+  { id:'ubate',         dept:'Cundinamarca', city:'Ubaté',          zona:'R', km:88,  tiempo:'24-48h', lat:5.3153, lon:-73.8153 },
+  { id:'choconta',      dept:'Cundinamarca', city:'Chocontá',       zona:'R', km:75,  tiempo:'24-48h', lat:5.1439, lon:-73.6869 },
+  { id:'pacho',         dept:'Cundinamarca', city:'Pacho',          zona:'R', km:105, tiempo:'24-48h', lat:5.1339, lon:-74.1578 },
 
   // Boyacá
   { id: 'tunja',         dept: 'Boyacá',             city: 'Tunja',            zona: 'R',  km: 150,  tiempo: '24-48h', lat: 5.5446, lon: -73.3573 },
   { id: 'duitama',       dept: 'Boyacá',             city: 'Duitama',          zona: 'R',  km: 205,  tiempo: '24-48h', lat: 5.8245, lon: -73.0328 },
   { id: 'sogamoso',      dept: 'Boyacá',             city: 'Sogamoso',         zona: 'R',  km: 225,  tiempo: '24-48h', lat: 5.7141, lon: -72.9318 },
   { id: 'chiquinquira',  dept: 'Boyacá',             city: 'Chiquinquirá',     zona: 'R',  km: 130,  tiempo: '24-48h', lat: 5.6136, lon: -73.8178 },
+  { id:'puerto-boyaca',  dept:'Boyacá', city:'Puerto Boyacá',  zona:'R', km:225, tiempo:'24-48h', lat:5.9697, lon:-74.5881 },
+  { id:'moniquira',      dept:'Boyacá', city:'Moniquirá',       zona:'R', km:175, tiempo:'24-48h', lat:5.8831, lon:-73.5742 },
+  { id:'guateque',       dept:'Boyacá', city:'Guateque',        zona:'R', km:120, tiempo:'24-48h', lat:5.0125, lon:-73.4683 },
+  { id:'garagoa',        dept:'Boyacá', city:'Garagoa',         zona:'R', km:142, tiempo:'24-48h', lat:5.0794, lon:-73.3628 },
+  { id:'velez-boy',      dept:'Boyacá', city:'Vélez (Santander/Boyacá límite)', zona:'R', km:235, tiempo:'24-48h', lat:6.0089, lon:-73.6769 },
 
   // Tolima
   { id: 'ibague',        dept: 'Tolima',             city: 'Ibagué',           zona: 'R',  km: 210,  tiempo: '24-48h', lat: 4.4389, lon: -75.2322 },
   { id: 'espinal',       dept: 'Tolima',             city: 'Espinal',          zona: 'R',  km: 165,  tiempo: '24-48h', lat: 4.1497, lon: -74.8842 },
   { id: 'honda',         dept: 'Tolima',             city: 'Honda',            zona: 'R',  km: 155,  tiempo: '24-48h', lat: 5.2081, lon: -74.7417 },
   { id: 'melgar',        dept: 'Tolima',             city: 'Melgar',           zona: 'R',  km: 100,  tiempo: '24-48h', lat: 4.2050, lon: -74.6420 },
+  { id:'mariquita',      dept:'Tolima', city:'Mariquita',       zona:'R', km:168, tiempo:'24-48h', lat:5.2003, lon:-74.8894 },
+  { id:'lerida',         dept:'Tolima', city:'Lérida',          zona:'R', km:188, tiempo:'24-48h', lat:4.8628, lon:-74.9169 },
+  { id:'chaparral',      dept:'Tolima', city:'Chaparral',       zona:'R', km:278, tiempo:'24-48h', lat:3.7264, lon:-75.4878 },
+  { id:'purificacion',   dept:'Tolima', city:'Purificación',    zona:'R', km:175, tiempo:'24-48h', lat:3.8575, lon:-74.9317 },
+  { id:'fresno',         dept:'Tolima', city:'Fresno',          zona:'R', km:190, tiempo:'24-48h', lat:5.1567, lon:-75.0389 },
 
   // Meta
   { id: 'villavicencio', dept: 'Meta',               city: 'Villavicencio',    zona: 'R',  km: 90,   tiempo: '24-48h', lat: 4.1420, lon: -73.6266 },
   { id: 'acacias',       dept: 'Meta',               city: 'Acacías',          zona: 'R',  km: 120,  tiempo: '24-48h', lat: 3.9893, lon: -73.7578 },
   { id: 'granada-meta',  dept: 'Meta',               city: 'Granada',          zona: 'R',  km: 170,  tiempo: '24-48h', lat: 3.5467, lon: -73.7050 },
   { id: 'puerto-lopez',  dept: 'Meta',               city: 'Puerto López',     zona: 'R',  km: 175,  tiempo: '24-48h', lat: 4.0886, lon: -72.9583 },
+  { id:'cumaral',       dept:'Meta', city:'Cumaral',        zona:'R', km:110, tiempo:'24-48h', lat:4.2717, lon:-73.4872 },
+  { id:'restrepo-meta', dept:'Meta', city:'Restrepo',       zona:'R', km:105, tiempo:'24-48h', lat:4.2500, lon:-73.5667 },
+  { id:'san-martin',    dept:'Meta', city:'San Martín',     zona:'R', km:185, tiempo:'24-48h', lat:3.6956, lon:-73.6975 },
 
   // Huila
   { id: 'neiva',         dept: 'Huila',              city: 'Neiva',            zona: 'R',  km: 310,  tiempo: '24-48h', lat: 2.9273, lon: -75.2819 },
   { id: 'pitalito',      dept: 'Huila',              city: 'Pitalito',         zona: 'R',  km: 500,  tiempo: '48-72h', lat: 1.8589, lon: -76.0508 },
   { id: 'garzon',        dept: 'Huila',              city: 'Garzón',           zona: 'R',  km: 420,  tiempo: '48h',    lat: 2.1959, lon: -75.6278 },
+  { id:'la-plata',      dept:'Huila', city:'La Plata',      zona:'R', km:395, tiempo:'48h',    lat:2.3831, lon:-75.8928 },
+  { id:'campoalegre',   dept:'Huila', city:'Campoalegre',   zona:'R', km:320, tiempo:'48h',    lat:2.6894, lon:-75.3333 },
+  { id:'rivera',        dept:'Huila', city:'Rivera',         zona:'R', km:315, tiempo:'48h',    lat:2.7731, lon:-75.2378 },
+  { id:'palermo',       dept:'Huila', city:'Palermo',        zona:'R', km:288, tiempo:'24-48h', lat:2.8933, lon:-75.4256 },
 
   // Caldas
   { id: 'manizales',     dept: 'Caldas',             city: 'Manizales',        zona: 'R',  km: 310,  tiempo: '24-48h', lat: 5.0689, lon: -75.5174 },
   { id: 'la-dorada',     dept: 'Caldas',             city: 'La Dorada',        zona: 'R',  km: 205,  tiempo: '24-48h', lat: 5.4506, lon: -74.6575 },
   { id: 'chinchina',     dept: 'Caldas',             city: 'Chinchiná',        zona: 'R',  km: 320,  tiempo: '24-48h', lat: 4.9833, lon: -75.6167 },
+  { id:'aguadas',       dept:'Caldas', city:'Aguadas',       zona:'N1', km:370, tiempo:'48h',    lat:5.6150, lon:-75.4578 },
+  { id:'riosucio-cald', dept:'Caldas', city:'Riosucio',      zona:'N1', km:405, tiempo:'48h',    lat:5.4136, lon:-75.7111 },
+  { id:'anserma',       dept:'Caldas', city:'Anserma',       zona:'N1', km:388, tiempo:'48h',    lat:5.2300, lon:-75.7833 },
 
   // Risaralda
   { id: 'pereira',       dept: 'Risaralda',          city: 'Pereira',          zona: 'R',  km: 330,  tiempo: '24-48h', lat: 4.8133, lon: -75.6961 },
   { id: 'dosquebradas',  dept: 'Risaralda',          city: 'Dosquebradas',     zona: 'R',  km: 335,  tiempo: '24-48h', lat: 4.8306, lon: -75.6764 },
+  { id:'santa-rosa-ris',dept:'Risaralda', city:'Santa Rosa de Cabal', zona:'R', km:345, tiempo:'48h', lat:4.8700, lon:-75.6211 },
+  { id:'la-virginia',   dept:'Risaralda', city:'La Virginia',   zona:'N1', km:320, tiempo:'48h',    lat:4.9011, lon:-75.8811 },
 
   // Quindío
   { id: 'armenia',       dept: 'Quindío',            city: 'Armenia',          zona: 'R',  km: 300,  tiempo: '24-48h', lat: 4.5339, lon: -75.6811 },
   { id: 'calarca',       dept: 'Quindío',            city: 'Calarcá',          zona: 'R',  km: 295,  tiempo: '24-48h', lat: 4.5236, lon: -75.6439 },
+  { id:'montenegro',    dept:'Quindío', city:'Montenegro',    zona:'N1', km:305, tiempo:'48h',    lat:4.5653, lon:-75.7533 },
+  { id:'la-tebaida',    dept:'Quindío', city:'La Tebaida',    zona:'N1', km:298, tiempo:'48h',    lat:4.4497, lon:-75.7928 },
 
   // Santander
   { id: 'bucaramanga',   dept: 'Santander',          city: 'Bucaramanga',      zona: 'N1', km: 400,  tiempo: '48h',    lat: 7.1193, lon: -73.1227 },
@@ -182,6 +320,10 @@ export const DESTINOS_COURIER = [
   { id: 'giron',         dept: 'Santander',          city: 'Girón',            zona: 'N1', km: 398,  tiempo: '48h',    lat: 7.0722, lon: -73.1686 },
   { id: 'barrancabermeja', dept: 'Santander',        city: 'Barrancabermeja',  zona: 'N1', km: 320,  tiempo: '48h',    lat: 7.0653, lon: -73.8547 },
   { id: 'san-gil',       dept: 'Santander',          city: 'San Gil',          zona: 'N1', km: 310,  tiempo: '48h',    lat: 6.5550, lon: -73.1336 },
+  { id:'piedecuesta',   dept:'Santander', city:'Piedecuesta',  zona:'N1', km:406, tiempo:'48h',    lat:7.0097, lon:-73.0536 },
+  { id:'socorro',       dept:'Santander', city:'Socorro',       zona:'N1', km:315, tiempo:'48h',    lat:6.5139, lon:-73.2711 },
+  { id:'velez-sant',    dept:'Santander', city:'Vélez',         zona:'N1', km:290, tiempo:'48h',    lat:6.0089, lon:-73.6769 },
+  { id:'lebrija',       dept:'Santander', city:'Lebrija',       zona:'N1', km:395, tiempo:'48h',    lat:7.1250, lon:-73.2211 },
 
   // Antioquia
   { id: 'medellin',      dept: 'Antioquia',          city: 'Medellín',         zona: 'N1', km: 415,  tiempo: '48h',    lat: 6.2442, lon: -75.5812 },
@@ -190,6 +332,14 @@ export const DESTINOS_COURIER = [
   { id: 'itagui',        dept: 'Antioquia',          city: 'Itagüí',           zona: 'N1', km: 418,  tiempo: '48h',    lat: 6.1817, lon: -75.5994 },
   { id: 'rionegro',      dept: 'Antioquia',          city: 'Rionegro',         zona: 'N1', km: 390,  tiempo: '48h',    lat: 6.1556, lon: -75.3744 },
   { id: 'apartado',      dept: 'Antioquia',          city: 'Apartadó',         zona: 'N1', km: 680,  tiempo: '72h',    lat: 7.8833, lon: -76.6333 },
+  { id:'yarumal',       dept:'Antioquia', city:'Yarumal',      zona:'N1', km:475, tiempo:'48h',    lat:6.9750, lon:-75.4128 },
+  { id:'santa-fe-ant',  dept:'Antioquia', city:'Santa Fe de Antioquia', zona:'N1', km:490, tiempo:'48h', lat:6.5561, lon:-75.8267 },
+  { id:'la-ceja',       dept:'Antioquia', city:'La Ceja',       zona:'N1', km:400, tiempo:'48h',    lat:6.0297, lon:-75.4317 },
+  { id:'sabaneta',      dept:'Antioquia', city:'Sabaneta',      zona:'N1', km:422, tiempo:'48h',    lat:6.1511, lon:-75.6161 },
+  { id:'copacabana',    dept:'Antioquia', city:'Copacabana',    zona:'N1', km:415, tiempo:'48h',    lat:6.3497, lon:-75.5094 },
+  { id:'marinilla',     dept:'Antioquia', city:'Marinilla',     zona:'N1', km:395, tiempo:'48h',    lat:6.1769, lon:-75.3400 },
+  { id:'caucasia',      dept:'Antioquia', city:'Caucasia',      zona:'N1', km:570, tiempo:'48-72h', lat:7.9839, lon:-75.1939 },
+  { id:'barbosa-ant',   dept:'Antioquia', city:'Barbosa',       zona:'N1', km:438, tiempo:'48h',    lat:6.4356, lon:-75.3319 },
 
   // Valle del Cauca
   { id: 'cali',          dept: 'Valle del Cauca',    city: 'Cali',             zona: 'N1', km: 460,  tiempo: '48h',    lat: 3.4516, lon: -76.5320 },
@@ -197,15 +347,25 @@ export const DESTINOS_COURIER = [
   { id: 'buga',          dept: 'Valle del Cauca',    city: 'Buga',             zona: 'N1', km: 390,  tiempo: '48h',    lat: 3.9014, lon: -76.2978 },
   { id: 'tulua',         dept: 'Valle del Cauca',    city: 'Tuluá',            zona: 'N1', km: 380,  tiempo: '48h',    lat: 4.0847, lon: -76.1953 },
   { id: 'buenaventura',  dept: 'Valle del Cauca',    city: 'Buenaventura',     zona: 'N1', km: 580,  tiempo: '48-72h', lat: 3.8831, lon: -77.0311 },
+  { id:'jamundi',       dept:'Valle del Cauca', city:'Jamundí',   zona:'N1', km:465, tiempo:'48h',    lat:3.2628, lon:-76.5369 },
+  { id:'cartago-valle', dept:'Valle del Cauca', city:'Cartago',   zona:'N1', km:365, tiempo:'48h',    lat:4.7489, lon:-75.9161 },
+  { id:'yumbo',         dept:'Valle del Cauca', city:'Yumbo',     zona:'N1', km:460, tiempo:'48h',    lat:3.5803, lon:-76.4972 },
+  { id:'roldanillo',    dept:'Valle del Cauca', city:'Roldanillo', zona:'N1', km:358, tiempo:'48h',   lat:4.4200, lon:-76.1575 },
+  { id:'candelaria',    dept:'Valle del Cauca', city:'Candelaria', zona:'N1', km:470, tiempo:'48h',   lat:3.4111, lon:-76.3478 },
 
   // Norte de Santander
   { id: 'cucuta',        dept: 'Norte de Santander', city: 'Cúcuta',           zona: 'N1', km: 590,  tiempo: '48-72h', lat: 7.8939, lon: -72.5078 },
   { id: 'ocana',         dept: 'Norte de Santander', city: 'Ocaña',            zona: 'N1', km: 560,  tiempo: '48-72h', lat: 8.2378, lon: -73.3561 },
   { id: 'pamplona',      dept: 'Norte de Santander', city: 'Pamplona',         zona: 'N1', km: 520,  tiempo: '48-72h', lat: 7.3764, lon: -72.6514 },
+  { id:'villa-rosario', dept:'Norte de Santander', city:'Villa del Rosario', zona:'N1', km:593, tiempo:'48-72h', lat:7.8347, lon:-72.4703 },
+  { id:'tibu',          dept:'Norte de Santander', city:'Tibú',              zona:'N1', km:640, tiempo:'48-72h', lat:8.6525, lon:-72.7278 },
 
   // Cauca
   { id: 'popayan',       dept: 'Cauca',              city: 'Popayán',          zona: 'N1', km: 580,  tiempo: '48-72h', lat: 2.4448, lon: -76.6147 },
   { id: 'santander-quilichao', dept: 'Cauca',        city: 'Santander de Quilichao', zona: 'N1', km: 500, tiempo: '48h', lat: 3.0100, lon: -76.4850 },
+  { id:'puerto-tejada', dept:'Cauca', city:'Puerto Tejada', zona:'N1', km:500, tiempo:'48h',    lat:3.2303, lon:-76.4153 },
+  { id:'caloto',        dept:'Cauca', city:'Caloto',         zona:'N1', km:480, tiempo:'48h',    lat:3.0506, lon:-76.3803 },
+  { id:'miranda-cauca', dept:'Cauca', city:'Miranda',        zona:'N1', km:475, tiempo:'48h',    lat:3.2453, lon:-76.2333 },
 
   // Casanare
   { id: 'yopal',         dept: 'Casanare',           city: 'Yopal',            zona: 'N1', km: 380,  tiempo: '48h',    lat: 5.3378, lon: -72.3959 },
@@ -367,6 +527,55 @@ export const SOBREFLETE = 0.02;
 
 export const ZONA_LABEL = { L: 'Local', R: 'Regional', N1: 'Nacional Z1', N2: 'Nacional Z2', D: 'Difícil acceso' };
 
+// Ajuste fino por distancia real dentro de la zona (±25% máximo).
+// Evita saltos bruscos en el límite entre zonas.
+export function getZoneKmFactor(km, zona) {
+  switch (zona) {
+    case 'L':  return 1.0;
+    case 'R':  return 1.0 + Math.min(0.25, Math.max(0, (km - 51)  / 249) * 0.25);
+    case 'N1': return 1.0 + Math.min(0.20, Math.max(0, (km - 301) / 299) * 0.20);
+    case 'N2': return 1.0 + Math.min(0.18, Math.max(0, (km - 601) / 599) * 0.18);
+    case 'D':  return 1.0;
+    default:   return 1.0;
+  }
+}
+
+// Peso volumétrico (dimensional weight) para envíos terrestres en Colombia.
+// Fórmula carriers: Largo(cm) × Ancho(cm) × Alto(cm) / 5000
+// Para aéreo (Deprisa): / 6000
+// El carrier factura max(peso_real, peso_volumétrico).
+export function calcDimensionalWeight(numPanels, panel, inv, bUnit, bQty) {
+  // Panel boxes: 2 paneles por caja, doble protección
+  const pLen = Math.round((panel?.lengthMm || 2280) / 10) + 4; // cm + 4cm embalaje
+  const pWid = Math.round((panel?.widthMm  || 1135) / 10) + 4;
+  const panelsPerBox = 2;
+  const boxH = panelsPerBox * 4 + 6; // 4cm por panel + 6cm caja (tapa+base)
+  const panelDimKgEach = (pLen * pWid * boxH) / 5000;
+  const totalPanelDimKg = numPanels * panelDimKgEach;
+
+  // Inversor: caja estimada por potencia (datasheets Growatt/Solis/SMA)
+  const kw = inv?.kw || 5;
+  let invL, invW, invH;
+  if (kw <= 5)        { invL = 70;  invW = 50; invH = 45; }
+  else if (kw <= 15)  { invL = 80;  invW = 60; invH = 50; }
+  else if (kw <= 30)  { invL = 90;  invW = 70; invH = 60; }
+  else if (kw <= 60)  { invL = 100; invW = 75; invH = 65; }
+  else                { invL = 120; invW = 85; invH = 70; }
+  const invDimKg = (invL * invW * invH) / 5000;
+
+  // Baterías: LFP son densas — el peso real supera el volumétrico en casi todos los casos
+  const batDimKg = 0;
+
+  const totalDimKg = Math.round(totalPanelDimKg + invDimKg + batDimKg);
+  const isAir = false; // terrestre por defecto
+  return { panelDimKg: Math.round(totalPanelDimKg), invDimKg: Math.round(invDimKg), totalDimKg };
+}
+
+// Peso facturable = max(peso_real, peso_volumétrico).
+export function getBillableWeight(actualKg, dimKg) {
+  return Math.max(actualKg, dimKg);
+}
+
 // ==================== EQUIPMENT DEFAULTS ====================
 // Schema extendido con specs eléctricos (Voc, Vmp, Isc, Imp, coef. temp.)
 // y de inversores (vocMax, mppt range, idcMax, mpptCount). Estos campos
@@ -519,7 +728,7 @@ export const DEFAULT_PRICING = {
 };
 
 export const DEPTS = [
-  'Amazonas','Antioquia','Arauca','Atlántico','Bogotá D.C.','Bolívar','Boyacá','Caldas',
+  'Amazonas','Antioquia','Arauca','Atlántico','Bolívar','Boyacá','Caldas',
   'Caquetá','Casanare','Cauca','Cesar','Chocó','Córdoba','Cundinamarca',
   'Guainía','Guaviare','Huila','La Guajira','Magdalena','Meta','Nariño',
   'Norte de Santander','Putumayo','Quindío','Risaralda','San Andrés',
@@ -585,16 +794,14 @@ export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC
 // inv: puede ser el objeto inversor completo (preferido, para usar specs
 // eléctricos reales al dimensionar strings) o un número (kW) legado.
 export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) {
-  // inv puede ser null cuando no hay inversor compatible en stock. Usamos un
-  // proxy con la potencia teórica (target kWp) para no romper los cálculos
-  // de paneles/producción; el budget y la UI marcarán el faltante por separado.
-  const noInverter = inv == null;
   const invObj = (typeof inv === 'object' && inv !== null) ? inv : { kw: inv };
-  const fallbackKw = (opts.targetKwp && opts.targetKwp > 0) ? opts.targetKwp : (monthlyKwh / 30 / (psh * 0.78));
-  const invKw = noInverter ? Math.max(1, fallbackKw) : invObj.kw;
-  const PR = 0.78;
+  const invKw = invObj.kw;
+  const PR = opts.pr ?? 0.78;
+  // Apply soiling factor for the department (additive loss on top of PR).
+  // getSoiling returns e.g. 0.02 for 2% loss. effectivePR = PR × (1 − soiling).
+  const effectivePR = opts.dept ? PR * (1 - getSoiling(opts.dept)) : PR;
   const daily = monthlyKwh / 30;
-  const consumptionKwp = daily / (psh * PR);
+  const consumptionKwp = daily / (psh * effectivePR);
   const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;
   const kwpN = Math.min(rawTarget, MAX_KWP_AGPE);
   const cappedByRegulation = rawTarget > MAX_KWP_AGPE;
@@ -603,7 +810,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const numPanelsIdeal = Math.ceil(kwpN * 1000 / panel.wp);
   // sizeStrings may cap ns when Idc_max would be exceeded; actualPanels reflects
   // the true number that can be wired. We use it for all energy/financial calcs.
-  const { pps, ns, ppss, actualPanels, currentLimited } = sizeStrings(panel, invObj, numPanelsIdeal, coldTempC, hotTempC);
+  const { pps, ns, ppss, actualPanels, currentLimited, specsSource } = sizeStrings(panel, invObj, numPanelsIdeal, coldTempC, hotTempC);
   const numPanels = currentLimited ? actualPanels : numPanelsIdeal;
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
 
@@ -612,7 +819,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   if (usingPVGIS) {
     ap = Math.round(opts.pvgisAnnualKwh);
   } else {
-    dp = parseFloat((actKwp * psh * PR).toFixed(1));
+    dp = parseFloat((actKwp * psh * effectivePR).toFixed(1));
     ap = Math.round(dp * 365);
   }
   // Factor de sombreado local de Google Solar API dataLayers (0–1).
@@ -622,12 +829,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   mp = Math.round(ap / 12);
   dp = parseFloat((ap / 365).toFixed(1));
 
-  // Cobertura real (sin cap): producción / consumo × 100. Antes estaba capada en 120%
-  // pero eso falseaba el dato cuando el sistema se dimensiona para excedentes (puede
-  // llegar a 200-300% en sistemas comerciales). El cap escondía la realidad y la IA
-  // reportaba "120%" mientras el usuario veía 263% en otras secciones — desalineación
-  // interna que daba sensación de que la IA inventaba datos.
-  const cov = Math.round((mp / monthlyKwh) * 100);
+  const cov = Math.min(Math.round((mp / monthlyKwh) * 100), 120);
   const dca = parseFloat((actKwp / invKw).toFixed(2));
   const co2 = Math.round(ap * 0.126);
   // Área real de techo ocupada, usando footprint real + packing factor
@@ -637,11 +839,11 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const aut = tB > 0 ? parseFloat(((tB * 0.8) / (daily / 24)).toFixed(1)) : 0;
   const kgTotal = (numPanels * (panel.kg || 25.5))
     + (numPanels * 7.5)  // estructura
-    + (noInverter ? 0 : (invObj?.kg ?? 20))  // peso del inversor en kg (no kW)
+    + invKw              // inversor aprox
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
   const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
-  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited, noInverter };
+  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited, specsSource };
 }
 
 export function calcTransport(zonas, zona, kgTotal, valorDec) {
@@ -652,43 +854,47 @@ export function calcTransport(zonas, zona, kgTotal, valorDec) {
 }
 
 // Cotiza en todas las transportadoras y devuelve la más económica.
-// `valorDec` (declarado) aplica sobreflete 2% — mismo para todas (normativa).
-// Retorna { best: {carrierId, label, flete, sf, total}, quotes: [...ordenadas] }.
-export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIERS) {
+// Nuevo: aplica ajuste por km dentro de la zona y usa peso facturable (volumétrico vs real).
+// `eqInfo`: { numPanels, panel, inv } para calcular peso volumétrico. Opcional.
+export function pickBestTransport(zona, kgTotal, valorDec = 0, carriers = CARRIERS, destKm = 0, eqInfo = null) {
   const sf = Math.round(valorDec * SOBREFLETE);
+  const kmFactor = destKm > 0 ? getZoneKmFactor(destKm, zona) : 1.0;
+
+  // Peso facturable (volumétrico vs real)
+  let billableKg = kgTotal;
+  let dimKg = 0;
+  if (eqInfo?.numPanels && eqInfo?.panel) {
+    const dimResult = calcDimensionalWeight(eqInfo.numPanels, eqInfo.panel, eqInfo.inv, null, 0);
+    dimKg = dimResult.totalDimKg;
+    billableKg = getBillableWeight(kgTotal, dimKg);
+  }
+
   const quotes = Object.entries(carriers).map(([carrierId, c]) => {
     const z = c.zonas[zona];
     if (!z) return null;
-    const flete = Math.round(z.base + Math.max(0, kgTotal - 1) * z.kgAd);
-    return {
-      carrierId,
-      label: c.label,
-      note: c.note || '',
-      flete,
-      sf,
-      total: flete + sf,
-    };
+    // Deprisa usa divisor 6000 para aéreo → aplicar factor 0.83 al peso volumétrico
+    const airFactor = carrierId === 'deprisa' ? 0.83 : 1.0;
+    const effectiveKg = carrierId === 'deprisa' ? Math.max(kgTotal, dimKg * airFactor) : billableKg;
+    const baseFlete = Math.round(z.base + Math.max(0, effectiveKg - 1) * z.kgAd);
+    const flete = Math.round(baseFlete * kmFactor);
+    return { carrierId, label: c.label, note: c.note || '', flete, sf, total: flete + sf, billableKg: effectiveKg, dimKg, actualKg: kgTotal, kmFactor };
   }).filter(Boolean);
   quotes.sort((a, b) => a.total - b.total);
-  return { best: quotes[0] || null, quotes };
+  return { best: quotes[0] || null, quotes, billableKg, dimKg, actualKg: kgTotal };
 }
 
 export function calcBudget(sys, panel, inv, bUnit, bQty, pricing, transport) {
   const pC = sys.numPanels * panel.price;
-  // Si no hay inversor compatible en stock (inv=null) el costo va en 0 y la UI
-  // muestra "consultar stock". El presupuesto queda como referencia parcial.
-  const iC = inv?.price || 0;
+  const iC = inv.price;
   const bC = bUnit && bQty ? bQty * bUnit.price : 0;
   const sA = pC + iC + bC;
   const st = sys.numPanels * pricing.structure_per_panel;
   const ca = sys.actKwp * pricing.cabling_per_kwp;
   const pt = sys.actKwp * pricing.protections_per_kwp;
   const ins = sys.actKwp * pricing.installation_per_kwp;
-  const bBaseTaxable = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites;
-  const transportCost = transport || 0;
-  const iva = Math.round(bBaseTaxable * (pricing.iva / 100));
-  const bBase = bBaseTaxable + transportCost;
-  const sB = bBaseTaxable + iva + transportCost;
+  const bBase = st + ca + pt + ins + pricing.engineering + pricing.emsa_tramites + (transport || 0);
+  const iva = Math.round(bBase * (pricing.iva / 100));
+  const sB = bBase + iva;
   const tot = sA + sB;
   return { pC, iC, bC, sA, st, ca, pt, ins, eng: pricing.engineering, emsa: pricing.emsa_tramites, transport: transport || 0, bBase, iva, sB, tot };
 }
@@ -811,10 +1017,10 @@ export function selectCompatibleInverter(panel, kwp, sysType, inverters, opts = 
     if (byType.length) {
       return [...byType].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp))[0];
     }
-    // No existe ningún inversor del tipo correcto en el catálogo. Devolvemos null
-    // para que la UI muestre "consultar stock" en vez de un inversor incompatible
-    // (ej: un on-grid no sirve para off-grid porque no maneja banco de baterías).
-    return null;
+    // Último recurso — no existe nada del tipo correcto; devolver el inversor
+    // más cercano en potencia para evitar crash, la UI debe advertir.
+    const any = [...inverters].sort((a, b) => Math.abs((a.kw || 0) - kwp) - Math.abs((b.kw || 0) - kwp));
+    return any[0] || inverters[0];
   }
   const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
   const scored = pool.map(inv => {
@@ -862,7 +1068,7 @@ export function autoInverter(kwp, sysType, inverters, panel) {
     if (sysType === 'off-grid' && i.type === 'hybrid' && !i.offGridCapable) return false;
     return true;
   });
-  if (!pool.length) return null;
+  if (!pool.length) return inverters[0];
   const range = DCAC_RANGE[sysType] || DCAC_RANGE['on-grid'];
   const targetMin = kwp / range.max;
   const targetMax = kwp / range.min;
@@ -942,6 +1148,60 @@ export function validateLayout(panel, inverter, panelsPerString, numStrings, col
       stringsPerMppt,
       vocMax, mpptMin, mpptMax, idcMax, mpptCount,
     },
+  };
+}
+
+// CREG 030/2018 — Cálculo mensual de net metering para AGPE Menor (≤ 100 kW).
+// Los créditos de excedentes se aplican mensualmente, no anualmente.
+// El precio de los excedentes (bolsa) es ≈ 80% de la tarifa CU usuario final
+// (componente G del CU según CREG 174/2021 art. 7). excedentePricePct=0.8 por defecto.
+//
+// Parámetros:
+//   monthlyProdKwh    — producción mensual estimada del sistema (kWh)
+//   monthlyConsumoKwh — consumo mensual del usuario (kWh, del recibo)
+//   tarifaKwh         — tarifa CU efectiva del operador (COP/kWh)
+//   excedentePricePct — fracción de la tarifa que recibe el usuario por excedentes (default 0.80)
+//
+// Retorna un objeto con el desglose mensual completo.
+export function calcMonthlyNetMetering(monthlyProdKwh, monthlyConsumoKwh, tarifaKwh, excedentePricePct = 0.8) {
+  const prod = Math.max(0, Number(monthlyProdKwh) || 0);
+  const cons = Math.max(0, Number(monthlyConsumoKwh) || 0);
+  const tarifa = Math.max(0, Number(tarifaKwh) || 0);
+  const pct = Math.max(0, Math.min(1, Number(excedentePricePct) || 0.8));
+
+  // Energía autoconsumida directamente (desplaza compra a la red)
+  const autoconsumo = Math.min(prod, cons);
+  // Energía inyectada a la red (si producción > consumo)
+  const excedentes = Math.max(0, prod - cons);
+  // Energía que aún se compra a la red (si consumo > producción)
+  const deficit = Math.max(0, cons - prod);
+
+  // Ahorro por autoconsumo: kWh que NO se compran a la tarifa plena
+  const savingsAutoconsumo = Math.round(autoconsumo * tarifa);
+  // Crédito por excedentes inyectados (liquidados al precio de bolsa ≈ 80% CU)
+  const creditExcedentes = Math.round(excedentes * tarifa * pct);
+  // Costo de la energía que todavía se compra a la red
+  const costoDeficit = Math.round(deficit * tarifa);
+
+  // Factura neta = lo que aún se paga a la red menos el crédito de excedentes.
+  // La diferencia puede ser cero si el crédito supera el déficit (saldo a favor al siguiente mes).
+  const facturaNeta = Math.max(0, costoDeficit - creditExcedentes);
+
+  // Ahorro total vs. no tener solar: factura sin solar - factura con solar
+  const facturaSinSolar = Math.round(cons * tarifa);
+  const ahorro = facturaSinSolar - facturaNeta;
+
+  return {
+    autoconsumo: Math.round(autoconsumo),
+    excedentes: Math.round(excedentes),
+    deficit: Math.round(deficit),
+    savingsAutoconsumo,
+    creditExcedentes,
+    costoDeficit,
+    facturaNeta,
+    facturaSinSolar,
+    ahorro,
+    excedentePricePct: pct,
   };
 }
 

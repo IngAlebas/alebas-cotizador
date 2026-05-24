@@ -1,0 +1,199 @@
+{
+  "name": "ALEBAS — supplier-analytics",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supplier-analytics",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d4000000-0004-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-supplier-analytics"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\nconst headers = src.headers || {};\n\n// Extract JWT token from Authorization header or body\nlet token = '';\nconst authHeader = headers['authorization'] || headers['Authorization'] || '';\nif (authHeader.startsWith('Bearer ')) {\n  token = authHeader.slice(7).trim();\n} else if (body.token) {\n  token = (body.token || '').toString().trim();\n}\n\nif (!token) {\n  return [{ json: { __authError: true } }];\n}\n\nlet decoded;\ntry {\n  const jwt = require('jsonwebtoken');\n  decoded = jwt.verify(token, process.env.JWT_SECRET);\n} catch (e) {\n  return [{ json: { __authError: true } }];\n}\n\nif (decoded.role !== 'supplier') {\n  return [{ json: { __authError: true } }];\n}\n\nconst supplier_id = decoded.sub;\nreturn [{ json: { supplier_id, verified: true } }];"
+      },
+      "id": "d4000000-0004-4000-9000-000000000002",
+      "name": "Code: Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.__authError }}",
+                    "rightValue": true,
+                    "operator": { "type": "boolean", "operation": "true" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "AUTH_ERROR"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "d4000000-0004-4000-9000-000000000003",
+      "name": "Switch: auth check",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COUNT(*) FILTER (WHERE status='pendiente') AS pending_orders,\n  COUNT(*) FILTER (WHERE status IN ('confirmado','preparando','enviado','entregado')) AS active_orders,\n  COUNT(*) FILTER (WHERE status='completado' AND DATE_TRUNC('month',completed_at)=DATE_TRUNC('month',NOW())) AS completed_this_month,\n  COALESCE(SUM(supplier_net_cop) FILTER (WHERE status='completado' AND DATE_TRUNC('month',completed_at)=DATE_TRUNC('month',NOW())), 0) AS net_revenue_this_month\nFROM purchase_orders\nWHERE supplier_id = $1",
+        "options": {
+          "queryReplacement": "={{ [$json.supplier_id] }}"
+        }
+      },
+      "id": "d4000000-0004-4000-9000-000000000004",
+      "name": "Postgres: Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 200],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  COALESCE(SUM(amount_cop) FILTER (WHERE status='pendiente'), 0) AS pending,\n  COALESCE(SUM(amount_cop) FILTER (WHERE status='pagada'), 0) AS paid\nFROM commissions\nWHERE supplier_id = $1",
+        "options": {
+          "queryReplacement": "={{ [$('Code: Auth').first().json.supplier_id] }}"
+        }
+      },
+      "id": "d4000000-0004-4000-9000-000000000005",
+      "name": "Postgres: Commissions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 400],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, brand, model, equipment_type, qty_available\nFROM supplier_stock\nWHERE supplier_id = $1\n  AND qty_available < 5\n  AND is_active = true\nORDER BY qty_available\nLIMIT 10",
+        "options": {
+          "queryReplacement": "={{ [$('Code: Auth').first().json.supplier_id] }}"
+        }
+      },
+      "id": "d4000000-0004-4000-9000-000000000006",
+      "name": "Postgres: Critical stock",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 600],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assemble results from all 3 parallel queries\nconst metrics = $('Postgres: Metrics').first().json;\nconst commissions = $('Postgres: Commissions').first().json;\nconst criticalRows = $('Postgres: Critical stock').all().map(i => i.json);\n\nreturn [{\n  json: {\n    ok: true,\n    pendingOrders: Number(metrics.pending_orders || 0),\n    activeOrders: Number(metrics.active_orders || 0),\n    completedThisMonth: Number(metrics.completed_this_month || 0),\n    netRevenueThisMonth: Number(metrics.net_revenue_this_month || 0),\n    pendingCommission: Number(commissions.pending || 0),\n    paidCommission: Number(commissions.paid || 0),\n    criticalStock: criticalRows\n  }\n}];"
+      },
+      "id": "d4000000-0004-4000-9000-000000000007",
+      "name": "Code: Assemble",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "d4000000-0004-4000-9000-000000000008",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ok: false, error: 'Token inválido' } }];"
+      },
+      "id": "d4000000-0004-4000-9000-000000000009",
+      "name": "Code: Auth Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 800]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "d4000000-0004-4000-9000-000000000010",
+      "name": "Respond Auth Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 800]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Code: Auth", "type": "main", "index": 0 }]]
+    },
+    "Code: Auth": {
+      "main": [[{ "node": "Switch: auth check", "type": "main", "index": 0 }]]
+    },
+    "Switch: auth check": {
+      "main": [
+        [{ "node": "Code: Auth Error", "type": "main", "index": 0 }],
+        [
+          { "node": "Postgres: Metrics", "type": "main", "index": 0 },
+          { "node": "Postgres: Commissions", "type": "main", "index": 0 },
+          { "node": "Postgres: Critical stock", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Postgres: Metrics": {
+      "main": [[{ "node": "Code: Assemble", "type": "main", "index": 0 }]]
+    },
+    "Postgres: Commissions": {
+      "main": [[{ "node": "Code: Assemble", "type": "main", "index": 0 }]]
+    },
+    "Postgres: Critical stock": {
+      "main": [[{ "node": "Code: Assemble", "type": "main", "index": 0 }]]
+    },
+    "Code: Assemble": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    },
+    "Code: Auth Error": {
+      "main": [[{ "node": "Respond Auth Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }, { "name": "supplier" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}

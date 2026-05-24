@@ -1,0 +1,135 @@
+{
+  "name": "ALEBAS — assign-technician",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "assign-technician",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c8000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-assign-technician"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\nconst quoteId = body.quoteId;\nconst technicianId = body.technicianId;\nconst adminToken = body.adminToken;\n\nif (typeof quoteId !== 'number' || !Number.isFinite(quoteId) || quoteId <= 0) {\n  throw new Error('quoteId debe ser un número positivo');\n}\nif (typeof technicianId !== 'number' || !Number.isFinite(technicianId) || technicianId <= 0) {\n  throw new Error('technicianId debe ser un número positivo');\n}\n// adminToken is optional for now (simple shared-secret pattern, validated if provided)\nreturn [{ json: { quoteId: Math.floor(quoteId), technicianId: Math.floor(technicianId), adminToken: adminToken || null } }];"
+      },
+      "id": "c8000000-0001-4000-9000-000000000002",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE quotes SET technician_id=$1, doc_status='en_revision', status='asignado' WHERE id=$2 RETURNING id, tech_token, payload->>'name' as client_name, payload->>'phone' as client_phone",
+        "options": {
+          "queryReplacement": "={{ [$json.technicianId, $json.quoteId] }}"
+        }
+      },
+      "id": "c8000000-0001-4000-9000-000000000003",
+      "name": "Update quote",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store the updated quote data for later use in Build response\nconst validated = $('Validate').first().json;\nconst row = $input.first().json;\nif (!row || !row.id) {\n  throw new Error('Cotización no encontrada o ya procesada');\n}\nreturn [{ json: { quoteId: row.id, techToken: row.tech_token, clientName: row.client_name, clientPhone: row.client_phone, technicianId: validated.technicianId } }];"
+      },
+      "id": "c8000000-0001-4000-9000-000000000004",
+      "name": "Merge quote data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT name, email, phone FROM technicians WHERE id=$1",
+        "options": {
+          "queryReplacement": "={{ [$json.technicianId] }}"
+        }
+      },
+      "id": "c8000000-0001-4000-9000-000000000005",
+      "name": "Get technician",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{$env.WHATSAPP_PHONE_NUMBER_ID}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=",
+              "value": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Get technician').first().json.phone, type: 'template', template: { name: 'tech_assignment', language: { code: 'es' }, components: [{ type: 'body', parameters: [{ type: 'text', text: $('Merge quote data').first().json.clientName || 'Cliente' }, { type: 'text', text: String($('Merge quote data').first().json.quoteId) }] }] } }) }}"
+            }
+          ]
+        },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "c8000000-0001-4000-9000-000000000006",
+      "name": "Notify tech WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "continueOnFail": true,
+      "credentials": { "httpHeaderAuth": { "id": "ALEBAS_WA_BEARER", "name": "ALEBAS WhatsApp Bearer" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const quoteData = $('Merge quote data').first().json;\nconst tech = $('Get technician').first().json || {};\nreturn [{ json: { ok: true, quoteId: quoteData.quoteId, techToken: quoteData.techToken, techName: tech.name || null } }];"
+      },
+      "id": "c8000000-0001-4000-9000-000000000007",
+      "name": "Build response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c8000000-0001-4000-9000-000000000008",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Validate", "type": "main", "index": 0 }]] },
+    "Validate": { "main": [[{ "node": "Update quote", "type": "main", "index": 0 }]] },
+    "Update quote": { "main": [[{ "node": "Merge quote data", "type": "main", "index": 0 }]] },
+    "Merge quote data": { "main": [[{ "node": "Get technician", "type": "main", "index": 0 }]] },
+    "Get technician": { "main": [[{ "node": "Notify tech WhatsApp", "type": "main", "index": 0 }]] },
+    "Notify tech WhatsApp": { "main": [[{ "node": "Build response", "type": "main", "index": 0 }]] },
+    "Build response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}

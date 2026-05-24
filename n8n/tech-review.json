@@ -1,0 +1,156 @@
+{
+  "name": "ALEBAS — tech-review",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "=",
+        "path": "tech-review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c9000000-0001-4000-9000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-tech-review"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "method-check",
+              "leftValue": "={{ $input.first().json.method || $input.first().json.headers?.['x-http-method'] || 'GET' }}",
+              "rightValue": "POST",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9000000-0001-4000-9000-000000000002",
+      "name": "Method branch",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// POST branch — parse body\nconst src = $input.first().json;\nconst body = src.body || src;\nconst token = body.token;\nconst action = body.action;\nconst notes = body.notes || null;\n\nif (!token) throw new Error('token requerido');\nif (!action || !['approve', 'request_changes'].includes(action)) {\n  throw new Error('action debe ser approve o request_changes');\n}\nreturn [{ json: { token, action, notes } }];"
+      },
+      "id": "c9000000-0001-4000-9000-000000000003",
+      "name": "Parse POST body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE quotes SET doc_status=CASE WHEN $1='approve' THEN 'aprobado' ELSE 'cambios_solicitados' END, tech_approved_at=CASE WHEN $1='approve' THEN NOW() ELSE NULL END, tech_notes=$2, status=CASE WHEN $1='approve' THEN 'documentos_aprobados' ELSE 'en_revision' END WHERE tech_token=$3::uuid RETURNING id, status, doc_status",
+        "options": {
+          "queryReplacement": "={{ [$json.action, $json.notes, $json.token] }}"
+        }
+      },
+      "id": "c9000000-0001-4000-9000-000000000004",
+      "name": "Update doc status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 160],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Parse POST body').first().json;\nconst row = $input.first().json || {};\nreturn [{ json: { ok: true, action: parsed.action, quoteId: row.id || null, docStatus: row.doc_status || null } }];"
+      },
+      "id": "c9000000-0001-4000-9000-000000000005",
+      "name": "Build POST response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c9000000-0001-4000-9000-000000000006",
+      "name": "Respond POST",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "// GET branch — extract token from query params\nconst src = $input.first().json;\nconst token = src.query?.token || src.token || null;\nif (!token) throw new Error('token query param requerido');\nreturn [{ json: { token } }];"
+      },
+      "id": "c9000000-0001-4000-9000-000000000007",
+      "name": "Parse GET params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT q.id, q.status, q.doc_status, q.payload, q.tech_notes, q.tech_approved_at, q.tech_token, t.name as tech_name, t.phone as tech_phone FROM quotes q LEFT JOIN technicians t ON t.id=q.technician_id WHERE q.tech_token=$1::uuid",
+        "options": {
+          "queryReplacement": "={{ [$json.token] }}"
+        }
+      },
+      "id": "c9000000-0001-4000-9000-000000000008",
+      "name": "Fetch quote",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 440],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json || {};\nif (!row.id) throw new Error('Token inválido o cotización no encontrada');\n\n// Parse payload JSONB if it's a string\nlet payload = row.payload;\nif (typeof payload === 'string') {\n  try { payload = JSON.parse(payload); } catch { payload = {}; }\n}\n\nreturn [{ json: { ok: true, quote: {\n  id: row.id,\n  status: row.status,\n  doc_status: row.doc_status,\n  payload: payload,\n  tech_notes: row.tech_notes,\n  tech_approved_at: row.tech_approved_at,\n  tech_token: row.tech_token,\n  tech_name: row.tech_name,\n  tech_phone: row.tech_phone,\n} } }];"
+      },
+      "id": "c9000000-0001-4000-9000-000000000009",
+      "name": "Build GET response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 440]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c9000000-0001-4000-9000-000000000010",
+      "name": "Respond GET",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 440]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Method branch", "type": "main", "index": 0 }]] },
+    "Method branch": {
+      "main": [
+        [{ "node": "Parse POST body", "type": "main", "index": 0 }],
+        [{ "node": "Parse GET params", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse POST body": { "main": [[{ "node": "Update doc status", "type": "main", "index": 0 }]] },
+    "Update doc status": { "main": [[{ "node": "Build POST response", "type": "main", "index": 0 }]] },
+    "Build POST response": { "main": [[{ "node": "Respond POST", "type": "main", "index": 0 }]] },
+    "Parse GET params": { "main": [[{ "node": "Fetch quote", "type": "main", "index": 0 }]] },
+    "Fetch quote": { "main": [[{ "node": "Build GET response", "type": "main", "index": 0 }]] },
+    "Build GET response": { "main": [[{ "node": "Respond GET", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "versionId": "1"
+}

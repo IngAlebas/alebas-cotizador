@@ -1,0 +1,156 @@
+{
+  "name": "matching-installer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "matching-installer",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d4000000-0005-0001-0000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "d4000000-0005-0001-0000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $input.first().json;\nconst body = req.body || {};\nconst headers = req.headers || {};\n\nconst token = (headers['authorization'] || '').replace('Bearer ', '') || body.token || '';\nconst expected = process.env.N8N_TOKEN || '';\n\nif (!expected || token !== expected) {\n  return [{ json: { authorized: false } }];\n}\nreturn [{ json: { authorized: true, quote_id: body.quote_id, dept: body.dept, kwp: body.kwp || 5 } }];"
+      },
+      "id": "d4000000-0005-0002-0000-000000000002",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "auth-check",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d4000000-0005-0003-0000-000000000003",
+      "name": "Is Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "d4000000-0005-0004-0000-000000000004",
+      "name": "401 Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, email, phone, dept, coverage_depts, rating_avg, rating_count, active_jobs, max_kwp_month, retie_cert, retie_expires FROM technicians WHERE active = true AND (retie_expires IS NULL OR retie_expires > NOW()) AND (dept = $1 OR $1 = ANY(coverage_depts)) ORDER BY rating_avg DESC, active_jobs ASC LIMIT 5",
+        "additionalFields": {
+          "queryParams": "={{ [$('Auth Check').first().json.dept] }}"
+        }
+      },
+      "id": "d4000000-0005-0005-0000-000000000005",
+      "name": "Get Installers",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 300],
+      "credentials": { "postgres": { "id": "postgres-main", "name": "Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst authData = $('Auth Check').first().json;\nconst kwp = authData.kwp || 5;\n\nreturn items.map(item => {\n  const t = item.json;\n  const loadFactor = (t.active_jobs || 0) / Math.max(1, (t.max_kwp_month || 100) / kwp);\n  const ratingScore = (parseFloat(t.rating_avg) || 0) * 20;           // 0-100\n  const loadScore   = Math.max(0, 100 - loadFactor * 100); // lower load = higher score\n  const expScore    = (t.rating_count || 0) > 10 ? 10 : (t.rating_count || 0); // experience bonus\n  const totalScore  = ratingScore * 0.5 + loadScore * 0.4 + expScore * 1;\n  const ratingDisplay = t.rating_avg ? parseFloat(t.rating_avg).toFixed(1) : 'N/A';\n  return {\n    json: {\n      ...t,\n      score: Math.round(totalScore * 100) / 100,\n      reason: `Rating ${ratingDisplay}\\u2B50 \\u00B7 ${t.active_jobs || 0} trabajos activos \\u00B7 ${t.rating_count || 0} rese\\u00F1as`\n    }\n  };\n});"
+      },
+      "id": "d4000000-0005-0006-0000-000000000006",
+      "name": "Score & Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO installer_matches (quote_id, installer_id, score, reason, status) VALUES ($1::uuid, $2, $3, $4, 'suggested') ON CONFLICT DO NOTHING",
+        "additionalFields": {
+          "queryParams": "={{ [$('Auth Check').first().json.quote_id, $json.id, $json.score, $json.reason] }}"
+        }
+      },
+      "id": "d4000000-0005-0007-0000-000000000007",
+      "name": "Save Matches",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1340, 300],
+      "credentials": { "postgres": { "id": "postgres-main", "name": "Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const matches = $('Score & Match').all().map(i => i.json);\nreturn [{ json: { ok: true, matches } }];"
+      },
+      "id": "d4000000-0005-0008-0000-000000000008",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "d4000000-0005-0009-0000-000000000009",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Auth Check", "type": "main", "index": 0 }]]
+    },
+    "Auth Check": {
+      "main": [[{ "node": "Is Authorized?", "type": "main", "index": 0 }]]
+    },
+    "Is Authorized?": {
+      "main": [
+        [{ "node": "Get Installers", "type": "main", "index": 0 }],
+        [{ "node": "401 Unauthorized", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Installers": {
+      "main": [[{ "node": "Score & Match", "type": "main", "index": 0 }]]
+    },
+    "Score & Match": {
+      "main": [[{ "node": "Save Matches", "type": "main", "index": 0 }]]
+    },
+    "Save Matches": {
+      "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
+    },
+    "Build Response": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "d4000000-0005-0000-0000-000000000000",
+  "id": "d4000000-0005-0000-0000-000000000000",
+  "tags": ["marketplace", "matching"]
+}

@@ -1,0 +1,186 @@
+{
+  "name": "ALEBAS — wa-notify-quote",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-notify-quote",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wa-ntf-001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-wa-notify-quote"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\n\nconst quoteId = body.quoteId || body.quote_id || null;\nconst rawPhone = (body.phone || '').toString().trim();\nconst name = (body.name || 'Cliente').toString().trim();\nconst status = (body.status || '').toString().trim();\nconst prevStatus = (body.prevStatus || body.prev_status || '').toString().trim();\nconst kwp = body.kwp != null ? Number(body.kwp) : null;\nconst totalCop = body.totalCop || body.total_cop || null;\nconst trackingToken = (body.trackingToken || body.tracking_token || '').toString().trim();\nconst installerName = (body.installerName || body.installer_name || '').toString().trim();\n\nif (!rawPhone) {\n  return [{ json: { ok: false, reason: 'missing_phone' } }];\n}\nif (!status) {\n  return [{ json: { ok: false, reason: 'missing_status' } }];\n}\nif (!quoteId) {\n  return [{ json: { ok: false, reason: 'missing_quote_id' } }];\n}\n\nconst digits = rawPhone.replace(/\\D/g, '');\nlet phone = '';\nif (digits.length === 10) {\n  phone = '+57' + digits;\n} else if (digits.startsWith('57') && digits.length === 12) {\n  phone = '+' + digits;\n} else if (digits.startsWith('57') && digits.length > 12) {\n  phone = '+' + digits.slice(0, 12);\n} else {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\n\nif (!phone.startsWith('+57') || phone.length !== 13) {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\n\nreturn [{ json: { ok: true, quoteId, phone, name, status, prevStatus, kwp, totalCop, trackingToken, installerName } }];"
+      },
+      "id": "wa-ntf-002",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-input", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-ntf-003",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const norm = $input.first().json;\nconst { quoteId, phone, name, status, kwp, totalCop, trackingToken, installerName } = norm;\n\nconst trackingUrl = 'https://solar-hub.co/?view=seguimiento&id=' + quoteId + '&t=' + (trackingToken || '');\n\nconst kwpFormatted = kwp ? kwp.toFixed(1) + ' kWp' : 'N/D';\nconst totalFormatted = totalCop ? '$' + Number(totalCop).toLocaleString('es-CO') + ' COP' : 'N/D';\nconst installer = installerName || 'nuestro equipo';\nconst installerScheduled = installerName || 'nuestro instalador';\n\nconst phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;\nconst token = process.env.WHATSAPP_ACCESS_TOKEN;\nconst url = 'https://graph.facebook.com/v18.0/' + phoneNumberId + '/messages';\n\nconst templateMap = {\n  'nueva': { name: 'quote_received', params: [name, trackingUrl] },\n  'propuesta_enviada': { name: 'quote_ready', params: [name, kwpFormatted, totalFormatted, trackingUrl] },\n  'aprobada': { name: 'quote_approved', params: [name, installer] },\n  'en_instalación': { name: 'installation_scheduled', params: [name, 'próximamente', installerScheduled] },\n  'ganada': { name: 'installation_completed', params: [name, 'https://solar-hub.co'] }\n};\n\nconst tmpl = templateMap[status];\nif (!tmpl) {\n  return [{ json: { ok: false, reason: 'no_template', status } }];\n}\n\nconst waBody = JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: phone,\n  type: 'template',\n  template: {\n    name: tmpl.name,\n    language: { code: 'es' },\n    components: [{ type: 'body', parameters: tmpl.params.map(p => ({ type: 'text', text: String(p) })) }]\n  }\n});\n\nreturn [{ json: { ok: true, phone, template: tmpl.name, params: tmpl.params, body: waBody, url, token } }];"
+      },
+      "id": "wa-ntf-004",
+      "name": "Select template",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 150]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-template", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-ntf-005",
+      "name": "Has template?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 150]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.token }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "id": "wa-ntf-006",
+      "name": "Send WA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO wa_messages (phone, quote_id, direction, template, content, wa_message_id, status) VALUES ($1,$2,'outbound',$3,$4,$5,'sent')",
+        "options": {
+          "queryReplacement": "={{ [$('Select template').first().json.phone, $('Normalize').first().json.quoteId, $('Select template').first().json.template, $('Select template').first().json.body, ($input.first().json?.messages?.[0]?.id || '')] }}"
+        }
+      },
+      "id": "wa-ntf-007",
+      "name": "Log message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 0],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok:true,message:'Notificación enviada'}) }}",
+        "options": {}
+      },
+      "id": "wa-ntf-008",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "wa-ntf-009",
+      "name": "Respond no template error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "wa-ntf-010",
+      "name": "Respond input error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 450]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Normalize", "type": "main", "index": 0 }]]
+    },
+    "Normalize": {
+      "main": [[{ "node": "Valid?", "type": "main", "index": 0 }]]
+    },
+    "Valid?": {
+      "main": [
+        [{ "node": "Select template", "type": "main", "index": 0 }],
+        [{ "node": "Respond input error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Select template": {
+      "main": [[{ "node": "Has template?", "type": "main", "index": 0 }]]
+    },
+    "Has template?": {
+      "main": [
+        [{ "node": "Send WA", "type": "main", "index": 0 }],
+        [{ "node": "Respond no template error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send WA": {
+      "main": [[{ "node": "Log message", "type": "main", "index": 0 }]]
+    },
+    "Log message": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "meta": { "instanceId": "alebas" },
+  "versionId": "1"
+}

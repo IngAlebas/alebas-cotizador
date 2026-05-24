@@ -1,0 +1,221 @@
+{
+  "name": "ALEBAS — wa-inbound",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wa-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wa-inb-001",
+      "name": "Webhook GET verify",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 150],
+      "webhookId": "alebas-wa-inbound-get"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst params = src.query || src;\nconst mode = params['hub.mode'] || params['hub_mode'] || '';\nconst verifyToken = params['hub.verify_token'] || params['hub_verify_token'] || '';\nconst challenge = params['hub.challenge'] || params['hub_challenge'] || '';\n\nif (mode === 'subscribe' && verifyToken === process.env.WHATSAPP_VERIFY_TOKEN) {\n  return [{ json: { challenge, valid: true } }];\n}\nreturn [{ json: { valid: false } }];"
+      },
+      "id": "wa-inb-002",
+      "name": "Handle GET verify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 150]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-verify", "leftValue": "={{ $json.valid }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-inb-003",
+      "name": "Valid verify?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 150]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wa-inb-004",
+      "name": "Respond challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\":\"Forbidden\"}",
+        "options": { "responseCode": 403 }
+      },
+      "id": "wa-inb-005",
+      "name": "Respond 403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wa-inb-006",
+      "name": "Webhook POST inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 500],
+      "webhookId": "alebas-wa-inbound-post"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\n\nlet entry, change, value;\ntry {\n  entry = (body.entry || [])[0];\n  change = (entry.changes || [])[0];\n  value = change.value || {};\n} catch(e) {\n  return [{ json: { ok: false, reason: 'invalid_payload' } }];\n}\n\nconst messages = value.messages || [];\nif (!messages.length) {\n  return [{ json: { ok: false, reason: 'no_message' } }];\n}\n\nconst msg = messages[0];\nconst contacts = value.contacts || [];\nconst contact = contacts[0] || {};\nconst contactName = (contact.profile && contact.profile.name) || '';\nconst from = msg.from || '';\nconst phone = '+' + from;\nconst type = msg.type || 'text';\nconst text = (msg.text && msg.text.body) || (msg.interactive && (msg.interactive.button_reply && msg.interactive.button_reply.title || msg.interactive.list_reply && msg.interactive.list_reply.title)) || '';\nconst timestamp = msg.timestamp || '';\n\nreturn [{ json: { ok: true, phone, name: contactName, messageType: type, text, timestamp } }];"
+      },
+      "id": "wa-inb-007",
+      "name": "Parse inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wa-inb-008",
+      "name": "Respond 200 to Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Parse inbound').first().json;\nif (!parsed.ok) {\n  return [{ json: { intent: 'unknown', phone: '', name: '', text: '' } }];\n}\nconst text = (parsed.text || '').toLowerCase();\nconst phone = parsed.phone;\nconst name = parsed.name;\n\nlet intent = 'unknown';\nif (/precio|costo|cu[aá]nto/.test(text)) {\n  intent = 'precio';\n} else if (/tiempo|demora|cu[aá]nto se demora/.test(text)) {\n  intent = 'tiempo';\n} else if (/garant[ií]a/.test(text)) {\n  intent = 'garantia';\n} else if (/financiaci[oó]n|cr[eé]dito/.test(text)) {\n  intent = 'financiacion';\n} else if (/hablar|asesor|humano|agente/.test(text)) {\n  intent = 'escalate';\n} else if (/s[ií]|cotizar|cotizaci[oó]n/.test(text)) {\n  intent = 'start_quote';\n} else if (/stop|baja|cancelar/.test(text)) {\n  intent = 'optout';\n}\n\nreturn [{ json: { intent, phone, name, text } }];"
+      },
+      "id": "wa-inb-009",
+      "name": "Detect intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 650]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "precio", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "precio" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "tiempo", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "tiempo" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "garantia", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "garantia" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "financiacion", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "financiacion" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "escalate", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "escalate" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "start_quote", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "start_quote" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "optout", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "optout" }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "wa-inb-010",
+      "name": "Switch intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1120, 650]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst name = d.name || 'Cliente';\nconst phone = d.phone;\nconst intent = d.intent;\n\nconst responses = {\n  precio: `Hola ${name}! Los sistemas solares en Colombia van de $8M a $80M COP según capacidad (3-30 kWp). Te envío una cotización personalizada: solar-hub.co`,\n  tiempo: `Una instalación residencial toma 1-3 días. El trámite AGPE ante el OR toma ~30 días hábiles adicionales.`,\n  garantia: `Paneles: 25 años de rendimiento. Inversores: 5-10 años. Instalación RETIE: 1 año por defecto de diseño.`,\n  financiacion: `Ofrecemos opciones de leasing solar y crédito verde Bancóldex. Escríbenos a info@alebas.co para más info.`,\n  escalate: `Entendido ${name}, te conecto con un asesor. En horario L-V 8am-6pm te responden en minutos.`,\n  start_quote: `Perfecto ${name}! Empieza tu cotización solar aquí: solar-hub.co — Te toma 3 minutos.`,\n  optout: `Listo ${name}, no te enviaremos más mensajes. Si cambias de opinión, escríbenos.`\n};\n\nconst responseText = responses[intent] || `Hola ${name}! Escríbenos a info@alebas.co o visita solar-hub.co para más información.`;\n\nconst phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;\nconst token = process.env.WHATSAPP_ACCESS_TOKEN;\nconst url = 'https://graph.facebook.com/v18.0/' + phoneNumberId + '/messages';\nconst body = JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: phone,\n  type: 'text',\n  text: { body: responseText }\n});\n\nreturn [{ json: { phone, responseText, url, token, body } }];"
+      },
+      "id": "wa-inb-011",
+      "name": "Build response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 650]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.token }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "id": "wa-inb-012",
+      "name": "Reply WA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 650]
+    }
+  ],
+  "connections": {
+    "Webhook GET verify": {
+      "main": [[{ "node": "Handle GET verify", "type": "main", "index": 0 }]]
+    },
+    "Handle GET verify": {
+      "main": [[{ "node": "Valid verify?", "type": "main", "index": 0 }]]
+    },
+    "Valid verify?": {
+      "main": [
+        [{ "node": "Respond challenge", "type": "main", "index": 0 }],
+        [{ "node": "Respond 403", "type": "main", "index": 0 }]
+      ]
+    },
+    "Webhook POST inbound": {
+      "main": [[{ "node": "Parse inbound", "type": "main", "index": 0 }]]
+    },
+    "Parse inbound": {
+      "main": [[{ "node": "Respond 200 to Meta", "type": "main", "index": 0 }]]
+    },
+    "Respond 200 to Meta": {
+      "main": [[{ "node": "Detect intent", "type": "main", "index": 0 }]]
+    },
+    "Detect intent": {
+      "main": [[{ "node": "Switch intent", "type": "main", "index": 0 }]]
+    },
+    "Switch intent": {
+      "main": [
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }],
+        [{ "node": "Build response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build response": {
+      "main": [[{ "node": "Reply WA", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "meta": { "instanceId": "alebas" },
+  "versionId": "1"
+}

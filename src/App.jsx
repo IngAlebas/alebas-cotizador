@@ -7,10 +7,9 @@ import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
-import InstallPrompt from './components/InstallPrompt';
+import TechnicianPortal from './components/TechnicianPortal';
 import QuoteTracking from './components/QuoteTracking';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
-import { listQuotesRemote, quotesConfigured } from './services/quotes';
 import logo from './logo.svg';
 
 const ADMIN_HASH = 'sh_' + btoa('hoJSDU2!kaiv337c');
@@ -37,30 +36,15 @@ function AdminLogin({ onSuccess }) {
         </div>
         {err&&<div style={{fontSize:11,color:'#f87171',background:'#f8717115',border:'1px solid #f8717133',borderRadius:6,padding:'7px 12px',marginBottom:14}}>Contraseña incorrecta.</div>}
         <button onClick={check} style={{width:'100%',background:C.teal,color:'#fff',border:'none',borderRadius:8,padding:'11px',fontWeight:700,fontSize:13,cursor:'pointer',opacity:!pwd?0.5:1}}>Ingresar al panel →</button>
-        <div style={{marginTop:18,fontSize:10,color:'#2a4050',fontFamily:'monospace'}}>Solo personal autorizado</div>
+        <div style={{marginTop:18,fontSize:10,color:'#2a4050',fontFamily:'monospace'}}>Solo personal autorizado de ALEBAS Ingeniería SAS</div>
       </div>
     </div>
   );
 }
 
 
-export default function App() {
-  // Vista pública de seguimiento — accesible vía /?view=seguimiento&id=X&t=Y.
-  // Se evalúa antes que cualquier otra cosa: la URL de tracking debe ser
-  // accesible sin login y sin cargar el resto del state de la app.
-  const trackingParams = (() => {
-    if (typeof window === 'undefined') return null;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('view') !== 'seguimiento') return null;
-    const id = params.get('id');
-    const t = params.get('t');
-    if (!id || !t) return null;
-    return { id, token: t };
-  })();
-  if (trackingParams) {
-    return <QuoteTracking id={trackingParams.id} token={trackingParams.token} />;
-  }
-
+function AppShell() {
+  const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState('quoter');
   const [adminAuth, setAdminAuth] = React.useState(false);
   const [boTab, setBoTab] = useState('dashboard');
@@ -109,28 +93,8 @@ export default function App() {
       }
     }).catch(() => {});
     try { const ra = storage.get('sh:admin'); if (ra?.value==='1') setAdminAuth(true); } catch {}
+    setHydrated(true);
   }, []);
-
-  // Tema de la app — light/dark/auto, persistente en localStorage. Default: dark.
-  const [theme, setTheme] = useState(() => {
-    try {
-      const stored = storage.get('sh:theme');
-      if (stored?.value && ['light', 'dark', 'auto'].includes(stored.value)) return stored.value;
-    } catch {}
-    return 'dark';
-  });
-  useEffect(() => {
-    const root = document.documentElement;
-    let effective = theme;
-    if (theme === 'auto') {
-      effective = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    }
-    root.setAttribute('data-theme', effective);
-    storage.set('sh:theme', theme);
-  }, [theme]);
-  const cycleTheme = () => {
-    setTheme(t => t === 'dark' ? 'light' : t === 'light' ? 'auto' : 'dark');
-  };
 
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
   const uP = d => { setPanels(d); sv('al:panels', d); };
@@ -143,47 +107,7 @@ export default function App() {
   const addSupp = s => { const n = [s, ...suppliers]; setSuppliers(n); sv('al:suppliers', n); };
   const uSupp = d => { setSuppliers(d); sv('al:suppliers', d); };
 
-  // Sync con n8n/Postgres: trae cotizaciones remotas y deduplica por email+dateISO
-  // contra las locales. Las locales sin par remoto persisten (ej. fallaron al guardar).
-  const [quotesSync, setQuotesSync] = useState({ at: null, loading: false, error: null });
-  const loadRemoteQuotes = React.useCallback(async () => {
-    if (!quotesConfigured()) {
-      setQuotesSync({ at: null, loading: false, error: 'n8n no configurado' });
-      return;
-    }
-    setQuotesSync(s => ({ ...s, loading: true, error: null }));
-    try {
-      const r = await listQuotesRemote({ limit: 500 });
-      if (!r?.ok || !Array.isArray(r.quotes)) throw new Error(r?.reason || 'respuesta inválida');
-      const remote = r.quotes.map(row => {
-        const p = row.payload || {};
-        return {
-          ...p,
-          id: `r_${row.id}`,
-          _remoteId: row.id,
-          status: row.status || p.status || 'nuevo',
-          date: row.created_at ? new Date(row.created_at).toLocaleDateString('es-CO') : p.date,
-          dateISO: row.created_at || p.dateISO,
-        };
-      });
-      const fp = q => `${(q.email || '').toLowerCase()}|${q.dateISO || ''}`;
-      const remoteFps = new Set(remote.map(fp));
-      setQuotes(prev => {
-        const localOnly = prev.filter(q => !q._remoteId && !remoteFps.has(fp(q)));
-        const merged = [...remote, ...localOnly];
-        sv('al:quotes', merged);
-        return merged;
-      });
-      setQuotesSync({ at: Date.now(), loading: false, error: null });
-    } catch (e) {
-      setQuotesSync(s => ({ ...s, loading: false, error: e?.message || 'error de red' }));
-    }
-  }, []);
-
-  // Sincroniza cotizaciones cuando el admin se autentica
-  useEffect(() => { if (adminAuth) loadRemoteQuotes(); }, [adminAuth, loadRemoteQuotes]);
-
-  const logout = () => { storage.set('sh:admin','0'); setAdminAuth(false); setView('quoter'); };
+  const logout = () => { localStorage.removeItem('sh:admin'); setAdminAuth(false); setView('quoter'); };
 
   const NAV = [
     ['quoter', '☀', 'Cotizador Solar'],
@@ -195,10 +119,13 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: C.dark, color: C.text, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--footer-h, 64px)' }}>
       <nav className="al-topnav" style={{
+        background: 'linear-gradient(180deg, #0A1018 0%, #08131f 100%)',
+        borderBottom: '1px solid rgba(1,112,139,0.3)',
         padding: '0 16px',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
         height: 56, position: 'sticky', top: 0, zIndex: 99,
+        boxShadow: '0 2px 24px rgba(0,0,0,0.5)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
       }}>
@@ -231,20 +158,24 @@ export default function App() {
             <circle cx="20" cy="20" r="2.2" fill="#FFD93D"/>
           </svg>
 
-          {/* Wordmark — usa CSS vars para auto-adaptar al theme */}
-          <div className="al-brand-wordmark">
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-              <span className="al-brand-solar">Solar</span>
-              <span className="al-brand-hub">Hub</span>
+          {/* Wordmark */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+              <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: '#fff', lineHeight: 1 }}>Solar</span>
+              <span style={{ fontWeight: 900, fontSize: 20, letterSpacing: '-0.5px', color: C.yellow, lineHeight: 1 }}>Hub</span>
             </div>
-            <div className="al-logo-sub al-brand-tagline">
+            <div className="al-logo-sub" style={{ fontSize: 8, color: C.teal, letterSpacing: '2px', fontWeight: 500, marginTop: 1, textTransform: 'uppercase' }}>
               El centro de tu energía solar
             </div>
           </div>
         </div>
 
-        {/* Tagline removido del navbar (se muestra ya en el hero del home).
-            Causaba overlap recurrente con logo + nav buttons en widths 1280-1920px. */}
+        {/* CENTER: tagline (solo desktop — oculto en mobile) */}
+        <div className="al-tagline-desktop" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none' }}>
+          {['Dimensiona','Cotiza','Conecta','Instala'].map((t,i) => (
+            <span key={t} style={{ fontSize: 11, color: i===1 ? C.yellow : C.teal, fontWeight: i===1 ? 700 : 400, letterSpacing: '0.5px' }}>{t}</span>
+          ))}
+        </div>
 
         {/* RIGHT: nav buttons — desktop only */}
         <div className="al-topnav-btns" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -265,22 +196,6 @@ export default function App() {
             <button onClick={logout} className="al-logout-btn" style={{ padding:'6px 11px', borderRadius:7, border:'1px solid #f8717133', cursor:'pointer', fontWeight:600, fontSize:11, background:'transparent', color:'#f87171', marginLeft:6 }}>×</button>
           )}
         </div>
-        {/* Toggle tema — fuera de al-topnav-btns para que también se vea en mobile */}
-        <button
-          onClick={cycleTheme}
-          className="al-theme-btn"
-          title={`Tema: ${theme} — click para cambiar`}
-          aria-label="Cambiar tema"
-          style={{
-            padding: '6px 10px', borderRadius: 7,
-            border: '1px solid var(--border)',
-            cursor: 'pointer', fontWeight: 600, fontSize: 16,
-            background: 'transparent', color: 'var(--muted)',
-            marginLeft: 6, lineHeight: 1, fontFamily: 'inherit',
-            flexShrink: 0,
-          }}>
-          {theme === 'dark' ? '🌙' : theme === 'light' ? '☀' : '🌓'}
-        </button>
       </nav>
 
       {/* ── BOTTOM NAV MOBILE ── */}
@@ -328,8 +243,8 @@ export default function App() {
         />
       )}
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
-      {view === 'proveedor' && <SupplierPortal addSupplierSubmission={addSupp} />}
-      {view === 'backoffice' && (
+      {/* view=proveedor is now full-page in App() — not rendered inside the shell */}
+      {view === 'backoffice' && hydrated && (
         adminAuth
           ? <BackOffice
               tab={boTab} setTab={setBoTab}
@@ -339,7 +254,6 @@ export default function App() {
               pricing={pricing} uPr={uPr}
               operators={operators} uOp={uOp}
               quotes={quotes} installers={installers}
-              quotesSync={quotesSync} loadRemoteQuotes={loadRemoteQuotes}
               suppliers={suppliers} uSupp={uSupp}
               loadsCatalog={loadsCatalog} loadsSource={loadsSource}
               setLoadsCatalog={setLoadsCatalog} setLoadsSource={setLoadsSource}
@@ -360,38 +274,16 @@ export default function App() {
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>Solar<span style={{ color: C.yellow }}>Hub</span></span>
                   <span style={{ color: C.teal, fontWeight: 600, marginLeft: 5 }}>by ALEBAS Ingeniería SAS</span>
                 </div>
-                <div className="al-foot-legal">NIT 901.992.450-5 · Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()} · <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      if ('serviceWorker' in navigator) {
-                        const regs = await navigator.serviceWorker.getRegistrations();
-                        await Promise.all(regs.map(r => r.unregister()));
-                      }
-                      if ('caches' in window) {
-                        const keys = await caches.keys();
-                        await Promise.all(keys.map(k => caches.delete(k)));
-                      }
-                    } catch (_) {}
-                    window.location.reload();
-                  }}
-                  style={{ background: 'none', border: 'none', color: C.teal, fontSize: 9, padding: 0, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}
-                  title="Borra caché del navegador y recarga la app con la versión más reciente"
-                >🔄 Actualizar app</button></div>
+                <div className="al-foot-legal">NIT 901.992.450-5 · Ley 1715 · CREG 174/2021 · RETIE · © {new Date().getFullYear()}</div>
               </div>
             </div>
 
             <div className="al-mayoristas" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>Ecosistema</span>
+              <span style={{ fontSize: 8, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>Mayoristas</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.teal}18`, border: `1px solid ${C.teal}44`, borderRadius: 5, padding: '3px 8px' }}>
                 <span style={{ fontSize: 11 }}>⚡</span>
                 <span style={{ fontSize: 9, fontWeight: 700, color: C.teal }}>ALEBAS</span>
               </div>
-              <a href="https://app.fluxai.solutions" target="_blank" rel="noopener noreferrer"
-                 title="FluxAI · Monitoreo solar inteligente de ALEBAS"
-                 style={{ display: 'flex', alignItems: 'center', gap: 5, background: `${C.fluxBlue}18`, border: `1px solid ${C.fluxBlue}44`, borderRadius: 5, padding: '3px 8px', textDecoration: 'none' }}>
-                <img src="/fluxai-logo.svg" alt="" style={{ height: 14, display: 'block' }} />
-              </a>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${C.yellow}18`, border: `1px solid ${C.yellow}44`, borderRadius: 5, padding: '3px 8px' }}>
                 <span style={{ fontSize: 11 }}>🔋</span>
                 <span style={{ fontSize: 9, fontWeight: 700, color: C.yellow }}>Must Energy</span>
@@ -399,7 +291,22 @@ export default function App() {
             </div>
         </div>
       </footer>
-      <InstallPrompt />
     </div>
   );
+}
+
+export default function App() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlView = urlParams.get('view');
+  const token = urlParams.get('token');
+  if (urlView === 'proveedor') {
+    return <SupplierPortal token={token} />;
+  }
+  if (urlView === 'tecnico') {
+    return <TechnicianPortal token={token} />;
+  }
+  if (urlView === 'seguimiento') {
+    return <QuoteTracking token={token} />;
+  }
+  return <AppShell />;
 }

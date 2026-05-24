@@ -7,8 +7,6 @@ import { searchBatteries } from '../services/batteries';
 import { fetchTRM } from '../services/trm';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG, invalidateLoadsCache } from '../services/loads';
 import { n8nConfigured, n8nBaseUrl, n8nPlaceholderDetected } from '../services/n8n';
-import { updateQuoteRemote, QUOTE_STATUSES, buildTrackingUrl, sendQuoteEmail } from '../services/quotes';
-import { quotePdfAsBase64, downloadQuotePdf } from '../services/pdfGenerator';
 
 // Modal de búsqueda en la base CEC (NREL SAM) para importar equipos con
 // specs eléctricos oficiales. onImport recibe el objeto normalizado y
@@ -22,24 +20,12 @@ function CECImportModal({ type, onClose, onImport, ss }) {
 
   const doSearch = async () => {
     if (!q.trim()) return;
-    setLoading(true); setError(null); setInfo(null);
+    setLoading(true); setError(null);
     try {
       const fn = type === 'panel' ? searchCECPanels : searchCECInverters;
       const data = await fn(q, 25);
-      // El workflow puede devolver { ok:false, reason:'db_error' } cuando la
-      // credencial Postgres está rota o no hay conexión. Surface ese reason
-      // en lugar de mostrar "1 de NaN" + filas con campos undefined.
-      if (data?.ok === false) {
-        const detail = data.detail || data.reason || 'Error consultando la base CEC';
-        throw new Error(detail);
-      }
-      const results = Array.isArray(data?.results) ? data.results : [];
-      setResults(results);
-      setInfo({
-        total: Number.isFinite(data?.total) ? data.total : results.length,
-        count: results.length,
-        cached: !!data?.cached,
-      });
+      setResults(data.results || []);
+      setInfo({ total: data.total, count: data.count, cached: data.cached });
     } catch (e) {
       setError(e.message);
       setResults([]);
@@ -202,292 +188,436 @@ function PriceMgr({ pricing, upd, ss }) {
   );
 }
 
-// Editor de una cotización: cambia status, registra notas internas, guarda en n8n y refresca lista.
-// Solo cubiertas con _remoteId pueden editarse (la fila ya existe en Postgres).
-function QuoteDetail({ q, ss, onBack, loadRemoteQuotes }) {
-  const [status, setStatus] = useState(q.status || 'nuevo');
-  const [notes, setNotes] = useState(q.notes || '');
-  const [historyNote, setHistoryNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState(null);
-  const [ok, setOk] = useState(false);
-  const [token, setToken] = useState(q.trackingToken || null);
-  const [tokenLoading, setTokenLoading] = useState(false);
-  const [copyOk, setCopyOk] = useState(false);
-  const [emailMsg, setEmailMsg] = useState('');
-  const [emailSending, setEmailSending] = useState(false);
-  const [emailResult, setEmailResult] = useState(null); // { ok, error?, sentAt? }
-  const isRemote = !!q._remoteId;
-  const dirty = status !== (q.status || 'nuevo') || notes !== (q.notes || '') || historyNote.trim() !== '';
-  const history = Array.isArray(q.history) ? q.history : [];
-  const trackingUrl = token && q._remoteId ? buildTrackingUrl({ id: q._remoteId, token }) : null;
+function QuotesMgr({ quotes, suppliers: suppliersList = [], ss }) {
+  const [sel, setSel] = useState(null);
+  const [assignTechId, setAssignTechId] = useState('');
+  const [assigning, setAssigning] = useState(false);
+  // Local overrides for tech assignment state (reflects optimistic updates without needing prop setter)
+  const [techOverrides, setTechOverrides] = useState({});
+  const [matchSuggestions, setMatchSuggestions] = useState([]);
+  const [loadingMatch, setLoadingMatch] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
+  const [creatingPO, setCreatingPO] = useState(false);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [poInstallAmt, setPoInstallAmt] = useState('');
 
-  // Auto-genera tracking token al abrir la cotización si aún no existe.
-  // updateQuoteRemote sin cambios fuerza al workflow a inicializar payload.trackingToken.
-  React.useEffect(() => {
-    if (!isRemote || token) return;
-    setTokenLoading(true);
-    updateQuoteRemote({ id: q._remoteId })
-      .then(r => { if (r?.ok && r.trackingToken) setToken(r.trackingToken); })
-      .catch(() => {})
-      .finally(() => setTokenLoading(false));
-  }, [isRemote, q._remoteId, token]);
-
-  const onCopyUrl = async () => {
-    if (!trackingUrl) return;
+  const handleCreatePO = async (quote, supplierId, installAmt) => {
+    setCreatingPO(true);
     try {
-      await navigator.clipboard.writeText(trackingUrl);
-      setCopyOk(true);
-      setTimeout(() => setCopyOk(false), 1500);
-    } catch (_) {}
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      const payload = quote.payload || {};
+      const items = [];
+      // Build items from quote: panels
+      if (payload.panel && payload.num_panels) {
+        items.push({ equipment_type:'panel', brand: payload.panel_brand||'Panel', model: payload.panel_model||'', qty: payload.num_panels, unit_price_cop: payload.panel_price||0, line_total_cop: (payload.num_panels||0)*(payload.panel_price||0) });
+      }
+      // inverter
+      if (payload.inverter_model) {
+        items.push({ equipment_type:'inverter', brand: payload.inverter_brand||'Inversor', model: payload.inverter_model, qty: 1, unit_price_cop: payload.inverter_price||0, line_total_cop: payload.inverter_price||0 });
+      }
+      const subtotal = items.reduce((s,i)=>s+(i.line_total_cop||0), 0);
+      const res = await fetch(`${base}/supplier-po`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ method:'POST_CREATE', supplier_id: supplierId, quote_id: quote.id, technician_id: quote.technician_id||null, items, subtotal_equipment: subtotal || quote.section_a_cop || 0, installation_total: installAmt||0, platform_fee_pct:10, tech_fee_pct:80 })
+      });
+      const data = await res.json();
+      if (data.ok) { alert(`✓ Orden ${data.po_number} creada`); /* refresh */ }
+      else { alert('Error: ' + data.error); }
+    } catch(e) { alert('Error de red'); } finally { setCreatingPO(false); }
   };
 
-  const onDownloadPdf = () => {
-    try { downloadQuotePdf(q, { trackingUrl }); }
-    catch (e) { setErr('No se pudo generar el PDF: ' + (e?.message || e)); }
+  const handleFindMatches = async (quote) => {
+    setLoadingMatch(true);
+    setMatchSuggestions([]);
+    try {
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      const res = await fetch(`${base}/matching-installer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quote_id: quote.id, dept: quote.dept, kwp: quote.kwp || quote.results?.actKwp || 5 })
+      });
+      const data = await res.json();
+      setMatchSuggestions(data.matches || []);
+    } catch(e) { console.error('matching error', e); }
+    setLoadingMatch(false);
   };
 
-  const onSendEmail = async () => {
-    if (!isRemote) return;
-    if (!q.email) { setEmailResult({ ok: false, error: 'La cotización no tiene email registrado' }); return; }
-    setEmailSending(true); setEmailResult(null);
+  const handleAssignTech = async (selectedQuote) => {
+    if (!assignTechId || !selectedQuote?.id) return;
+    setAssigning(true);
     try {
-      const pdfBase64 = quotePdfAsBase64(q, { trackingUrl });
-      const r = await sendQuoteEmail({
-        id: q._remoteId,
-        email: q.email,
-        name: q.name,
-        pdfBase64,
-        trackingUrl,
-        customMessage: emailMsg.trim() || undefined,
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      const res = await fetch(`${base}/assign-technician`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteId: selectedQuote.id, technicianId: Number(assignTechId) }),
       });
-      if (!r?.ok) throw new Error(r?.reason || 'fallo al enviar');
-      setEmailResult({ ok: true, sentAt: Date.now() });
-      setEmailMsg('');
-      // Registra la acción en el historial
-      await updateQuoteRemote({
-        id: q._remoteId,
-        historyEntry: { note: `Email con cotización + PDF enviado a ${q.email}`, by: 'admin' },
-      });
-      if (loadRemoteQuotes) await loadRemoteQuotes();
+      const data = await res.json();
+      if (data.ok) {
+        setTechOverrides(prev => ({
+          ...prev,
+          [selectedQuote.id]: { doc_status: 'en_revision', status: 'asignado', tech_token: data.techToken },
+        }));
+      } else {
+        alert('Error al asignar técnico. Intente de nuevo.');
+      }
     } catch (e) {
-      setEmailResult({ ok: false, error: e?.message || 'error de red' });
+      console.error('assign tech error', e);
+      alert('Error de red al asignar técnico.');
     } finally {
-      setEmailSending(false);
+      setAssigning(false);
     }
   };
 
-  const onSave = async () => {
-    if (!isRemote) { setErr('Esta cotización solo está en local — sincroniza primero.'); return; }
-    setSaving(true); setErr(null); setOk(false);
-    try {
-      const r = await updateQuoteRemote({
-        id: q._remoteId,
-        status: status !== q.status ? status : undefined,
-        notes: notes !== (q.notes || '') ? notes : undefined,
-        historyEntry: historyNote.trim() ? { note: historyNote.trim(), by: 'admin' } : undefined,
-      });
-      if (!r?.ok) throw new Error(r?.reason || 'fallo al guardar');
-      setOk(true);
-      setHistoryNote('');
-      if (loadRemoteQuotes) await loadRemoteQuotes();
-      setTimeout(() => setOk(false), 1800);
-    } catch (e) {
-      setErr(e?.message || 'error de red');
-    } finally {
-      setSaving(false);
-    }
+  const handleExportCSV = () => {
+    if (!quotes || quotes.length === 0) return;
+    const headers = ['ID', 'Fecha', 'Estado', 'Nombre', 'Email', 'Teléfono', 'Empresa', 'Departamento', 'kWp', 'Paneles', 'Total COP', 'Ahorro anual COP', 'ROI años', 'Tipo sistema', 'Doc. estado'];
+    const rows = quotes.map(q => [
+      q.id,
+      q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('es-CO') : ''),
+      q.status || '',
+      q.name || '',
+      q.email || '',
+      q.phone || '',
+      q.company || '',
+      q.dept || '',
+      q.results?.actKwp || q.kwp || '',
+      q.results?.numPanels || q.num_panels || '',
+      q.budget?.tot || q.total_cop || '',
+      q.budget?.sav || q.annual_sav_cop || '',
+      q.budget?.roi || q.roi_years || '',
+      q.systemType || q.system_type || '',
+      q.doc_status || '',
+    ]);
+    const csvContent = [headers, ...rows].map(row =>
+      row.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cotizaciones_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  return (
-    <div>
-      <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={onBack}>← Volver</button>
-      <div style={ss.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{q.name}</div>
-            <div style={{ color: C.muted, fontSize: 11 }}>{q.company && `${q.company} · `}{q.city} · {q.operator} · {q.date}</div>
+  if (sel) {
+    const qBase = quotes.find(x => x.id === sel);
+    if (!qBase) { setSel(null); return null; }
+    // Merge local tech assignment overrides with base quote data
+    const q = techOverrides[sel] ? { ...qBase, ...techOverrides[sel] } : qBase;
+    return (
+      <div>
+        <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setSel(null)}>← Volver</button>
+        <div style={ss.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div><div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{q.name}</div><div style={{ color: C.muted, fontSize: 11 }}>{q.company && `${q.company} · `}{q.city} · {q.operator} · {q.date}</div></div>
+            <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${C.teal}22`, color: C.teal }}>{q.status}</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${C.teal}22`, color: C.teal }}>{q.status || 'nuevo'}</span>
-            {!isRemote && <span style={{ fontSize: 9, color: C.yellow }}>● solo local — no editable</span>}
-            {isRemote && <span style={{ fontSize: 9, color: C.muted }}>ID #{q._remoteId}</span>}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
+            {[['Email', q.email], ['Teléfono', q.phone], ['Dirección', q.address || '—'], ['Tipo', q.systemType], ['Consumo', `${q.monthlyKwh} kWh/mes`], ['Operador', q.operator], ['kWp', `${q.results?.actKwp} kWp`], ['Paneles', `${q.results?.numPanels}`], ['Producción', `${fmt(q.results?.mp || 0)} kWh/mes`], ['Cobertura', `${q.results?.cov}%`], ['CO2 evitado', `${fmt(q.results?.co2 || 0)} kg/año`], ['Total inversión', q.budget ? fmtCOP(q.budget.tot) : '—'], ['Sección A', q.budget ? fmtCOP(q.budget.sA) : '—'], ['Sección B', q.budget ? fmtCOP(q.budget.sB) : '—'], ['Transporte', q.budget ? fmtCOP(q.budget.transport) : '—'], ['Ahorro anual', q.budget ? fmtCOP(q.budget.sav) : '—'], ['ROI', q.budget ? `${q.budget.roi} años` : '—']].map(([k, v]) => (
+              <div key={k} style={{ padding: '5px 0', borderBottom: `1px solid ${C.border}22` }}>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3 }}>{k}</div>
+                <div style={{ fontSize: 11, color: '#fff', fontWeight: 500, marginTop: 1 }}>{v}</div>
+              </div>
+            ))}
           </div>
-        </div>
 
-        {/* Sección de admin: estado + notas */}
-        <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 16px', marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Seguimiento</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'start' }}>
-            <label style={ss.lbl}>Estado</label>
-            <select style={ss.inp} value={status} onChange={e => setStatus(e.target.value)} disabled={!isRemote || saving}>
-              {QUOTE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          {/* ── Technician Assignment ── */}
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.teal}22` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>ASIGNACIÓN TÉCNICA</div>
+              <button
+                onClick={() => handleFindMatches(q)}
+                disabled={loadingMatch}
+                style={{ fontSize: 11, fontWeight: 600, color: C.teal, background: `${C.teal}18`, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+              >
+                {loadingMatch ? 'Buscando...' : '🔍 Sugerir instaladores'}
+              </button>
+            </div>
+
+            {matchSuggestions.length > 0 && (
+              <div style={{ background: C.dark, border: `1px solid ${C.teal}22`, borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Mejores coincidencias</div>
+                {matchSuggestions.slice(0, 3).map((m, i) => (
+                  <div key={m.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < 2 ? `1px solid ${C.teal}11` : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>{m.name}</div>
+                      <div style={{ fontSize: 10, color: C.muted }}>
+                        {'★'.repeat(Math.round(parseFloat(m.rating_avg) || 0))} {m.rating_avg ? parseFloat(m.rating_avg).toFixed(1) : 'N/A'} · {m.active_jobs || 0} activos
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: C.teal, background: `${C.teal}18`, borderRadius: 12, padding: '2px 8px' }}>{m.score}</span>
+                      <button
+                        onClick={() => setAssignTechId(String(m.id))}
+                        style={{ fontSize: 10, fontWeight: 600, color: C.yellow, background: `${C.yellow}18`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                      >
+                        Asignar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <select
+              value={assignTechId}
+              onChange={e => setAssignTechId(e.target.value)}
+              style={{ width: '100%', background: C.card, color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }}
+            >
+              <option value="">Seleccionar técnico...</option>
+              <option value="1">Técnico 1 — Bogotá</option>
+              <option value="2">Técnico 2 — Medellín</option>
+              <option value="3">Técnico 3 — Cali</option>
             </select>
-            <label style={ss.lbl}>Notas internas</label>
-            <textarea style={{ ...ss.inp, minHeight: 70, fontFamily: 'inherit', resize: 'vertical' }}
-              value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="Notas que solo ve el equipo (presupuesto, contactos, etc.)"
-              disabled={!isRemote || saving} />
-            <label style={ss.lbl}>Nueva entrada de historial</label>
-            <input style={ss.inp} value={historyNote} onChange={e => setHistoryNote(e.target.value)}
-              placeholder="Ej: Llamé al cliente, propuesta enviada por email…"
-              disabled={!isRemote || saving} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 12 }}>
-            {err && <span style={{ fontSize: 11, color: '#f87171' }}>⚠ {err}</span>}
-            {ok && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ guardado</span>}
-            <button onClick={onSave} disabled={!isRemote || !dirty || saving}
-              style={{ ...ss.btn, opacity: (!isRemote || !dirty || saving) ? 0.4 : 1 }}>
-              {saving ? '⟳ Guardando…' : 'Guardar cambios'}
-            </button>
-          </div>
-        </div>
 
-        {/* URL pública de seguimiento */}
-        {isRemote && (
-          <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Link de seguimiento (cliente)</div>
-            {tokenLoading && !token ? (
-              <div style={{ fontSize: 11, color: C.muted }}>⟳ Generando token…</div>
-            ) : trackingUrl ? (
-              <>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input readOnly value={trackingUrl}
-                    onFocus={e => e.target.select()}
-                    style={{ ...ss.inp, flex: 1, fontFamily: 'monospace', fontSize: 10 }} />
-                  <button onClick={onCopyUrl} style={{ ...ss.btn, padding: '6px 12px', whiteSpace: 'nowrap' }}>
-                    {copyOk ? '✓ Copiado' : 'Copiar'}
-                  </button>
-                  <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
-                    style={{ ...ss.btn, padding: '6px 12px', textDecoration: 'none', background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }}>
-                    Abrir
-                  </a>
-                </div>
-                <div style={{ fontSize: 9, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-                  Envía este link al cliente para que vea el estado de su cotización en tiempo real.
-                  El acceso está protegido por un token único — no comparte notas internas ni datos sensibles.
-                </div>
-              </>
-            ) : (
-              <div style={{ fontSize: 11, color: '#f87171' }}>No se pudo generar el token. Verifica que el workflow update-quote esté activo en n8n.</div>
+            <button
+              onClick={() => handleAssignTech(q)}
+              disabled={!assignTechId || assigning}
+              style={{ width: '100%', background: assignTechId ? C.teal : '#333', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: assignTechId ? 'pointer' : 'not-allowed', marginBottom: 8 }}
+            >
+              {assigning ? 'Asignando...' : '⚙ Asignar técnico y generar documentos'}
+            </button>
+
+            {q.tech_token && (
+              <div style={{ fontSize: 11, color: C.teal, background: `${C.teal}11`, padding: '6px 10px', borderRadius: 5, marginBottom: 8 }}>
+                🔗 Portal técnico: {window.location.origin}/?view=tecnico&token={q.tech_token}
+                <button
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/?view=tecnico&token=${q.tech_token}`)}
+                  style={{ marginLeft: 8, fontSize: 10, color: C.yellow, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Copiar
+                </button>
+              </div>
+            )}
+
+            {q.doc_status && q.doc_status !== 'pendiente' && (
+              <div style={{ marginTop: 6, fontSize: 11, padding: '4px 10px', borderRadius: 20, display: 'inline-block',
+                background: q.doc_status === 'aprobado' ? `${C.teal}22` : `${C.orange || '#FF8C00'}22`,
+                color: q.doc_status === 'aprobado' ? C.teal : C.orange || '#FF8C00',
+                border: `1px solid ${q.doc_status === 'aprobado' ? C.teal : C.orange || '#FF8C00'}44`,
+              }}>
+                {q.doc_status === 'aprobado' ? '✓ Documentos aprobados por técnico' :
+                 q.doc_status === 'en_revision' ? '🔄 En revisión técnica' :
+                 q.doc_status === 'cambios_solicitados' ? '↩ Técnico solicitó cambios' : q.doc_status}
+              </div>
             )}
           </div>
-        )}
 
-        {/* Envío al cliente: PDF + email */}
-        {isRemote && (
-          <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Enviar al cliente</div>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
-              Destinatario: <strong style={{ color: '#fff' }}>{q.email || '⚠ sin email'}</strong>
-              {q.name && <> · {q.name}</>}
-            </div>
-            <textarea value={emailMsg} onChange={e => setEmailMsg(e.target.value)}
-              placeholder="Mensaje opcional para el cliente (ej: 'Adjunto la cotización ajustada según lo conversado…')"
-              disabled={emailSending}
-              style={{ ...ss.inp, minHeight: 56, fontFamily: 'inherit', resize: 'vertical', marginBottom: 8 }} />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button onClick={onDownloadPdf} style={{ ...ss.btn, background: 'transparent', border: `1px solid ${C.border}`, color: C.text }}>
-                ↓ Descargar PDF
-              </button>
-              <button onClick={onSendEmail} disabled={emailSending || !q.email || !trackingUrl}
-                style={{ ...ss.btn, opacity: (emailSending || !q.email || !trackingUrl) ? 0.4 : 1 }}>
-                {emailSending ? '⟳ Enviando…' : '✉ Enviar email + PDF al cliente'}
-              </button>
-              {emailResult?.ok && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Enviado a {q.email}</span>}
-              {emailResult && !emailResult.ok && <span style={{ fontSize: 11, color: '#f87171' }}>⚠ {emailResult.error}</span>}
-            </div>
-            <div style={{ fontSize: 9, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
-              El PDF se genera client-side (jsPDF) y se envía adjunto vía Gmail SMTP (solarhub@alebas.co).
-              El cuerpo del email incluye el link de seguimiento.
-            </div>
-          </div>
-        )}
-
-        {/* Historial */}
-        {history.length > 0 && (
-          <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Historial ({history.length})</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {history.slice().reverse().map((h, i) => (
-                <div key={i} style={{ borderLeft: `2px solid ${C.teal}55`, paddingLeft: 9, fontSize: 11 }}>
-                  <div style={{ color: C.muted, fontSize: 9 }}>
-                    {h.at ? new Date(h.at).toLocaleString('es-CO') : ''} · {h.by || 'admin'}
+          {/* ── Orden de Compra ── */}
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.teal}22` }}>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600 }}>ORDEN DE COMPRA</div>
+            {q.po_id ? (
+              <div style={{ background: `${C.teal}11`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '10px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>N° Orden</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>{q.po_number || q.po_id}</div>
                   </div>
-                  <div style={{ color: '#fff', marginTop: 1 }}>
-                    {h.fromStatus && h.toStatus && (
-                      <span style={{ color: C.yellow }}>{h.fromStatus} → {h.toStatus}</span>
-                    )}
-                    {h.note && <span style={{ marginLeft: h.fromStatus ? 8 : 0 }}>{h.note}</span>}
+                  <div>
+                    <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</div>
+                    <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${C.yellow}22`, color: C.yellow }}>{q.po_status || 'pendiente'}</span>
                   </div>
+                  {q.supplier_id && (
+                    <div>
+                      <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Proveedor</div>
+                      <div style={{ fontSize: 11, color: '#fff' }}>{(suppliersList.find(s => s.id === q.supplier_id) || {}).company || `#${q.supplier_id}`}</div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            ) : (q.status === 'aprobado' || q.status === 'asignado') ? (
+              <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '12px 14px' }}>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Crear orden de compra para esta cotización:</div>
 
-        {/* Datos técnicos / financieros */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
-          {[['Email', q.email], ['Teléfono', q.phone], ['Dirección', q.address || '—'], ['Tipo', q.systemType], ['Consumo', `${q.monthlyKwh} kWh/mes`], ['Operador', q.operator], ['kWp', `${q.results?.actKwp} kWp`], ['Paneles', `${q.results?.numPanels}`], ['Producción', `${fmt(q.results?.mp || 0)} kWh/mes`], ['Cobertura', `${q.results?.cov}%`], ['CO2 evitado', `${fmt(q.results?.co2 || 0)} kg/año`], ['Total inversión', q.budget ? fmtCOP(q.budget.tot) : '—'], ['Sección A', q.budget ? fmtCOP(q.budget.sA) : '—'], ['Sección B', q.budget ? fmtCOP(q.budget.sB) : '—'], ['Transporte', q.budget ? fmtCOP(q.budget.transport) : '—'], ['Ahorro anual', q.budget ? fmtCOP(q.budget.sav) : '—'], ['ROI', q.budget ? `${q.budget.roi} años` : '—']].map(([k, v]) => (
-            <div key={k} style={{ padding: '5px 0', borderBottom: `1px solid ${C.border}22` }}>
-              <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.3 }}>{k}</div>
-              <div style={{ fontSize: 11, color: '#fff', fontWeight: 500, marginTop: 1 }}>{v}</div>
-            </div>
-          ))}
+                {/* Supplier dropdown */}
+                <div style={{ marginBottom: 8 }}>
+                  <label style={ss.lbl}>Proveedor</label>
+                  <select
+                    value={selectedSupplierId}
+                    onChange={e => setSelectedSupplierId(e.target.value)}
+                    style={{ width: '100%', background: C.card, color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '6px 10px', fontSize: 12, boxSizing: 'border-box' }}
+                  >
+                    <option value="">Seleccionar proveedor...</option>
+                    {suppliersList.map(s => (
+                      <option key={s.id} value={s.id}>{s.company}{s.category ? ` — ${s.category}` : ''}</option>
+                    ))}
+                    {suppliersList.length === 0 && <option disabled>Sin proveedores registrados</option>}
+                  </select>
+                </div>
+
+                {/* Equipment list from quote */}
+                {(q.payload?.panel || q.payload?.inverter_model) && (
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={ss.lbl}>Equipos del proyecto</label>
+                    <div style={{ background: C.card, border: `1px solid ${C.border}33`, borderRadius: 5, padding: '8px 10px', fontSize: 11 }}>
+                      {q.payload?.panel && q.payload?.num_panels && (
+                        <div style={{ color: C.text, marginBottom: 3 }}>
+                          <span style={{ color: C.muted }}>Panel:</span> {q.payload.panel_brand || ''} {q.payload.panel_model || q.payload.panel || ''} × {q.payload.num_panels}
+                          {q.payload.panel_price ? <span style={{ color: C.teal, marginLeft: 8 }}>{fmtCOP((q.payload.num_panels||0) * q.payload.panel_price)}</span> : ''}
+                        </div>
+                      )}
+                      {q.payload?.inverter_model && (
+                        <div style={{ color: C.text }}>
+                          <span style={{ color: C.muted }}>Inversor:</span> {q.payload.inverter_brand || ''} {q.payload.inverter_model} × 1
+                          {q.payload.inverter_price ? <span style={{ color: C.teal, marginLeft: 8 }}>{fmtCOP(q.payload.inverter_price)}</span> : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Installation amount */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={ss.lbl}>Monto instalación (COP)</label>
+                  <input
+                    type="number"
+                    style={{ width: '100%', background: C.card, color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '6px 10px', fontSize: 12, boxSizing: 'border-box' }}
+                    placeholder={q.section_b_cop || q.total_cop || '0'}
+                    value={poInstallAmt}
+                    onChange={e => setPoInstallAmt(e.target.value)}
+                  />
+                </div>
+
+                {/* Financial breakdown */}
+                {(poInstallAmt || q.section_a_cop) && (
+                  <div style={{ background: C.card, border: `1px solid ${C.border}33`, borderRadius: 5, padding: '8px 10px', marginBottom: 10, fontSize: 10 }}>
+                    <div style={{ color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Desglose financiero</div>
+                    {(() => {
+                      const equip = q.section_a_cop || 0;
+                      const install = parseInt(poInstallAmt || q.section_b_cop || 0, 10);
+                      const platformFee = Math.round(equip * 0.10);
+                      const supplierNet = equip - platformFee;
+                      const techEarnings = Math.round(install * 0.80);
+                      const shInstall = install - techEarnings;
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 12px' }}>
+                          <div style={{ color: C.muted }}>Equipo (bruto):</div><div style={{ color: C.text }}>{fmtCOP(equip)}</div>
+                          <div style={{ color: C.muted }}>Comisión plataforma (10%):</div><div style={{ color: C.yellow }}>{fmtCOP(platformFee)}</div>
+                          <div style={{ color: C.muted }}>Neto proveedor (90%):</div><div style={{ color: C.teal }}>{fmtCOP(supplierNet)}</div>
+                          <div style={{ color: C.muted }}>Instalación:</div><div style={{ color: C.text }}>{fmtCOP(install)}</div>
+                          <div style={{ color: C.muted }}>Ganancia técnico (80%):</div><div style={{ color: C.teal }}>{fmtCOP(techEarnings)}</div>
+                          <div style={{ color: C.muted }}>SolarHub instalación (20%):</div><div style={{ color: C.yellow }}>{fmtCOP(shInstall)}</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => handleCreatePO(q, Number(selectedSupplierId), parseInt(poInstallAmt || q.section_b_cop || 0, 10))}
+                  disabled={!selectedSupplierId || creatingPO}
+                  style={{ width: '100%', background: selectedSupplierId ? C.yellow : '#333', color: selectedSupplierId ? '#07090F' : '#fff', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 12, fontWeight: 700, cursor: selectedSupplierId ? 'pointer' : 'not-allowed' }}
+                >
+                  {creatingPO ? 'Creando orden...' : '🛒 Crear Orden de Compra'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
+                Disponible cuando la cotización esté en estado <strong>aprobado</strong> o <strong>asignado</strong>.
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function QuotesMgr({ quotes, ss, quotesSync, loadRemoteQuotes }) {
-  const [sel, setSel] = useState(null);
-  const sync = quotesSync || {};
-  const lastSync = sync.at ? new Date(sync.at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : null;
-  if (sel) {
-    const q = quotes.find(x => x.id === sel);
-    if (!q) { setSel(null); return null; }
-    return <QuoteDetail q={q} ss={ss} onBack={() => setSel(null)} loadRemoteQuotes={loadRemoteQuotes} />;
+    );
   }
-  const remoteCount = quotes.filter(q => q._remoteId).length;
-  const localOnlyCount = quotes.length - remoteCount;
+
+  const KANBAN_COLS = [
+    { key: 'nuevo',       label: 'Nuevo',       color: C.muted },
+    { key: 'asignado',    label: 'Asignado',    color: C.yellow },
+    { key: 'en_revision', label: 'En revisión', color: C.orange },
+    { key: 'aprobado',    label: 'Aprobado',    color: C.teal },
+    { key: 'ganado',      label: 'Ganado ✓',    color: '#4ade80' },
+  ];
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Cotizaciones ({quotes.length})</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-            {remoteCount} sincronizadas · {localOnlyCount} solo locales
-            {lastSync && <> · última sincronización {lastSync}</>}
-            {sync.error && <span style={{ color: '#f87171', marginLeft: 6 }}>· {sync.error}</span>}
-          </div>
-        </div>
-        {loadRemoteQuotes && (
-          <button onClick={() => loadRemoteQuotes()} disabled={sync.loading}
-            style={{ ...ss.btn, opacity: sync.loading ? 0.5 : 1, padding: '6px 14px' }}>
-            {sync.loading ? '⟳ Sincronizando…' : '⟳ Sincronizar'}
+      {/* Header row: title + controls */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+        <div style={ss.h2}>Cotizaciones ({quotes.length})</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            onClick={handleExportCSV}
+            style={{
+              background: 'none', border: `1px solid ${C.teal}66`, color: C.teal,
+              borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            ↓ Exportar CSV
           </button>
-        )}
+          <button
+            onClick={() => setViewMode(m => m === 'list' ? 'kanban' : 'list')}
+            style={{
+              background: viewMode === 'kanban' ? `${C.teal}22` : 'none',
+              border: `1px solid ${C.teal}66`, color: C.teal,
+              borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {viewMode === 'list' ? '⬛ Kanban' : '≡ Lista'}
+          </button>
+        </div>
       </div>
+
       {quotes.length === 0 ? (
         <div style={{ ...ss.card, textAlign: 'center', padding: '44px', color: C.muted }}>Las cotizaciones del portal aparecerán aquí automáticamente.</div>
+      ) : viewMode === 'kanban' ? (
+        /* ── Kanban / Pipeline view ── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, padding: '0 0 16px', overflowX: 'auto' }}>
+          {KANBAN_COLS.map(({ key, label, color }) => {
+            const colQuotes = quotes.filter(q => (q.status || 'nuevo') === key);
+            return (
+              <div key={key} style={{ background: C.card, borderRadius: 8, border: `1px solid ${color}44`, minHeight: 200 }}>
+                {/* Column header */}
+                <div style={{ padding: '8px 12px', borderBottom: `2px solid ${color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, background: `${color}22`, borderRadius: 10, padding: '1px 7px' }}>{colQuotes.length}</div>
+                </div>
+                {/* Cards */}
+                <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {colQuotes.slice(0, 10).map(q => (
+                    <div
+                      key={q.id}
+                      onClick={() => setSel(q.id)}
+                      style={{ background: '#07090F', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', border: `1px solid ${color}22`, transition: 'border-color 0.2s' }}
+                      onMouseOver={e => { e.currentTarget.style.borderColor = color; }}
+                      onMouseOut={e => { e.currentTarget.style.borderColor = `${color}22`; }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 600, color: C.text, marginBottom: 2 }}>{q.name || q.email}</div>
+                      <div style={{ fontSize: 10, color: C.muted }}>
+                        {q.results?.actKwp ? `${q.results.actKwp} kWp` : q.kwp ? `${q.kwp} kWp` : ''}
+                        {(q.dept || q.results?.actKwp || q.kwp) && q.dept ? ` · ${q.dept}` : ''}
+                      </div>
+                      <div style={{ fontSize: 10, color, marginTop: 3 }}>
+                        {q.budget?.tot
+                          ? `$${Number(q.budget.tot).toLocaleString('es-CO')}`
+                          : q.total_cop
+                          ? `$${Number(q.total_cop).toLocaleString('es-CO')}`
+                          : '—'}
+                      </div>
+                    </div>
+                  ))}
+                  {colQuotes.length > 10 && (
+                    <div style={{ fontSize: 10, color: C.muted, textAlign: 'center', padding: 4 }}>
+                      +{colQuotes.length - 10} más
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
+        /* ── List view (unchanged) ── */
         <div style={ss.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Fecha', 'Cliente', 'Operador', 'Sistema', 'kWp', 'Inversión', 'Estado', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Fecha', 'Cliente', 'Operador', 'Sistema', 'kWp', 'Inversión', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
             <tbody>{quotes.map(q => (
               <tr key={q.id}>
-                <td style={ss.td}>{q.date}</td>
-                <td style={ss.td}>
-                  {q.name}
-                  {q._remoteId
-                    ? <span title="Sincronizada con servidor" style={{ marginLeft: 6, fontSize: 8, color: C.teal }}>● remoto</span>
-                    : <span title="Solo local — pendiente de sync" style={{ marginLeft: 6, fontSize: 8, color: C.yellow }}>● local</span>}
-                </td>
-                <td style={ss.td}>{q.operator || '—'}</td>
+                <td style={ss.td}>{q.date}</td><td style={ss.td}>{q.name}</td><td style={ss.td}>{q.operator || '—'}</td>
                 <td style={ss.td}>{q.systemType}</td><td style={ss.td}>{q.results?.actKwp}</td>
                 <td style={ss.td}>{q.budget ? fmtCOP(q.budget.tot) : '—'}</td>
-                <td style={ss.td}><span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 9, background: `${C.teal}22`, color: C.teal }}>{q.status || 'nuevo'}</span></td>
                 <td style={ss.td}><button style={{ ...ss.btn, padding: '3px 9px' }} onClick={() => setSel(q.id)}>Ver →</button></td>
               </tr>
             ))}</tbody>
@@ -498,14 +628,211 @@ function QuotesMgr({ quotes, ss, quotesSync, loadRemoteQuotes }) {
   );
 }
 
+const CRED_STATUS_BADGE = {
+  pendiente:   { bg: `${C.muted}22`,   color: C.muted,  icon: '🟡' },
+  en_revision: { bg: '#01708B22',       color: C.teal,   icon: '🔵' },
+  aprobado:    { bg: '#4ade8022',       color: '#4ade80', icon: '✅' },
+  rechazado:   { bg: '#f8717122',       color: '#f87171', icon: '❌' },
+  vencido:     { bg: '#FFB80022',       color: C.amber,  icon: '⏰' },
+};
+
+function CredReviewPanel({ inst, onClose, ss }) {
+  const [credData, setCredData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const base = process.env.REACT_APP_N8N_BASE_URL;
+
+  const loadCreds = async () => {
+    if (!inst.id) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${base}/installer-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'GET', technician_id: inst.id }),
+      });
+      const data = await res.json();
+      setCredData(data);
+    } catch (e) {
+      setCredData({ ok: false, error: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-load on mount (empty deps intentional — run once)
+  React.useEffect(() => { loadCreds(); }, []); // eslint-disable-line
+
+  const review = async (status) => {
+    setSaving(true);
+    try {
+      await fetch(`${base}/installer-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: 'REVIEW',
+          technician_id: inst.id,
+          status,
+          notes: rejectReason || null,
+          verified_by: 'admin',
+        }),
+      });
+      setResult(status);
+      setShowReject(false);
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDoc = (doc) => {
+    if (!doc.file_data_b64) return;
+    const ext = doc.file_name?.split('.').pop()?.toLowerCase() || 'pdf';
+    const mime = ext === 'pdf' ? 'application/pdf' : `image/${ext}`;
+    const byteChars = atob(doc.file_data_b64);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], { type: mime });
+    window.open(URL.createObjectURL(blob), '_blank');
+  };
+
+  const docs = credData?.documents || [];
+  const credStatus = result || credData?.status || inst.credential_status || 'pendiente';
+  const badge = CRED_STATUS_BADGE[credStatus] || CRED_STATUS_BADGE.pendiente;
+
+  return (
+    <div style={{ marginTop: 16, background: '#111f35', borderRadius: 12, padding: 18, border: `1px solid ${C.border}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+          🛡 Verificación RETIE — {inst.name}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
+            {badge.icon} {credStatus}
+          </span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+      </div>
+
+      {loading && <div style={{ color: C.muted, fontSize: 12, textAlign: 'center', padding: '20px 0' }}>Cargando documentos...</div>}
+
+      {!loading && credData?.ok === false && (
+        <div style={{ color: '#f87171', fontSize: 12 }}>Error cargando datos: {credData.error || 'sin datos'}</div>
+      )}
+
+      {!loading && credData?.ok && (
+        <>
+          {/* Credential number */}
+          {(credData.copnia_number || credData.conte_number) && (
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+              {credData.installer_type === 'ingeniero'
+                ? `COPNIA: ${credData.copnia_number}`
+                : `CONTE: ${credData.conte_number}`}
+              {' · '}{credData.installer_type === 'ingeniero' ? 'Ingeniero' : 'Técnico Electricista'}
+            </div>
+          )}
+
+          {/* Document list */}
+          {docs.length === 0 ? (
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Sin documentos subidos aún.</div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              {docs.map((doc, idx) => (
+                <div key={doc.id || idx} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+                  background: C.dark, borderRadius: 8, padding: '8px 12px',
+                }}>
+                  <span style={{ fontSize: 16 }}>📄</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: C.text }}>{doc.file_name}</div>
+                    <div style={{ fontSize: 10, color: C.muted }}>{doc.doc_type} · {doc.file_size_kb} KB</div>
+                  </div>
+                  {doc.file_data_b64 && (
+                    <button onClick={() => openDoc(doc)} style={{
+                      background: C.teal, color: '#fff', border: 'none', borderRadius: 6,
+                      padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'Outfit',
+                    }}>Ver</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Admin notes */}
+          {credData.credential_notes && (
+            <div style={{ background: '#f8717118', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#f87171', marginBottom: 12 }}>
+              Razón rechazo anterior: {credData.credential_notes}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {result ? (
+            <div style={{ color: result === 'aprobado' ? '#4ade80' : '#f87171', fontSize: 13, fontWeight: 600 }}>
+              {result === 'aprobado' ? '✅ Credenciales aprobadas' : '❌ Credenciales rechazadas'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <button onClick={() => review('aprobado')} disabled={saving} style={{
+                background: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8044',
+                borderRadius: 8, padding: '7px 16px', fontSize: 12, cursor: 'pointer',
+                fontFamily: 'Outfit', fontWeight: 600, opacity: saving ? 0.5 : 1,
+              }}>✅ Aprobar</button>
+              {!showReject && (
+                <button onClick={() => setShowReject(true)} style={{
+                  background: '#f8717122', color: '#f87171', border: '1px solid #f8717144',
+                  borderRadius: 8, padding: '7px 16px', fontSize: 12, cursor: 'pointer',
+                  fontFamily: 'Outfit', fontWeight: 600,
+                }}>❌ Rechazar</button>
+              )}
+              {showReject && (
+                <div style={{ flex: '1 1 100%' }}>
+                  <textarea
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    placeholder="Motivo del rechazo (ej: documento ilegible, COPNIA no verificada)..."
+                    rows={2}
+                    style={{
+                      width: '100%', background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8,
+                      color: C.text, padding: '8px 10px', fontSize: 12, fontFamily: 'Outfit',
+                      boxSizing: 'border-box', resize: 'vertical', marginBottom: 8,
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => review('rechazado')} disabled={saving || !rejectReason.trim()} style={{
+                      background: '#f8717122', color: '#f87171', border: '1px solid #f8717144',
+                      borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer',
+                      fontFamily: 'Outfit', fontWeight: 600, opacity: (!rejectReason.trim() || saving) ? 0.4 : 1,
+                    }}>Confirmar rechazo</button>
+                    <button onClick={() => setShowReject(false)} style={{
+                      background: 'none', color: C.muted, border: `1px solid ${C.border}`,
+                      borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit',
+                    }}>Cancelar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function InstallersMgr({ installers, ss }) {
   const [sel, setSel] = useState(null);
+  const [credReview, setCredReview] = useState(null);
+
   if (sel) {
     const inst = installers.find(x => x.id === sel);
     if (!inst) { setSel(null); return null; }
     return (
       <div>
-        <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setSel(null)}>← Volver</button>
+        <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => { setSel(null); setCredReview(null); }}>← Volver</button>
         <div style={ss.card}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{inst.name}</div>
           <div style={{ color: C.muted, fontSize: 11, marginBottom: 14 }}>{inst.company && `${inst.company} · `}{inst.dept} · {inst.date}</div>
@@ -517,10 +844,33 @@ function InstallersMgr({ installers, ss }) {
               </div>
             ))}
           </div>
+          {/* Credential review toggle */}
+          <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            {credReview !== inst.id ? (
+              <button onClick={() => setCredReview(inst.id)} style={{
+                background: `${C.teal}18`, color: C.teal, border: `1px solid ${C.teal}44`,
+                borderRadius: 8, padding: '7px 16px', fontSize: 12, cursor: 'pointer',
+                fontFamily: 'Outfit', fontWeight: 600,
+              }}>🛡 Verificar credenciales RETIE</button>
+            ) : (
+              <CredReviewPanel inst={inst} onClose={() => setCredReview(null)} ss={ss} />
+            )}
+          </div>
         </div>
       </div>
     );
   }
+
+  const credBadge = (inst) => {
+    const cs = inst.credential_status || 'pendiente';
+    const b = CRED_STATUS_BADGE[cs] || CRED_STATUS_BADGE.pendiente;
+    return (
+      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 9, background: b.bg, color: b.color, marginLeft: 4 }}>
+        {b.icon} {cs}
+      </span>
+    );
+  };
+
   return (
     <div>
       <div style={ss.h2}>Instaladores ({installers.length})</div>
@@ -529,11 +879,12 @@ function InstallersMgr({ installers, ss }) {
       ) : (
         <div style={ss.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Fecha', 'Nombre', 'Departamento', 'RETIE', 'Estado', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Fecha', 'Nombre', 'Departamento', 'RETIE', 'Estado', 'Credenciales', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
             <tbody>{installers.map(i => (
               <tr key={i.id}>
                 <td style={ss.td}>{i.date}</td><td style={ss.td}>{i.name}</td><td style={ss.td}>{i.dept}</td><td style={ss.td}>{i.retie}</td>
                 <td style={ss.td}><span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 9, background: `${C.yellow}22`, color: C.yellow }}>{i.status}</span></td>
+                <td style={ss.td}>{credBadge(i)}</td>
                 <td style={ss.td}><button style={{ ...ss.btn, padding: '2px 9px' }} onClick={() => setSel(i.id)}>Ver →</button></td>
               </tr>
             ))}</tbody>
@@ -1187,7 +1538,7 @@ function LoadsTab({ catalog, source, setCatalog, setSource, ss }) {
   );
 }
 
-export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp, loadsCatalog = [], loadsSource = 'local-default', setLoadsCatalog, setLoadsSource, quotesSync, loadRemoteQuotes }) {
+export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, batteries, uB, pricing, uPr, operators, uOp, quotes, installers, suppliers = [], uSupp, loadsCatalog = [], loadsSource = 'local-default', setLoadsCatalog, setLoadsSource }) {
   const [dashTrm, setDashTrm] = React.useState(null);
   React.useEffect(() => {
     fetchTRM().then(d => setDashTrm(d)).catch(() => {});
@@ -1218,7 +1569,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
     <div style={ss.wrap}>
       <aside style={ss.side}>
         <div style={{ padding: '0 4px 10px', borderBottom: `1px solid ${C.border}`, marginBottom: 10 }}>
-          <img src={logo} alt="SolarHub" style={{ height: 28, borderRadius: 3 }} />
+          <img src={logo} alt="ALEBAS" style={{ height: 28, borderRadius: 3 }} />
         </div>
         {NAV.map(([id, ic, l]) => (
           <div key={id} onClick={() => setTab(id)} style={{ padding: '7px 10px', borderRadius: 5, cursor: 'pointer', marginBottom: 2, fontSize: 11, display: 'flex', alignItems: 'center', gap: 7, background: tab === id ? `${C.teal}22` : 'transparent', color: tab === id ? C.teal : C.muted, fontWeight: tab === id ? 600 : 400, borderLeft: tab === id ? `2px solid ${C.teal}` : '2px solid transparent' }}>
@@ -1226,9 +1577,9 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
           </div>
         ))}
         <div style={{ padding: '20px 8px 0', fontSize: 9, color: C.muted, lineHeight: 2 }}>
-          <div style={{ fontWeight: 600, color: C.teal, marginBottom: 1 }}>SolarHub Admin</div>
+          <div style={{ fontWeight: 600, color: C.teal, marginBottom: 1 }}>ALEBAS Ingeniería SAS</div>
           <div>NIT 901.992.450-5</div>
-          <div style={{ color: C.teal }}>info@solar-hub.co</div>
+          <div style={{ color: C.teal }}>info@alebas.co</div>
           <div>Villavicencio, Meta</div>
         </div>
       </aside>
@@ -1257,6 +1608,35 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
                 </table>
               )}
             </div>
+
+            {/* Commission summary — calculates from quotes prop */}
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>💰 Comisiones SolarHub estimadas</div>
+              {(() => {
+                const equip = quotes.reduce((s,q)=>s+(q.section_a_cop||0),0);
+                const platformEquip = Math.round(equip * 0.10);
+                const install = quotes.reduce((s,q)=>s+(q.section_b_cop||0),0);
+                const platformInstall = Math.round(install * 0.20);
+                const totalPlatform = platformEquip + platformInstall;
+                return (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px,1fr))', gap:10 }}>
+                    {[
+                      ['Cotizaciones', quotes.length, C.muted, ''],
+                      ['Equip. (10%)', `$${Math.round(platformEquip/1000)}K`, C.teal, ''],
+                      ['Instal. (20%)', `$${Math.round(platformInstall/1000)}K`, '#FFB800', ''],
+                      ['Total plataforma', `$${Math.round(totalPlatform/1000000)}M`, C.yellow, '(est.)'],
+                    ].map(([l,v,col,note])=>(
+                      <div key={l} style={{ background:C.dark, borderRadius:8, padding:'10px 12px', border:`1px solid ${C.border}` }}>
+                        <div style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:0.5, marginBottom:3 }}>{l}</div>
+                        <div style={{ fontSize:16, fontWeight:700, color:col }}>{v}</div>
+                        {note && <div style={{ fontSize:9, color:C.muted }}>{note}</div>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize:9, color:C.muted, marginTop:10 }}>* Estimado sobre cotizaciones visibles. Las comisiones reales se registran al crear Órdenes de Compra (POs).</div>
+            </div>
           </div>
         )}
         {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
@@ -1265,7 +1645,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'loads' && <LoadsTab catalog={loadsCatalog} source={loadsSource} setCatalog={setLoadsCatalog} setSource={setLoadsSource} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
-        {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} quotesSync={quotesSync} loadRemoteQuotes={loadRemoteQuotes} />}
+        {tab === 'quotes' && <QuotesMgr quotes={quotes} suppliers={suppliers} ss={ss} />}
         {tab === 'installers' && <InstallersMgr installers={installers} ss={ss} />}
         {tab === 'suppliers' && <SuppliersMgr suppliers={suppliers} uSupp={uSupp} ss={ss} />}
       </main>

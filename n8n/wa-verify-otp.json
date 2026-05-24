@@ -1,0 +1,207 @@
+{
+  "name": "ALEBAS — wa-verify-otp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-verify-otp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wa-ver-001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "alebas-wa-verify-otp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json;\nconst body = src.body || src;\nconst rawPhone = (body.phone || '').toString().trim();\nconst rawCode = (body.code || '').toString().trim();\n\nconst digits = rawPhone.replace(/\\D/g, '');\nlet phone = '';\nif (digits.length === 10) {\n  phone = '+57' + digits;\n} else if (digits.startsWith('57') && digits.length === 12) {\n  phone = '+' + digits;\n} else if (digits.startsWith('57') && digits.length > 12) {\n  phone = '+' + digits.slice(0, 12);\n} else {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\n\nif (!phone.startsWith('+57') || phone.length !== 13) {\n  return [{ json: { ok: false, reason: 'invalid_phone' } }];\n}\n\nconst codeDigits = rawCode.replace(/\\D/g, '');\nif (codeDigits.length !== 6) {\n  return [{ json: { ok: false, reason: 'invalid_code_format' } }];\n}\n\nreturn [{ json: { ok: true, phone, code: codeDigits } }];"
+      },
+      "id": "wa-ver-002",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-input", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-ver-003",
+      "name": "Input valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, code_hash, attempts FROM otp_codes WHERE phone=$1 AND consumed_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "id": "wa-ver-004",
+      "name": "Lookup OTP",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 150],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\nconst norm = $('Normalize').first().json;\nconst phone = norm.phone;\nconst inputCode = norm.code;\n\nif (!row || !row.id) {\n  return [{ json: { ok: false, reason: 'expired', message: 'Código expirado o no encontrado. Solicita uno nuevo.' } }];\n}\n\nconst attempts = Number(row.attempts || 0);\nif (attempts >= 3) {\n  return [{ json: { ok: false, reason: 'max_attempts', message: 'Demasiados intentos. Solicita un nuevo código.', otpId: row.id } }];\n}\n\nconst crypto = require('crypto');\nconst salt = process.env.OTP_SALT || 'solarhub2026';\nconst inputHash = crypto.createHmac('sha256', salt).update(inputCode).digest('hex');\n\nif (inputHash !== row.code_hash) {\n  return [{ json: { ok: false, reason: 'invalid_code', message: 'Código incorrecto.', otpId: row.id } }];\n}\n\nreturn [{ json: { ok: true, otpId: row.id, phone } }];"
+      },
+      "id": "wa-ver-005",
+      "name": "Verify code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 150]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            { "id": "ok-code", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-ver-006",
+      "name": "Code valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 150]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE otp_codes SET consumed_at=NOW() WHERE id=$1",
+        "options": {
+          "queryReplacement": "={{ $json.otpId }}"
+        }
+      },
+      "id": "wa-ver-007",
+      "name": "Mark consumed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 0],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const verified = $('Verify code').first().json;\nconst phone = verified.phone;\nconst crypto = require('crypto');\nconst secret = process.env.JWT_SECRET || 'solarhub2026secret';\nconst payload = JSON.stringify({ phone, iat: Date.now(), exp: Date.now() + 30 * 60000 });\nconst token = crypto.createHmac('sha256', secret).update(payload).digest('hex');\nreturn [{ json: { ok: true, token, payload, phone, message: 'Teléfono verificado correctamente' } }];"
+      },
+      "id": "wa-ver-008",
+      "name": "Generate token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok:$json.ok,token:$json.token,message:$json.message}) }}",
+        "options": {}
+      },
+      "id": "wa-ver-009",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2000, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE otp_codes SET attempts=attempts+1 WHERE id=$1 RETURNING attempts",
+        "options": {
+          "queryReplacement": "={{ $json.otpId }}"
+        }
+      },
+      "id": "wa-ver-010",
+      "name": "Increment attempts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 300],
+      "credentials": { "postgres": { "id": "ALEBAS_POSTGRES", "name": "ALEBAS Postgres" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Verify code').first().json) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "wa-ver-011",
+      "name": "Respond code error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "wa-ver-012",
+      "name": "Respond input error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 450]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Normalize", "type": "main", "index": 0 }]]
+    },
+    "Normalize": {
+      "main": [[{ "node": "Input valid?", "type": "main", "index": 0 }]]
+    },
+    "Input valid?": {
+      "main": [
+        [{ "node": "Lookup OTP", "type": "main", "index": 0 }],
+        [{ "node": "Respond input error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup OTP": {
+      "main": [[{ "node": "Verify code", "type": "main", "index": 0 }]]
+    },
+    "Verify code": {
+      "main": [[{ "node": "Code valid?", "type": "main", "index": 0 }]]
+    },
+    "Code valid?": {
+      "main": [
+        [{ "node": "Mark consumed", "type": "main", "index": 0 }],
+        [{ "node": "Increment attempts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark consumed": {
+      "main": [[{ "node": "Generate token", "type": "main", "index": 0 }]]
+    },
+    "Generate token": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    },
+    "Increment attempts": {
+      "main": [[{ "node": "Respond code error", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "alebas" }],
+  "triggerCount": 0,
+  "active": false,
+  "meta": { "instanceId": "alebas" },
+  "versionId": "1"
+}
