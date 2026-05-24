@@ -17,6 +17,8 @@ import { fetchNASAPower } from '../services/nasaPower';
 import { fetchSpotPrice } from '../services/xm';
 import { fetchTRM } from '../services/trm';
 import { lookupRoof, solarConfigured } from '../services/solar';
+import { autocompleteAddress, placesConfigured, newPlacesSessionToken } from '../services/places';
+import InteractiveRoofMap from './InteractiveRoofMap';
 import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssistant';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { sendWhatsAppOTP, verifyWhatsAppOTP, isValidColombianPhone, formatColombianPhone } from '../services/whatsapp';
@@ -222,6 +224,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [roofQuery, setRoofQuery] = useState('');
   const [roofLoading, setRoofLoading] = useState(false);
   const [roofError, setRoofError] = useState(null);
+  const [placesSuggestions, setPlacesSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const placesSessionRef = useRef(null);
+  if (!placesSessionRef.current) placesSessionRef.current = newPlacesSessionToken();
   // Recomendación IA post-cálculo
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState(null);
@@ -401,10 +407,27 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     }
   };
 
-  const onLookupRoof = async () => {
+  // Debounced Google Places Autocomplete
+  useEffect(() => {
+    if (!placesConfigured()) return;
     const q = (roofQuery || '').trim();
+    if (q.length < 3) { setPlacesSuggestions([]); return; }
+    const t = setTimeout(async () => {
+      const res = await autocompleteAddress(q, placesSessionRef.current);
+      if (res.ok && res.suggestions?.length) {
+        setPlacesSuggestions(res.suggestions.slice(0, 6));
+        setShowSuggestions(true);
+      } else {
+        setPlacesSuggestions([]);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [roofQuery]);
+
+  const onLookupRoof = async (overrideQuery) => {
+    const q = (overrideQuery || roofQuery || '').trim();
     if (!q) { setRoofError('Ingresa una dirección o ciudad'); return; }
-    setRoofError(null); setRoofLoading(true);
+    setRoofError(null); setRoofLoading(true); setShowSuggestions(false);
     try {
       const r = await lookupRoof({ address: q });
       if (r.areaM2 != null && !Number.isNaN(r.areaM2)) u('availableArea', String(Math.round(r.areaM2)));
@@ -427,6 +450,28 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         ? 'No se pudo conectar al servicio. Puedes ingresar el área manualmente arriba y continuar.'
         : raw;
       setRoofError(friendly);
+    } finally {
+      setRoofLoading(false);
+    }
+  };
+
+  // Re-lookup cuando el cliente arrastra el pin sobre el mapa interactivo
+  const onMapPinMove = async (lat, lon) => {
+    setRoofError(null); setRoofLoading(true);
+    try {
+      const r = await lookupRoof({ lat, lon });
+      if (r.areaM2 != null && !Number.isNaN(r.areaM2)) u('availableArea', String(Math.round(r.areaM2)));
+      u('lat', lat); u('lon', lon);
+      u('roofLookupSource', r.source);
+      u('roofLookupNotes', r.notes || '');
+      if (r.shadeIndex != null) u('shadeIndex', r.shadeIndex);
+      if (r.tiltDeg != null) u('roofTiltDeg', r.tiltDeg);
+      if (r.azimuthDeg != null) u('roofAzimuthDeg', r.azimuthDeg);
+      if (r.sunshineHoursYear != null) u('sunshineHoursYear', r.sunshineHoursYear);
+      if (r.maxPanels != null) u('googleMaxPanels', r.maxPanels);
+      if (r.roofSegments?.length) u('roofSegments', r.roofSegments);
+    } catch (e) {
+      setRoofError(e?.message || 'Error reubicando techo');
     } finally {
       setRoofLoading(false);
     }
@@ -1048,23 +1093,56 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <label style={ss.lbl}>Área disponible para paneles (m²) — opcional</label>
           <input type="number" style={ss.inp} placeholder="Ej: 60" value={f.availableArea} onChange={e => u('availableArea', e.target.value)} />
           {solarConfigured() && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
-                placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
-                value={roofQuery}
-                onChange={e => setRoofQuery(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onLookupRoof(); } }}
-              />
-              <button
-                type="button"
-                onClick={onLookupRoof}
-                disabled={roofLoading}
-                style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
-              >
-                {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
-              </button>
+            <div style={{ marginTop: 8, position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  style={{ ...ss.inp, flex: '1 1 200px', minWidth: 0 }}
+                  placeholder="Dirección o ciudad (ej: Cra 10 #5-20, Villavicencio)"
+                  value={roofQuery}
+                  onChange={e => setRoofQuery(e.target.value)}
+                  onFocus={() => { if (placesSuggestions.length) setShowSuggestions(true); }}
+                  onBlur={() => { setTimeout(() => setShowSuggestions(false), 200); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onLookupRoof(); } }}
+                />
+                <button
+                  type="button"
+                  onClick={() => onLookupRoof()}
+                  disabled={roofLoading}
+                  style={{ ...ss.btn, padding: '8px 14px', fontSize: 12, opacity: roofLoading ? 0.6 : 1 }}
+                >
+                  {roofLoading ? '⏳ Buscando…' : '📍 Estimar área'}
+                </button>
+              </div>
+              {showSuggestions && placesSuggestions.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                  background: C.card, border: `1px solid ${C.teal}55`, borderRadius: 10,
+                  marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+                  {placesSuggestions.map((s, i) => (
+                    <button
+                      key={s.placeId || i}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        const addr = s.description || s.mainText || '';
+                        setRoofQuery(addr);
+                        setShowSuggestions(false);
+                        onLookupRoof(addr);
+                      }}
+                      style={{ display: 'block', width: '100%', textAlign: 'left',
+                        background: 'transparent', border: 'none', borderBottom: `1px solid ${C.dark}`,
+                        color: C.text, padding: '10px 12px', cursor: 'pointer',
+                        fontFamily: 'Outfit', fontSize: 13 }}
+                      onMouseEnter={e => e.currentTarget.style.background = `${C.teal}18`}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={{ fontWeight: 600 }}>{s.mainText || s.description}</div>
+                      {s.secondaryText && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{s.secondaryText}</div>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {roofError && <div style={{ fontSize: 10, color: C.orange, marginTop: 5 }}>⚠ {roofError}</div>}
@@ -1127,6 +1205,24 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               )}
               <div style={{ marginTop: 3 }}>
                 Área usada por panel: <strong style={{ color: C.teal }}>{m2PerPanel.toFixed(2)} m²</strong> (huella real + packing {Math.round(DEFAULT_PACKING_FACTOR * 100)}%)
+              </div>
+            </div>
+          )}
+          {f.lat != null && f.lon != null && (
+            <div style={{ marginTop: 10, borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.teal}33` }}>
+              <InteractiveRoofMap
+                lat={Number(f.lat)}
+                lon={Number(f.lon)}
+                areaM2={parseFloat(f.availableArea) || 0}
+                segments={f.roofSegments || []}
+                onPinMove={onMapPinMove}
+                busy={roofLoading}
+                height={280}
+                panelW={(panel?.widthMm || 1135) / 1000}
+                panelH={(panel?.lengthMm || 2280) / 1000}
+              />
+              <div style={{ fontSize: 11, color: C.muted, padding: '6px 10px', background: C.dark, lineHeight: 1.4 }}>
+                💡 Arrastra el pin sobre tu techo para refinar la ubicación · El área se actualiza automáticamente
               </div>
             </div>
           )}
