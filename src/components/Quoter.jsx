@@ -7,7 +7,8 @@ import {
   tariffCU, excedentePriceFor, splitCU,
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
   getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS,
-  getPR, DEPT_PR
+  getPR, DEPT_PR,
+  calcDimensionalWeight, getBillableWeight, getZoneKmFactor
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchPVWatts } from '../services/pvwatts';
@@ -547,7 +548,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
       { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, pr, ...temps });
 
-    const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
+    const eqInfo = { numPanels: sys.numPanels, panel, inv: inv2 };
+    const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0, CARRIERS, dest.km || 0, eqInfo);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
     const cuFull = getEffectiveTariff(operator, f.estrato);
@@ -596,6 +598,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       transportCarrierId: transport.carrierId,
       transportQuotes: transportPick.quotes,
       transportZone: dest.zona,
+      transportBillableKg: transportPick.billableKg || sys.kgTotal,
+      transportDimKg: transportPick.dimKg || 0,
+      transportActualKg: transportPick.actualKg || sys.kgTotal,
+      transportKmFactor: transport.kmFactor || 1.0,
       budgetUsd,
       trmDate: trmData?.date,
       ivaAhorrado,
@@ -2203,7 +2209,25 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 {agpe.gridExport ? `AGPE ${agpe.agpeCategory} · CREG 174/2021` : 'Off-grid · ZNI · no inyecta a red'}
               </span>
             </div>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 11 }}>{agpe.rule}</div>
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: agpe.gridExport ? 8 : 11 }}>{agpe.rule}</div>
+            {agpe.gridExport && res?.actKwp > 0 && (
+              <div style={{ background: res.actKwp < 100 ? `${C.teal}12` : `${C.amber}12`, border: `1px solid ${res.actKwp < 100 ? C.teal : C.amber}33`, borderRadius: 6, padding: '8px 12px', marginBottom: 11, fontSize: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                  <span style={{ fontWeight: 700, color: res.actKwp < 100 ? C.teal : C.amber }}>
+                    {res.actKwp < 100 ? '✓ AGPE Menor — Proceso simplificado' : '⚠ AGPE Mayor — Requiere estudio de conexión'}
+                  </span>
+                  <span style={{ color: C.muted, fontSize: 9 }}>{res.actKwp.toFixed(2)} kWp</span>
+                </div>
+                <div style={{ color: C.muted, marginTop: 4 }}>
+                  {res.actKwp < 100
+                    ? <>Presenta esta Memoria Técnica + certif. RETIE ante <strong style={{ color: '#fff' }}>{operator.name}</strong>. Plazo estimado: <strong style={{ color: C.teal }}>~30 días hábiles</strong> (Art. 22 CREG 174/2021). Sin estudio de conexión.</>
+                    : <>Capacidad ≥ 100 kWp → requiere <strong style={{ color: C.amber }}>estudio de conexión</strong> ante <strong style={{ color: '#fff' }}>{operator.name}</strong>. Plazo estimado: <strong style={{ color: C.amber }}>~60 días hábiles</strong> (Art. 23 CREG 174/2021). Inscripción UPME requerida.</>}
+                </div>
+                {res.actKwp >= 100 && (
+                  <div style={{ color: C.muted, marginTop: 3, fontSize: 9 }}>Excedentes liquidados a precio bolsa XM (no netting 1:1 — Art. 37 CREG 174/2021)</div>
+                )}
+              </div>
+            )}
             {agpe.gridExport ? (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 10 }}>
                 <div style={{ background: C.dark, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: '11px 13px' }}>
@@ -2321,8 +2345,14 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 4 }}>
                   <span style={{ color: C.teal, fontWeight: 700 }}>✓ {bgt.transportCarrier}</span>
                   <span style={{ color: C.muted, fontSize: 9 }}>
-                    Zona {ZONA_LABEL[bgt.transportZone] || bgt.transportZone} · {fmt(res.kgTotal)} kg · {dest.tiempo}
+                    Zona {ZONA_LABEL[bgt.transportZone] || bgt.transportZone} · {dest.tiempo}
+                    {bgt.transportKmFactor > 1.01 && <span style={{ color: C.amber }}> · ×{bgt.transportKmFactor.toFixed(2)} km</span>}
                   </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, fontSize: 9, color: C.muted, marginBottom: 4 }}>
+                  <span>Real: {fmt(bgt.transportActualKg)} kg</span>
+                  {bgt.transportDimKg > 0 && <span style={{ color: bgt.transportDimKg > bgt.transportActualKg ? C.amber : C.muted }}>Volumétrico: {fmt(bgt.transportDimKg)} kg</span>}
+                  <span style={{ fontWeight: 600, color: bgt.transportDimKg > bgt.transportActualKg ? C.amber : '#fff' }}>Facturable: {fmt(bgt.transportBillableKg)} kg</span>
                 </div>
                 {bgt.transportQuotes[0]?.note && (
                   <div style={{ color: C.muted, fontSize: 9, marginBottom: 4, fontStyle: 'italic' }}>
@@ -2468,7 +2498,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   <div><span style={{ color: C.muted }}>Destino:</span> <strong style={{ color: '#fff' }}>{dest.city}, {dest.dept}</strong></div>
                   <div><span style={{ color: C.muted }}>Tiempo entrega:</span> <strong style={{ color: '#fff' }}>{dest.tiempo}</strong></div>
                   <div><span style={{ color: C.muted }}>Distancia:</span> <strong style={{ color: '#fff' }}>~{dest.km} km desde Bogotá</strong></div>
-                  <div><span style={{ color: C.muted }}>Peso sistema:</span> <strong style={{ color: '#fff' }}>{fmt(res.kgTotal)} kg</strong></div>
+                  <div><span style={{ color: C.muted }}>Factor km:</span> <strong style={{ color: bgt.transportKmFactor > 1.01 ? C.amber : '#fff' }}>×{(bgt.transportKmFactor || 1).toFixed(3)}</strong></div>
+                  <div><span style={{ color: C.muted }}>Peso real:</span> <strong style={{ color: '#fff' }}>{fmt(bgt.transportActualKg || res.kgTotal)} kg</strong></div>
+                  <div><span style={{ color: C.muted }}>Peso volumétrico:</span> <strong style={{ color: (bgt.transportDimKg || 0) > (bgt.transportActualKg || 0) ? C.amber : C.muted }}>{fmt(bgt.transportDimKg || 0)} kg</strong></div>
+                  <div><span style={{ color: C.muted }}>Peso facturable:</span> <strong style={{ color: C.yellow }}>{fmt(bgt.transportBillableKg || res.kgTotal)} kg {(bgt.transportDimKg || 0) > (bgt.transportActualKg || 0) ? '(vol.)' : ''}</strong></div>
                   <div><span style={{ color: C.muted }}>Flete:</span> <strong style={{ color: '#fff' }}>{fmtCOP(bgt.transportQuotes?.[0]?.flete || 0)}</strong></div>
                   <div><span style={{ color: C.muted }}>Sobreflete 2%:</span> <strong style={{ color: '#fff' }}>{fmtCOP(bgt.transportQuotes?.[0]?.sf || 0)}</strong></div>
                 </div>
