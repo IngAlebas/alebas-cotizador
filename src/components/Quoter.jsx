@@ -4,7 +4,7 @@ import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS, CARRIERS, ZONA_LABEL,
   calcSystem, calcTransport, calcBudget, pickBestTransport, selectCompatibleInverter,
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
-  tariffCU, excedentePriceFor, splitCU, calcMonthlyNetMetering,
+  excedentePriceFor, splitCU, calcMonthlyNetMetering,
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
   getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS,
   getPR, DEPT_PR,
@@ -25,7 +25,8 @@ import { aiRecommend, aiConfigured, APPLYABLE_FIELDS } from '../services/aiAssis
 import InteractiveRoofMap from './InteractiveRoofMap';
 import SunPathDiagram from './SunPathDiagram';
 import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
-import { sendWhatsAppOTP, verifyWhatsAppOTP, isValidColombianPhone, formatColombianPhone } from '../services/whatsapp';
+import { sendWhatsAppOTP, verifyWhatsAppOTP, isValidColombianPhone, formatColombianPhone, whatsappConfigured } from '../services/whatsapp';
+import { n8nConfigured } from '../services/n8n';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
 import { addRoofSegmentsToStaticUrl } from '../services/staticMapOverlays';
@@ -429,23 +430,38 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       }
       return true;
     } catch (e) {
-      // No bloqueamos por fallas de red del backend — dejamos pasar y
-      // save-quote hará la persistencia definitiva si está disponible.
-      return true;
+      // Solo se acepta el bypass cuando n8n NO está configurado (dev local sin
+      // backend). En producción, una falla de red bloquea explícitamente para
+      // proteger rate-limit/blocklist server-side (Habeas Data + anti-spam).
+      if (!n8nConfigured()) return true;
+      setContactError('No pudimos validar tus datos en este momento. Verifica tu conexión e intenta de nuevo.');
+      return false;
     } finally {
       setValidatingContact(false);
     }
   };
 
+  // Ref al interval activo del cooldown — evita timers paralelos por spam-click
+  // y permite cleanup en unmount.
+  const otpCooldownRef = useRef(null);
+  const otpSendingRef = useRef(false);
+  const clearOtpCooldown = () => {
+    if (otpCooldownRef.current) {
+      clearInterval(otpCooldownRef.current);
+      otpCooldownRef.current = null;
+    }
+  };
   const startOtpCooldown = (seconds = 60) => {
+    clearOtpCooldown();
     setOtpCooldown(seconds);
-    const tick = setInterval(() => {
+    otpCooldownRef.current = setInterval(() => {
       setOtpCooldown(s => {
-        if (s <= 1) { clearInterval(tick); return 0; }
+        if (s <= 1) { clearOtpCooldown(); return 0; }
         return s - 1;
       });
     }, 1000);
   };
+  useEffect(() => () => clearOtpCooldown(), []); // cleanup en unmount
 
   const onSendOTP = async () => {
     setOtpError(null);
@@ -453,6 +469,15 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       setOtpError('Ingresa un número celular colombiano válido (+57 3XX XXX XXXX)');
       return;
     }
+    // Bypass explícito SOLO en dev local sin n8n configurado. En producción
+    // un fallo de red/server debe mostrar error real al usuario — no auto-verificar.
+    if (!whatsappConfigured()) {
+      setOtpPhase('verified');
+      setOtpToken('dev-bypass');
+      return;
+    }
+    if (otpSendingRef.current) return; // guard contra spam-click
+    otpSendingRef.current = true;
     setOtpPhase('sending');
     try {
       const r = await sendWhatsAppOTP(f.phone);
@@ -464,10 +489,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       setOtpExpiresAt(r.expiresAt);
       setOtpPhase('waiting');
       startOtpCooldown(60);
-    } catch {
-      // Si n8n no está configurado (dev local), saltar OTP
-      setOtpPhase('verified');
-      setOtpToken('dev-bypass');
+    } catch (e) {
+      setOtpError(e?.message || 'No pudimos enviar el código por WhatsApp. Verifica tu conexión e intenta de nuevo.');
+      setOtpPhase('idle');
+    } finally {
+      otpSendingRef.current = false;
     }
   };
 
@@ -680,7 +706,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // Dimensionamiento base: por consumo (cobertura ~100%). Si el cliente
   // quiere excedentes Y tiene área disponible superior a la requerida,
   // sobredimensionamos al kWp que cabe en el techo (limitado por área).
-  const consumptionKwp = f.monthlyKwh ? (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78) : 0;
+  // PR regional (getPR) corrige por departamento — usar la constante 0.78
+  // sub/sobre-dimensiona el sistema fuera de la región Andina.
+  const regionalPR = getPR(dest?.dept);
+  const consumptionKwp = f.monthlyKwh ? (parseFloat(f.monthlyKwh) / 30) / (psh * regionalPR) : 0;
   const areaVal = parseFloat(f.availableArea);
   const hasArea = !!areaVal && areaVal > 0;
   // Área por panel real (huella módulo ÷ packing factor residencial/industrial)
@@ -715,9 +744,19 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [manualSegmentSelection, setManualSegmentSelection] = useState(null);
   const [showCustomSegmentForm, setShowCustomSegmentForm] = useState(false);
   const [customSegDraft, setCustomSegDraft] = useState({ areaMeters2: '', azimuthDegrees: '180', pitchDegrees: '15', note: '' });
-  // Si cambia el set de segmentos detectados (ej. por mover el pin), reseteamos
-  // las overrides manuales — los índices ya no aplican al nuevo array.
-  useEffect(() => { setManualSegmentSelection(null); }, [f.roofSegments, f.customSegments]);
+  // Si CAMBIA EL NÚMERO de segmentos (Google detectó un techo distinto),
+  // reseteamos las overrides manuales — los índices ya no aplican al nuevo
+  // array. Si solo cambia la referencia con la misma cardinalidad (por re-
+  // ejecutar lookupRoof tras un drag de pin pequeño), preservamos la selección
+  // del usuario — sus toggles siguen apuntando a los mismos índices.
+  const lastSegCountRef = useRef(null);
+  useEffect(() => {
+    const count = (f.roofSegments?.length || 0) + (f.customSegments?.length || 0);
+    if (lastSegCountRef.current != null && lastSegCountRef.current !== count) {
+      setManualSegmentSelection(null);
+    }
+    lastSegCountRef.current = count;
+  }, [f.roofSegments, f.customSegments]);
 
   // Umbral de radiación bajo el cual una cubierta NO se incluye automáticamente.
   // Para Colombia, sun anual <1100 h/año significa baja productividad (orientación
@@ -811,6 +850,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // sistema usaba la totalidad del área Google (143 m²) para dimensionar y
   // calcular excedentes, ignorando que el usuario podía haber excluido cubiertas.
   // Ahora cada toggle/cambio recalcula el área a usar.
+  //
+  // Respeta la edición manual: si availableArea difiere del último valor que
+  // este effect (o applyRoofLookup) escribió, asumimos que el usuario lo editó
+  // a mano y NO sobreescribimos. Solo volvemos a sincronizar cuando el set de
+  // segmentos seleccionados cambia (gesto explícito del usuario en el mapa).
+  const lastAutoAreaRef = useRef(null);
+  const lastSelectedKeyRef = useRef(null);
   useEffect(() => {
     if (!selectedSegmentIdx || selectedSegmentIdx.size === 0) return;
     const allSegs = [
@@ -821,11 +867,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const selectedArea = allSegs
       .filter((_, i) => selectedSegmentIdx.has(i))
       .reduce((sum, s) => sum + (s.areaMeters2 || 0), 0);
-    if (selectedArea > 0) {
-      const rounded = String(Math.round(selectedArea));
-      // Solo actualizar si difiere — evita loops y respeta valor manual igual.
-      if (rounded !== f.availableArea) u('availableArea', rounded);
-    }
+    if (selectedArea <= 0) return;
+    const rounded = String(Math.round(selectedArea));
+    const selectionKey = [...selectedSegmentIdx].sort((a, b) => a - b).join(',');
+    const userEdited = lastAutoAreaRef.current != null && f.availableArea !== lastAutoAreaRef.current;
+    const selectionChanged = selectionKey !== lastSelectedKeyRef.current;
+    // Solo sobreescribe si: (a) el usuario tocó el mapa (selección cambió)
+    // o (b) aún no hemos escrito nada y no hay valor manual. Si el usuario ya
+    // editó el input, dejamos su valor a menos que vuelva a tocar segmentos.
+    if (!selectionChanged && userEdited) return;
+    if (rounded !== f.availableArea) u('availableArea', rounded);
+    lastAutoAreaRef.current = rounded;
+    lastSelectedKeyRef.current = selectionKey;
   }, [selectedSegmentIdx, f.roofSegments, f.customSegments]); // eslint-disable-line
 
   // Re-ejecuta el cálculo cuando se aplican mejoras desde la IA en el paso de resultados.
@@ -857,7 +910,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     // Fase 1 — sizing rápido con temperaturas default para determinar actKwp.
     const sizingKwp = targetKwp || consumptionKwp;
     const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters, { phases: phasesForAcometida(f.acometida) });
-    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
+    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp, pr: regionalPR, dept: dest?.dept });
 
     let pvgisAnnualKwh = null;
     let pvwattsAnnualKwh = null;
@@ -966,12 +1019,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       : bestAnnualKwh;
 
     const sys = calcSystem(kwh, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, psh,
-      { pvgisAnnualKwh: scaledAnnualKwh, targetKwp: adjustedTargetKwp, shadeIndex, ...temps });
+      { pvgisAnnualKwh: scaledAnnualKwh, targetKwp: adjustedTargetKwp, shadeIndex, pr: regionalPR, dept: dest?.dept, ...temps });
 
-    const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
+    // eqInfo + dest.km habilitan peso volumétrico (paneles/baterías de baja densidad)
+    // y multiplicador de zona por km — sin estos el flete queda sub-cotizado para
+    // destinos lejanos (Pasto, Leticia, Quibdó) y cargas livianas.
+    const eqInfo = { numPanels: sys.numPanels, panel, inv: inv3 };
+    const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0, CARRIERS, dest.km || 0, eqInfo);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
     const budget = calcBudget(sys, panel, inv3, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
-    const cuFull = tariffCU(operator);
+    // Tarifa ajustada por estrato (E1 0.5×, E2 0.6×, E3 0.85×, E4 1×, E5/E6 1.2×).
+    // Usar la base sin estrato falsea el ROI ~2× para subsidios y ~0.83× para contribuyentes.
+    const cuFull = getEffectiveTariff(operator, f.estrato);
     const cuMinusG = excedentePriceFor(operator);
     const cuSplit = splitCU(operator);
     const benefit = calcAGPEBenefit(sys.ap, kwh, cuFull, spot?.cop_per_kwh || 0, sys.actKwp,
@@ -1037,7 +1096,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     if (unifilarRef.current) {
       const svgEl = unifilarRef.current.querySelector('svg');
       if (svgEl) {
-        try { unifilarSvg = new XMLSerializer().serialize(svgEl); } catch (_) {}
+        try { unifilarSvg = new XMLSerializer().serializeToString(svgEl); } catch (_) {}
       }
     }
     const acometida = f.acometida;
@@ -3050,7 +3109,11 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <button style={ss.ghost} onClick={() => { setOtpPhase('idle'); setOtpCode(''); setOtpError(null); }}>← Cambiar número</button>
+              <button style={ss.ghost} onClick={() => {
+                clearOtpCooldown();
+                setOtpPhase('idle'); setOtpCode(''); setOtpError(null);
+                setOtpToken(null); setOtpExpiresAt(null); setOtpCooldown(0);
+              }}>← Cambiar número</button>
               <button
                 style={{ background: 'transparent', border: 'none', color: otpCooldown > 0 ? C.muted : C.teal, cursor: otpCooldown > 0 ? 'default' : 'pointer', fontSize: 11, textDecoration: otpCooldown > 0 ? 'none' : 'underline', padding: 0 }}
                 disabled={otpCooldown > 0}
@@ -3072,9 +3135,16 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <button style={ss.ghost} onClick={() => { setOtpPhase('idle'); setOtpCode(''); setOtpToken(null); }}>← Atrás</button>
-              <button style={ss.btn} onClick={async () => { const ok = await validateContact(); if (ok) setStep(3); }}>
-                {validatingContact ? 'Validando…' : 'Continuar →'}
+              <button style={ss.ghost} onClick={() => {
+                clearOtpCooldown();
+                setOtpPhase('idle'); setOtpCode(''); setOtpToken(null);
+                setOtpExpiresAt(null); setOtpCooldown(0);
+              }}>← Atrás</button>
+              {/* No revalidamos contacto aquí: ya pasó validateContact al iniciar el OTP
+                  y el OTP mismo es prueba server-side de propiedad del número.
+                  Re-llamar quemaría rate-limit (20/h/IP) sin valor añadido. */}
+              <button style={ss.btn} onClick={() => setStep(3)}>
+                Continuar →
               </button>
             </div>
           </div>
@@ -3142,6 +3212,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             setRoofError(null); setRoofLoading(false); setRoofQuery(''); setRoofQueryVerified(false);
             setAiData(null); setAiError(null); setAiApplied(null); setAiStep(0);
             setContactError(null); setValidatingContact(false);
+            // OTP + Habeas Data: si no se resetean, el lead siguiente hereda el
+            // verifiedToken y el consentimiento del lead anterior (riesgo Ley 1581).
+            clearOtpCooldown();
+            setOtpPhase('idle'); setOtpCode(''); setOtpError(null);
+            setOtpToken(null); setOtpExpiresAt(null); setOtpCooldown(0);
+            setDataConsent(false);
             setResultTab('resumen');
           }}>Nueva cotización</button>
         </div>
@@ -4435,13 +4511,13 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           // DPS (Dispositivos de Protección contra Sobretensiones) — Tipo II en lado DC y AC
           obs.push({ type: 'info', title: 'Protecciones DPS Tipo II incluidas', text: 'El presupuesto incluye DPS clase II en lado DC (paneles → inversor) y AC (inversor → red). RETIE Sec. 240 obliga DPS para sistemas FV en zonas con descargas atmosféricas frecuentes (toda Colombia). DPS Tipo I se evalúa adicional para predios con pararrayos.' });
           // ════════════ PACK 3 — Validaciones físicas/estructurales ════════════
-          // Carga estructural por material del techo
+          // Carga estructural por material del techo. Riesgo viene del catálogo
+          // ROOF_MATERIALS para mantener una sola fuente de verdad.
           if (f.roofMaterial && panel?.kg && res.numPanels > 0) {
             const totalKg = panel.kg * res.numPanels;
             const m2Used = res.numPanels * m2PerPanel;
             const kgPerM2 = totalKg / Math.max(1, m2Used);
-            const matWeights = { teja_barro: 'crítico', lamina: 'medio', concreto: 'bajo', shingle: 'medio', otra: 'evaluar' };
-            const risk = matWeights[f.roofMaterial] || 'evaluar';
+            const risk = ROOF_MATERIALS[f.roofMaterial]?.risk || 'evaluar';
             if (risk === 'crítico') {
               obs.push({ type: 'warn', title: `Carga estructural a evaluar (${kgPerM2.toFixed(1)} kg/m² adicional sobre teja barro)`, text: `Teja de barro tiene capacidad estructural limitada (~50-80 kg/m² adicional). Tu sistema añade ${totalKg.toFixed(0)} kg distribuidos en ${m2Used.toFixed(0)} m² (${kgPerM2.toFixed(1)} kg/m²). RETIE NSR-10 obliga cálculo estructural por ingeniero civil — requiere visita técnica obligatoria.` });
             } else if (risk === 'medio') {
@@ -4465,9 +4541,18 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           // ════════════ PACK 4 — Comerciales: garantías + Ley 1715 + AGPE ════════════
           obs.push({ type: 'info', title: 'Garantías estándar de los equipos', text: 'PANELES: 12-15 años de producto + 25 años de producción (típicamente al 80% de output). INVERSOR: 5-10 años extensible a 15-20 con upgrade pagado. BATERÍAS LFP: 10 años o 6.000 ciclos (~80% capacidad). Verificar garantía exacta del fabricante en propuesta detallada.' });
           if (bgt?.tot > 0) {
-            const ley1715Renta = bgt.tot * 0.50;  // Deducción 50% renta
-            const ley1715Iva = bgt.tot * 0.19;     // Exclusión IVA 19%
-            obs.push({ type: 'info', title: `Beneficios Ley 1715/2014 — hasta ~${fmtCOP(ley1715Renta + ley1715Iva)} ahorro tributario`, text: `Sistemas FV cumplen con FNCE (Fuente No Convencional de Energía). Beneficios cuantificados: (1) Deducción renta 50% del valor del proyecto durante 15 años desde año fiscal — hasta ${fmtCOP(ley1715Renta)}. (2) Exclusión IVA 19% sobre equipos importados/nacionales — hasta ${fmtCOP(ley1715Iva)}. (3) Exclusión arancel sobre importación de paneles e inversores. (4) Depreciación acelerada — hasta 20%/año vs 10% normal. Aplicar via UPME → MinHacienda con factura del proyecto.` });
+            // Ley 1715/2014 Art. 11: deducción del 50% de la inversión, distribuida
+            // hasta en 15 años, sobre la base gravable de renta. El AHORRO TRIBUTARIO
+            // efectivo es esa deducción × tarifa de renta corporativa (35% Ley 2277/2022).
+            // Aplicar 50% directo sin multiplicar por la tasa SOBRESTIMA el beneficio ~2.86×.
+            const TASA_RENTA = 0.35;
+            const ley1715Renta = bgt.tot * 0.50 * TASA_RENTA;
+            // Ley 1715/2014 Art. 12: exclusión de IVA aplica únicamente a equipos FNCE
+            // (paneles, inversores, baterías y componentes). NO aplica a transporte ni
+            // a obra civil/instalación. bgt.sA es el subtotal de equipos antes de IVA.
+            const ivaBase = bgt.sA || 0;
+            const ley1715Iva = ivaBase * 0.19;
+            obs.push({ type: 'info', title: `Beneficios Ley 1715/2014 — hasta ~${fmtCOP(ley1715Renta + ley1715Iva)} ahorro tributario`, text: `Sistemas FV cumplen con FNCE (Fuente No Convencional de Energía). Beneficios cuantificados (estimados — aplican a personas/empresas declarantes de renta): (1) Deducción renta 50% de la inversión × tasa 35% = ahorro efectivo hasta ${fmtCOP(ley1715Renta)}, distribuida hasta en 15 años (Art. 11). (2) Exclusión IVA 19% sobre equipos FNCE (paneles, inversores, baterías): ahorro hasta ${fmtCOP(ley1715Iva)} (Art. 12 — no aplica a transporte ni instalación). (3) Exclusión arancel sobre importación de paneles e inversores (Art. 13). (4) Depreciación acelerada hasta 20%/año vs 10% normal (Art. 14). Aplicar via UPME → MinHacienda con factura del proyecto.` });
           }
           if (agpe?.excedentes > 0 && agpe?.gridExport) {
             obs.push({ type: 'info', title: `Trámite AGPE con ${operator.name}`, text: `Pasos: (1) Solicitud Conexión Simple (Formato CREG 030/2018), (2) Estudio de conexión por el OR, (3) Inscripción en CGM como AGPE ${agpe.agpeCategory}, (4) Instalación de medidor bidireccional (costo asumido por el OR para AGPE Menor ≤100 kWp), (5) Registro UPME-FNCE para beneficios Ley 1715. Tiempo total: 30-90 días. SolarHub gestiona el trámite completo.` });
@@ -4729,7 +4814,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               <tbody>
                 <tr><td>Paneles</td><td>{panel.brand} {panel.model} · {panel.wp} Wp × <strong>{res.numPanels}</strong> ({(res.numPanels * panel.wp / 1000).toFixed(2)} kWp DC)</td></tr>
                 <tr><td>Strings</td><td><strong>{res.ns}</strong> string{res.ns > 1 ? 's' : ''} · {res.ppss} paneles/string</td></tr>
-                {res.inv && <tr><td>Inversor</td><td>{res.inv.brand} {res.inv.model} · {res.inv.power} kW · {res.inv.phase === 3 ? 'Trifásico' : res.inv.phase === 2 ? 'Bifásico' : 'Monofásico'}</td></tr>}
+                {res.inv && <tr><td>Inversor</td><td>{res.inv.brand} {res.inv.model} · {res.inv.kw} kW · {res.inv.phase === 3 ? 'Trifásico' : res.inv.phase === 2 ? 'Bifásico' : 'Monofásico'}</td></tr>}
                 {needsB && batt && f.battQty > 0 && <tr><td>Banco baterías</td><td>{batt.brand} {batt.model} · {batt.voltage}V · {batt.kwh} kWh × <strong>{f.battQty}</strong> ({bankSeries}S × {bankParallel}P · bus {bankSeries * batt.voltage}V · {(batt.kwh * f.battQty).toFixed(2)} kWh totales)</td></tr>}
                 <tr><td>Acometida</td><td>{ACOMETIDA_INFO[f.acometida]?.label || f.acometida}</td></tr>
                 <tr><td>Área del techo</td><td>{f.availableArea ? `${f.availableArea} m² declarados` : 'no especificada'}{f.googleAreaM2 ? ` · ${Math.round(f.googleAreaM2)} m² aprovechables (Google Solar)` : ''}</td></tr>
@@ -4754,7 +4839,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                   <div className="al-pdf-comp">
                     <div className="al-pdf-comp-icon" style={{ color: '#01708B' }}>⊞</div>
                     <div className="al-pdf-comp-label">Inversor</div>
-                    <div className="al-pdf-comp-spec">{res.inv.power} kW<br />{res.inv.phase === 3 ? '3∼' : res.inv.phase === 2 ? '2∼' : '1∼'}</div>
+                    <div className="al-pdf-comp-spec">{res.inv.kw} kW<br />{res.inv.phase === 3 ? '3∼' : res.inv.phase === 2 ? '2∼' : '1∼'}</div>
                   </div>
                   <div className="al-pdf-arrow">→</div>
                 </>

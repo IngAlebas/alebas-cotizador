@@ -12,6 +12,8 @@ export const C = {
   oBorder: '#FF8C0030',                               // border naranja
   text:   '#e8f4f7', muted: '#7a9eaa',
   green:  '#4ade80', red: '#f87171',
+  // FluxAI brand (plataforma de monitoreo integrada)
+  fluxGreen: '#10B981', fluxBlue: '#3B82F6',
 };
 
 // ==================== OPERATORS DE RED (OR) ====================
@@ -735,16 +737,18 @@ export const DEPTS = [
   'Santander','Sucre','Tolima','Valle del Cauca','Vaupés','Vichada'
 ];
 
-// Materiales de cubierta — tipo de montaje recomendado, peso y notas RETIE/estructurales
+// Materiales de cubierta — tipo de montaje recomendado, peso y notas RETIE/estructurales.
+// `risk` (bajo|medio|crítico|evaluar) alimenta la advertencia NSR-10 en Quoter; `structuralRisk`
+// es flag derivado para el cue visual ⚠.
 export const ROOF_MATERIALS = {
-  teja_eternit:  { label: 'Teja fibrocemento (Eternit)', mountingType: 'Perfil aluminio gancho', weightKgM2: 16, notes: 'Verificar estado de la teja antes de instalar. Usar tornillos autoperforantes con neopreno.' },
-  teja_zinc:     { label: 'Teja zinc / acero galvanizado', mountingType: 'Gancho S o grapa directa', weightKgM2: 5, notes: 'Estructura ligera. Protección anticorrosión en puntos de fijación.' },
-  teja_barro:    { label: 'Teja de barro / colonial', mountingType: 'Gancho de teja + perfil', weightKgM2: 42, notes: 'Requiere revisión estructural. Teja frágil — no pisar. Considerar refuerzo de pares.' },
-  concreto:      { label: 'Losa de concreto (plana)', mountingType: 'Lastrado o anclaje químico', weightKgM2: null, notes: 'Impermeabilizar perforaciones si se ancla. Opción lastrado evita perforaciones.' },
-  lamina_acero:  { label: 'Lámina acero / cubierta industrial', mountingType: 'Grapa trapecio o gancho', weightKgM2: 8, notes: 'Verificar perfil (trapezoidal, ondulada). Carga de viento calculada según NSR-10.' },
-  madera:        { label: 'Estructura de madera', mountingType: 'Riel aluminio + tornillo lag', weightKgM2: 12, notes: 'Revisar estado de vigas y correas. Tratar la madera con sellante en puntos de fijación.' },
-  membrana_pvc:  { label: 'Membrana impermeabilizante (PVC/TPO)', mountingType: 'Lastrado pedestal', weightKgM2: null, notes: 'No perforar. Sistema de pedestales regulables con lastrado en zonas sin viento extremo.' },
-  otro:          { label: 'Otro / no aplica', mountingType: 'Por definir', weightKgM2: null, notes: 'El instalador evaluará el tipo de montaje en visita técnica.' },
+  teja_eternit:  { label: 'Teja fibrocemento (Eternit)',      mountingType: 'Perfil aluminio gancho',       weightKgM2: 16,   risk: 'medio',   structuralRisk: false, icon: '▦', notes: 'Verificar estado de la teja antes de instalar. Usar tornillos autoperforantes con neopreno. Eternit frágil — no pisar.' },
+  teja_zinc:     { label: 'Teja zinc / acero galvanizado',    mountingType: 'Gancho S o grapa directa',     weightKgM2: 5,    risk: 'bajo',    structuralRisk: false, icon: '⌇', notes: 'Estructura ligera. Protección anticorrosión en puntos de fijación.' },
+  teja_barro:    { label: 'Teja de barro / colonial',         mountingType: 'Gancho de teja + perfil',      weightKgM2: 42,   risk: 'crítico', structuralRisk: true,  icon: '◇', notes: 'Requiere revisión estructural. Teja frágil — no pisar. Considerar refuerzo de pares. NSR-10 obliga cálculo por ingeniero civil.' },
+  concreto:      { label: 'Losa de concreto (plana)',         mountingType: 'Lastrado o anclaje químico',   weightKgM2: null, risk: 'bajo',    structuralRisk: false, icon: '▭', notes: 'Impermeabilizar perforaciones si se ancla. Opción lastrado evita perforaciones.' },
+  lamina_acero:  { label: 'Lámina acero / cubierta industrial', mountingType: 'Grapa trapecio o gancho',    weightKgM2: 8,    risk: 'medio',   structuralRisk: false, icon: '⌒', notes: 'Verificar perfil (trapezoidal, ondulada). Carga de viento calculada según NSR-10. Lámina <0.7 mm requiere refuerzo.' },
+  madera:        { label: 'Estructura de madera',             mountingType: 'Riel aluminio + tornillo lag', weightKgM2: 12,   risk: 'medio',   structuralRisk: false, icon: '▥', notes: 'Revisar estado de vigas y correas. Tratar la madera con sellante en puntos de fijación.' },
+  membrana_pvc:  { label: 'Membrana impermeabilizante (PVC/TPO)', mountingType: 'Lastrado pedestal',        weightKgM2: null, risk: 'bajo',    structuralRisk: false, icon: '─', notes: 'No perforar. Sistema de pedestales regulables con lastrado en zonas sin viento extremo.' },
+  otro:          { label: 'Otro / no aplica',                 mountingType: 'Por definir',                  weightKgM2: null, risk: 'evaluar', structuralRisk: false, icon: '○', notes: 'El instalador evaluará el tipo de montaje en visita técnica.' },
 };
 
 // ==================== CALCULATIONS ====================
