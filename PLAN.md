@@ -12,6 +12,36 @@
 
 ---
 
+## Benchmark competitivo
+
+> **Objetivo a 6 meses:** igualar **OpenSolar** (estándar global gratuito, principal competidor en LATAM)  
+> **Objetivo a 12 meses:** superar OpenSolar en Colombia con diferenciadores locales únicos
+
+| Software | Mercado | Precio | Posición vs SolarHub |
+|---|---|---|---|
+| **Aurora Solar** | USA | $800-2.000/mes | Referencia premium; inalcanzable en precio, alcanzable en funciones clave |
+| **OpenSolar** | Global / LATAM | Gratis | **Benchmark principal** — igualar en 6 meses |
+| **PVsyst** | Global (ingenieros) | €1.500/año | Estándar de simulación — igualar en precisión de cálculo (Fase 1) |
+| **Helioscope** | USA / LATAM | ~$150/mes | Referencia para proyectos comerciales y string design |
+| **SAM (NREL)** | Global | Gratis | Referencia técnica — nuestros números deben alinearse con los suyos |
+| **Excel del instalador** | Colombia | Gratis | Hoy el 70% usa Excel — SolarHub ya gana aquí |
+
+### Ventajas diferenciales de SolarHub (que ningún competidor tiene para Colombia)
+1. **Compliance CREG 174/2021 + Ley 1715 nativo** — ningún software extranjero lo modela
+2. **Motor fiscal colombiano** (deducción renta 50%, depreciación acelerada, aranceles 0%)
+3. **Integración FluxAI** — monitoreo post-venta enlazado con la cotización original
+4. **Tarifas OR reales** por operador + estrato (XM + CREG)
+5. **Marketplace RETIE** — instaladores certificados en Colombia
+
+### Brechas críticas para igualar OpenSolar
+- Plano unifilar eléctrico generado automáticamente (permit-ready)
+- Análisis de sombreado hora por hora (hoy es factor genérico)
+- Propuesta comercial PDF de nivel profesional (~15-20 páginas con análisis financiero completo)
+- CRM con pipeline de ventas (lead → propuesta → aprobada → instalada → monitoreada)
+- String design con validación MPPT detallada
+
+---
+
 ## Estado global del producto
 
 | Área | Madurez actual | Meta |
@@ -256,20 +286,61 @@
 
 ---
 
+## FASE 6 — Igualar OpenSolar: outputs de nivel profesional
+> **Plazo objetivo:** mes 3-4 · Esto eleva SolarHub de "cotizador" a "software solar profesional"
+
+### 6.1 Plano unifilar eléctrico automático
+- [ ] Generar diagrama unifilar (SVG o canvas) basado en la configuración del sistema: paneles → string boxes → inversor → protecciones → medidor → red
+- [ ] Mostrar en el cotizador como vista previa y exportar en el PDF
+- [ ] Incluir especificaciones de cada componente (fusibles, breakers, calibre de cable)
+- [ ] Cumplir simbología RETIE Colombia (NTC 1340)
+- [ ] Para AGPE: mostrar punto de conexión a la red del OR
+
+### 6.2 Análisis de sombreado hora por hora
+- [ ] Usar `SunPathDiagram.jsx` (ya existe) + datos de obstáculos del techo de Google Solar
+- [ ] Calcular factor de sombreado mensual (no genérico) por posición de cada panel
+- [ ] Integrar con `calculateLayout()` para ajustar producción estimada por sombreado real
+- [ ] Mostrar "pérdidas por sombreado estimadas: X% (Y kWh/año)"
+
+### 6.3 Propuesta comercial PDF de nivel profesional
+- [ ] Rediseñar PDF de ~5 páginas actuales a ~15-20 páginas estilo Aurora Solar / OpenSolar
+- [ ] Incluir: resumen ejecutivo, especificaciones técnicas, análisis financiero 25 años, plano unifilar, renders del techo con paneles, normativa aplicable, perfil del instalador
+- [ ] Tabla de producción anual con degradación mes a mes
+- [ ] Gráfico comparativo "con sistema / sin sistema" en factura
+- [ ] Motor fiscal Ley 1715: sección dedicada con cifras (deducción renta + depreciación + IVA)
+- [ ] Versión ejecutiva (2 páginas) para presentar a financiadores
+
+### 6.4 CRM con pipeline de ventas
+- [ ] Estados del pipeline: `nueva` → `en_contacto` → `propuesta_enviada` → `en_negociación` → `aprobada` → `en_instalación` → `ganada` → `perdida`
+- [ ] BackOffice: vista kanban o tabla con filtros por estado, instalador, departamento, potencia
+- [ ] Automatización: recordatorio si lead lleva >7 días sin actividad
+- [ ] Métricas: tasa de conversión por etapa, tiempo promedio de ciclo de venta, valor promedio por departamento
+
+### 6.5 String design con validación MPPT completa
+- [ ] Extender `validateLayout()` para calcular múltiples strings en paralelo con diferentes orientaciones
+- [ ] Validar temperatura: Voc corregido por temp mínima de sitio (datos NASA POWER ya disponibles)
+- [ ] Validar Vmp en temperatura máxima dentro del rango MPPT
+- [ ] Mostrar advertencia si string está fuera de ventana MPPT del inversor seleccionado
+- [ ] Output: "String 1: 10 paneles · Voc=420V · Vmp=352V ✅ dentro de MPPT 200-480V"
+
+---
+
 ## Backlog / ideas futuras (sin fecha)
 
-- **Degradación mensual**: ajustar producción esperada por suciedad estacional (soiling regional)
+- **Soiling regional**: factor de suciedad por estación (Caribe seco vs Andes lluvioso)
 - **Seguimiento post-venta**: encuesta de satisfacción a 30/90/365 días
-- **API pública para integradores**: permitir que instaladores consulten el cotizador desde sus propias apps
-- **Multi-idioma**: inglés para clientes de proyectos industriales con inversión extranjera
-- **Financiamiento solar**: integrar opciones de leasing/crédito solar (Bancóldex, banca verde)
-- **App móvil nativa**: React Native reutilizando lógica de constants.js
-- **Migración a Vite** (ver Fase 3.5)
+- **API pública para integradores**: instaladores consultan el motor de cálculo desde sus propias apps
+- **Multi-idioma**: inglés para proyectos industriales con inversión extranjera
+- **Financiamiento solar**: integrar PSP + opciones leasing/crédito solar (Bancóldex, banca verde)
+- **App móvil nativa**: React Native reutilizando lógica de `constants.js`
+- **Migración CRA → Vite** (ver Fase 3.5)
+- **LIDAR del techo**: reemplazar Google Solar con LIDAR propio para mayor precisión en sombreado (largo plazo)
 
 ---
 
 ## Registro de cambios del plan
 
-| Fecha | Qué cambió |
-|---|---|
-| 2026-05-24 | v1.0 — creación del plan maestro unificado (consolida AUDIT.md + REVIEW.md + ROADMAP-FLUXAI.md + sesiones de desarrollo) |
+| Fecha | Versión | Qué cambió |
+|---|---|---|
+| 2026-05-24 | v1.0 | Creación del plan maestro unificado (consolida AUDIT.md + REVIEW.md + ROADMAP-FLUXAI.md + sesiones de desarrollo) |
+| 2026-05-24 | v1.1 | Agrega benchmark competitivo vs Aurora Solar / OpenSolar / PVsyst. Agrega Fase 6 (outputs nivel profesional): unifilar automático, sombreado hora a hora, PDF premium, CRM pipeline, string design MPPT |
