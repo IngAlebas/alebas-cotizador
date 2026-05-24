@@ -4,7 +4,7 @@ import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS, CARRIERS, ZONA_LABEL,
   calcSystem, calcTransport, calcBudget, pickBestTransport, selectCompatibleInverter,
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
-  tariffCU, excedentePriceFor, splitCU,
+  tariffCU, excedentePriceFor, splitCU, calcMonthlyNetMetering,
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
   getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS,
   getPR, DEPT_PR,
@@ -2280,6 +2280,41 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                     : 'Cálculo de excedentes basado en tarifa CU del operador (sin acceso a bolsa XM en este momento). El autoconsumo asume cobertura del consumo mensual; el resto de la generación se contabiliza como excedentes inyectados a la red.')
                 : 'Los sistemas off-grid no están conectados al SIN: la energía que excede el consumo y la capacidad de las baterías se desperdicia (dump load). Para monetizar excedentes se requiere un sistema on-grid o híbrido bajo marco AGPE (CREG 174/2021).'}
             </div>
+
+            {/* CREG 030/2018 — desglose mensual de net metering (solo con excedentes on-grid/híbrido) */}
+            {agpe.gridExport && f.wantsExcedentes && f.monthlyKwh && res?.mp > 0 && (() => {
+              const tarifa = agpe.tariffCU || getEffectiveTariff(operator, f.estrato);
+              const netM = calcMonthlyNetMetering(res.mp, parseFloat(f.monthlyKwh), tarifa, 0.8);
+              return (
+                <div style={{ background: `${C.teal}10`, border: `1px solid ${C.teal}33`, borderRadius: 10, padding: '12px 14px', marginTop: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, marginBottom: 8, letterSpacing: 0.3 }}>
+                    Desglose mensual — Net Metering CREG 030/2018
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 8 }}>
+                    <div style={{ background: C.dark, borderRadius: 7, padding: '9px 11px' }}>
+                      <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 }}>Autoconsumo</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{fmt(netM.autoconsumo)} kWh</div>
+                      <div style={{ fontSize: 9, color: C.teal, marginTop: 2 }}>Ahorro {fmtCOP(netM.savingsAutoconsumo)}</div>
+                    </div>
+                    <div style={{ background: C.dark, borderRadius: 7, padding: '9px 11px' }}>
+                      <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 }}>Excedentes red</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{fmt(netM.excedentes)} kWh</div>
+                      <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>Crédito {fmtCOP(netM.creditExcedentes)}</div>
+                    </div>
+                    <div style={{ background: C.dark, borderRadius: 7, padding: '9px 11px' }}>
+                      <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 }}>Factura neta</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: netM.facturaNeta === 0 ? C.green : '#fff' }}>{fmtCOP(netM.facturaNeta)}</div>
+                      <div style={{ fontSize: 9, color: C.green, marginTop: 2 }}>Ahorro {fmtCOP(netM.ahorro)}/mes</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.5 }}>
+                    Créditos aplicados mensualmente (no acumulables entre meses). Excedentes liquidados al{' '}
+                    <span style={{ color: C.yellow, fontWeight: 600 }}>80% de la tarifa CU</span>{' '}
+                    ({Math.round(tarifa * 0.8)} COP/kWh) — componentes T+D+Cv+PR+R, sin G (CREG 030/2018 + CREG 174/2021 art. 7).
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 

@@ -1100,6 +1100,60 @@ export function validateLayout(panel, inverter, panelsPerString, numStrings, col
   };
 }
 
+// CREG 030/2018 — Cálculo mensual de net metering para AGPE Menor (≤ 100 kW).
+// Los créditos de excedentes se aplican mensualmente, no anualmente.
+// El precio de los excedentes (bolsa) es ≈ 80% de la tarifa CU usuario final
+// (componente G del CU según CREG 174/2021 art. 7). excedentePricePct=0.8 por defecto.
+//
+// Parámetros:
+//   monthlyProdKwh    — producción mensual estimada del sistema (kWh)
+//   monthlyConsumoKwh — consumo mensual del usuario (kWh, del recibo)
+//   tarifaKwh         — tarifa CU efectiva del operador (COP/kWh)
+//   excedentePricePct — fracción de la tarifa que recibe el usuario por excedentes (default 0.80)
+//
+// Retorna un objeto con el desglose mensual completo.
+export function calcMonthlyNetMetering(monthlyProdKwh, monthlyConsumoKwh, tarifaKwh, excedentePricePct = 0.8) {
+  const prod = Math.max(0, Number(monthlyProdKwh) || 0);
+  const cons = Math.max(0, Number(monthlyConsumoKwh) || 0);
+  const tarifa = Math.max(0, Number(tarifaKwh) || 0);
+  const pct = Math.max(0, Math.min(1, Number(excedentePricePct) || 0.8));
+
+  // Energía autoconsumida directamente (desplaza compra a la red)
+  const autoconsumo = Math.min(prod, cons);
+  // Energía inyectada a la red (si producción > consumo)
+  const excedentes = Math.max(0, prod - cons);
+  // Energía que aún se compra a la red (si consumo > producción)
+  const deficit = Math.max(0, cons - prod);
+
+  // Ahorro por autoconsumo: kWh que NO se compran a la tarifa plena
+  const savingsAutoconsumo = Math.round(autoconsumo * tarifa);
+  // Crédito por excedentes inyectados (liquidados al precio de bolsa ≈ 80% CU)
+  const creditExcedentes = Math.round(excedentes * tarifa * pct);
+  // Costo de la energía que todavía se compra a la red
+  const costoDeficit = Math.round(deficit * tarifa);
+
+  // Factura neta = lo que aún se paga a la red menos el crédito de excedentes.
+  // La diferencia puede ser cero si el crédito supera el déficit (saldo a favor al siguiente mes).
+  const facturaNeta = Math.max(0, costoDeficit - creditExcedentes);
+
+  // Ahorro total vs. no tener solar: factura sin solar - factura con solar
+  const facturaSinSolar = Math.round(cons * tarifa);
+  const ahorro = facturaSinSolar - facturaNeta;
+
+  return {
+    autoconsumo: Math.round(autoconsumo),
+    excedentes: Math.round(excedentes),
+    deficit: Math.round(deficit),
+    savingsAutoconsumo,
+    creditExcedentes,
+    costoDeficit,
+    facturaNeta,
+    facturaSinSolar,
+    ahorro,
+    excedentePricePct: pct,
+  };
+}
+
 // localStorage helpers (replaces window.storage for production)
 export const storage = {
   get: (key) => {

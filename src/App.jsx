@@ -44,6 +44,7 @@ function AdminLogin({ onSuccess }) {
 
 
 function AppShell() {
+  const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState('quoter');
   const [adminAuth, setAdminAuth] = React.useState(false);
   const [boTab, setBoTab] = useState('dashboard');
@@ -92,6 +93,7 @@ function AppShell() {
       }
     }).catch(() => {});
     try { const ra = storage.get('sh:admin'); if (ra?.value==='1') setAdminAuth(true); } catch {}
+    setHydrated(true);
   }, []);
 
   const sv = (k, d) => storage.set(k, JSON.stringify(d));
@@ -242,7 +244,7 @@ function AppShell() {
       )}
       {view === 'instalador' && <InstallerReg addInstaller={addInst} />}
       {/* view=proveedor is now full-page in App() — not rendered inside the shell */}
-      {view === 'backoffice' && (
+      {view === 'backoffice' && hydrated && (
         adminAuth
           ? <BackOffice
               tab={boTab} setTab={setBoTab}

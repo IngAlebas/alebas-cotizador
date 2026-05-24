@@ -17,7 +17,31 @@
     },
     {
       "parameters": {
-        "jsCode": "// Admite filtros opcionales: status, limit, search (email/nombre)\nconst src = $input.first().json;\nconst body = src.body || src;\nconst status = (body.status || '').toString().trim();\nconst search = (body.search || '').toString().trim();\nconst limit = Math.min(500, Math.max(1, Number(body.limit || 100)));\nreturn [{ json: { status, search: search ? `%${search.toLowerCase()}%` : '', limit } }];"
+        "jsCode": "// JWT guard — lightweight token presence check.\n// Full JWT signature verification activates when PR #162 merges and\n// JWT_SECRET + jsonwebtoken are available in the n8n runner env.\n// Until then, this guards against unauthenticated calls by requiring\n// a non-empty Authorization Bearer token or a body.token field.\nconst src = $input.first().json;\nconst headers = src.headers || {};\nconst body = src.body || src;\n\n// Accept token from Authorization header OR body.token (BackOffice sends header)\nconst authHeader = (headers.authorization || headers.Authorization || '').toString();\nconst tokenFromHeader = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();\nconst tokenFromBody = (body.token || '').toString().trim();\nconst token = tokenFromHeader || tokenFromBody;\n\nif (!token || token.length < 10) {\n  // Return 401 through the Respond node — throw stops further execution\n  // and n8n's error output sends a 500 by default, so we set a flag instead.\n  // We pass the raw input through with an __authError flag for the next node.\n  return [{ json: { __authError: true, error: 'Unauthorized', status: 401 } }];\n}\n\n// Token present — pass original input downstream\nreturn [{ json: { ...src, __authError: false } }];"
+      },
+      "id": "c3000000-0001-4000-9000-000000000006",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [350, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: 'Unauthorized' } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "c3000000-0001-4000-9000-000000000007",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [460, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gate: block if auth failed\nconst src = $input.first().json;\nif (src.__authError) return [];\n// Admite filtros opcionales: status, limit, search (email/nombre)\nconst body = src.body || src;\nconst status = (body.status || '').toString().trim();\nconst search = (body.search || '').toString().trim();\nconst limit = Math.min(500, Math.max(1, Number(body.limit || 100)));\nreturn [{ json: { status, search: search ? `%${search.toLowerCase()}%` : '', limit } }];"
       },
       "id": "c3000000-0001-4000-9000-000000000002",
       "name": "Parse filters",
@@ -64,7 +88,15 @@
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Parse filters", "type": "main", "index": 0 }]] },
+    "Webhook": { "main": [[{ "node": "Auth Check", "type": "main", "index": 0 }]] },
+    "Auth Check": {
+      "main": [
+        [
+          { "node": "Parse filters", "type": "main", "index": 0 },
+          { "node": "Respond 401", "type": "main", "index": 0 }
+        ]
+      ]
+    },
     "Parse filters": { "main": [[{ "node": "Postgres query", "type": "main", "index": 0 }]] },
     "Postgres query": { "main": [[{ "node": "Wrap response", "type": "main", "index": 0 }]] },
     "Wrap response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
@@ -74,5 +106,5 @@
   "staticData": null,
   "tags": [{ "name": "alebas" }],
   "triggerCount": 0,
-  "versionId": "1"
+  "versionId": "2"
 }
