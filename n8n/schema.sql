@@ -170,3 +170,152 @@ ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_approved_at TIMESTAMPTZ;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tech_notes       TEXT;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS doc_status       TEXT DEFAULT 'pendiente';
 -- doc_status values: 'pendiente' | 'en_revision' | 'aprobado' | 'cambios_solicitados'
+
+-- ============================================================
+-- FASE MARKETPLACE: proveedores, stock, órdenes de compra
+-- ============================================================
+
+-- Ensure suppliers table is complete with B2B marketplace fields
+CREATE TABLE IF NOT EXISTS suppliers (
+  id               SERIAL PRIMARY KEY,
+  company          TEXT NOT NULL,
+  contact          TEXT,
+  email            TEXT UNIQUE NOT NULL,
+  phone            TEXT,
+  nit              TEXT,
+  city             TEXT,
+  dept             TEXT,
+  category         TEXT,
+  notes            TEXT,
+  bank_account     JSONB,
+  platform_fee_pct NUMERIC(5,2) DEFAULT 10.0,
+  supplier_token   UUID DEFAULT gen_random_uuid(),
+  password_hash    TEXT,
+  active           BOOLEAN DEFAULT TRUE,
+  verified         BOOLEAN DEFAULT FALSE,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  status           TEXT DEFAULT 'pendiente'
+);
+-- Extend if table already existed (idempotent)
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS nit              TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS city             TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS dept             TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bank_account     JSONB;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS platform_fee_pct NUMERIC(5,2) DEFAULT 10.0;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS supplier_token   UUID DEFAULT gen_random_uuid();
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS password_hash    TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS active           BOOLEAN DEFAULT TRUE;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS verified         BOOLEAN DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_suppliers_token ON suppliers(supplier_token);
+CREATE INDEX IF NOT EXISTS idx_suppliers_email ON suppliers(email);
+
+-- supplier_stock: inventario del proveedor en la plataforma
+CREATE TABLE IF NOT EXISTS supplier_stock (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  supplier_id     INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  equipment_type  VARCHAR(20) NOT NULL CHECK(equipment_type IN ('panel','inverter','battery','structure','protection','cable','other')),
+  brand           VARCHAR(100) NOT NULL,
+  model           VARCHAR(200) NOT NULL,
+  wp              INTEGER,         -- paneles FV (Wp)
+  kw              NUMERIC(8,2),    -- inversores (kW)
+  kwh             NUMERIC(8,2),    -- baterías (kWh)
+  unit_price_cop  BIGINT NOT NULL,
+  qty_available   INTEGER NOT NULL DEFAULT 0 CHECK(qty_available >= 0),
+  qty_reserved    INTEGER NOT NULL DEFAULT 0 CHECK(qty_reserved >= 0),
+  lead_time_days  INTEGER DEFAULT 3,
+  specs           JSONB,
+  is_active       BOOLEAN DEFAULT true,
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_stock_supplier   ON supplier_stock(supplier_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_stock_type       ON supplier_stock(equipment_type);
+CREATE INDEX IF NOT EXISTS idx_stock_critical   ON supplier_stock(supplier_id, qty_available) WHERE qty_available < 5 AND is_active = true;
+
+-- PO sequence for human-readable order numbers
+CREATE SEQUENCE IF NOT EXISTS po_seq START 1;
+
+-- purchase_orders: órdenes de compra SolarHub → proveedor (modelo on-demand)
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_number         VARCHAR(20) UNIQUE NOT NULL DEFAULT 'PO-' || to_char(NOW(),'YYYY') || '-' || lpad(nextval('po_seq')::TEXT,4,'0'),
+  quote_id          BIGINT REFERENCES quotes(id),
+  supplier_id       INTEGER REFERENCES suppliers(id),
+  technician_id     INTEGER REFERENCES technicians(id),
+  status            VARCHAR(30) DEFAULT 'pendiente' CHECK(status IN ('pendiente','confirmado','preparando','enviado','entregado','instalado','completado','cancelado')),
+  -- Financials (equipment side)
+  subtotal_equipment  BIGINT DEFAULT 0,
+  platform_fee_pct    NUMERIC(5,2) DEFAULT 10.0,
+  platform_fee_cop    BIGINT DEFAULT 0,
+  supplier_net_cop    BIGINT DEFAULT 0,
+  -- Financials (installation side)
+  installation_total  BIGINT DEFAULT 0,
+  tech_fee_pct        NUMERIC(5,2) DEFAULT 80.0,
+  tech_earnings_cop   BIGINT DEFAULT 0,
+  sh_install_fee_cop  BIGINT DEFAULT 0,
+  -- Delivery
+  tracking_code     TEXT,
+  estimated_delivery DATE,
+  -- Timestamps per milestone
+  confirmed_at      TIMESTAMPTZ,
+  shipped_at        TIMESTAMPTZ,
+  delivered_at      TIMESTAMPTZ,
+  installed_at      TIMESTAMPTZ,
+  completed_at      TIMESTAMPTZ,
+  cancelled_at      TIMESTAMPTZ,
+  -- Ratings (1-5)
+  supplier_rating   INTEGER CHECK(supplier_rating BETWEEN 1 AND 5),
+  tech_rating       INTEGER CHECK(tech_rating BETWEEN 1 AND 5),
+  -- Meta
+  notes             TEXT,
+  created_by        TEXT DEFAULT 'admin',
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_supplier   ON purchase_orders(supplier_id, status);
+CREATE INDEX IF NOT EXISTS idx_po_quote      ON purchase_orders(quote_id);
+CREATE INDEX IF NOT EXISTS idx_po_tech       ON purchase_orders(technician_id);
+CREATE INDEX IF NOT EXISTS idx_po_status_ts  ON purchase_orders(status, created_at DESC);
+
+-- po_items: productos en cada orden de compra
+CREATE TABLE IF NOT EXISTS po_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id           UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  stock_id        UUID REFERENCES supplier_stock(id),
+  equipment_type  VARCHAR(20),
+  brand           VARCHAR(100),
+  model           VARCHAR(200),
+  qty             INTEGER NOT NULL DEFAULT 1 CHECK(qty > 0),
+  unit_price_cop  BIGINT,
+  line_total_cop  BIGINT,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_items_po ON po_items(po_id);
+
+-- commissions: registro de comisiones de la plataforma
+CREATE TABLE IF NOT EXISTS commissions (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id            UUID REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  commission_type  VARCHAR(30) NOT NULL, -- 'platform_equipment' | 'platform_install' | 'tech_labor'
+  beneficiary      VARCHAR(20) NOT NULL, -- 'solarhub' | 'technician' | 'supplier'
+  tech_id          INTEGER REFERENCES technicians(id),
+  supplier_id      INTEGER REFERENCES suppliers(id),
+  amount_cop       BIGINT NOT NULL,
+  pct              NUMERIC(5,2),
+  status           VARCHAR(20) DEFAULT 'pendiente' CHECK(status IN ('pendiente','en_proceso','pagada')),
+  paid_at          TIMESTAMPTZ,
+  payment_ref      TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_commissions_po       ON commissions(po_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_tech     ON commissions(tech_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_supplier ON commissions(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_commissions_status   ON commissions(status, beneficiary);
+
+-- Add supplier/PO columns to quotes (idempotent)
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id);
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS po_id       UUID REFERENCES purchase_orders(id);
+
+-- Trigger to auto-update updated_at on supplier_stock
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS supplier_stock_updated_at ON supplier_stock;
+CREATE TRIGGER supplier_stock_updated_at BEFORE UPDATE ON supplier_stock FOR EACH ROW EXECUTE FUNCTION update_updated_at();

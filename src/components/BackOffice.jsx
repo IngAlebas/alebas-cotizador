@@ -188,13 +188,41 @@ function PriceMgr({ pricing, upd, ss }) {
   );
 }
 
-function QuotesMgr({ quotes, ss }) {
+function QuotesMgr({ quotes, suppliers: suppliersList = [], ss }) {
   const [sel, setSel] = useState(null);
   const [assignTechId, setAssignTechId] = useState('');
   const [assigning, setAssigning] = useState(false);
   // Local overrides for tech assignment state (reflects optimistic updates without needing prop setter)
   const [techOverrides, setTechOverrides] = useState({});
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
+  const [creatingPO, setCreatingPO] = useState(false);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [poInstallAmt, setPoInstallAmt] = useState('');
+
+  const handleCreatePO = async (quote, supplierId, installAmt) => {
+    setCreatingPO(true);
+    try {
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      const payload = quote.payload || {};
+      const items = [];
+      // Build items from quote: panels
+      if (payload.panel && payload.num_panels) {
+        items.push({ equipment_type:'panel', brand: payload.panel_brand||'Panel', model: payload.panel_model||'', qty: payload.num_panels, unit_price_cop: payload.panel_price||0, line_total_cop: (payload.num_panels||0)*(payload.panel_price||0) });
+      }
+      // inverter
+      if (payload.inverter_model) {
+        items.push({ equipment_type:'inverter', brand: payload.inverter_brand||'Inversor', model: payload.inverter_model, qty: 1, unit_price_cop: payload.inverter_price||0, line_total_cop: payload.inverter_price||0 });
+      }
+      const subtotal = items.reduce((s,i)=>s+(i.line_total_cop||0), 0);
+      const res = await fetch(`${base}/supplier-po`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ method:'POST_CREATE', supplier_id: supplierId, quote_id: quote.id, technician_id: quote.technician_id||null, items, subtotal_equipment: subtotal || quote.section_a_cop || 0, installation_total: installAmt||0, platform_fee_pct:10, tech_fee_pct:80 })
+      });
+      const data = await res.json();
+      if (data.ok) { alert(`✓ Orden ${data.po_number} creada`); /* refresh */ }
+      else { alert('Error: ' + data.error); }
+    } catch(e) { alert('Error de red'); } finally { setCreatingPO(false); }
+  };
 
   const handleAssignTech = async (selectedQuote) => {
     if (!assignTechId || !selectedQuote?.id) return;
@@ -321,6 +349,121 @@ function QuotesMgr({ quotes, ss }) {
                 {q.doc_status === 'aprobado' ? '✓ Documentos aprobados por técnico' :
                  q.doc_status === 'en_revision' ? '🔄 En revisión técnica' :
                  q.doc_status === 'cambios_solicitados' ? '↩ Técnico solicitó cambios' : q.doc_status}
+              </div>
+            )}
+          </div>
+
+          {/* ── Orden de Compra ── */}
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.teal}22` }}>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600 }}>ORDEN DE COMPRA</div>
+            {q.po_id ? (
+              <div style={{ background: `${C.teal}11`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '10px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>N° Orden</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>{q.po_number || q.po_id}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</div>
+                    <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${C.yellow}22`, color: C.yellow }}>{q.po_status || 'pendiente'}</span>
+                  </div>
+                  {q.supplier_id && (
+                    <div>
+                      <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Proveedor</div>
+                      <div style={{ fontSize: 11, color: '#fff' }}>{(suppliersList.find(s => s.id === q.supplier_id) || {}).company || `#${q.supplier_id}`}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (q.status === 'aprobado' || q.status === 'asignado') ? (
+              <div style={{ background: C.dark, border: `1px solid ${C.border}`, borderRadius: 7, padding: '12px 14px' }}>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Crear orden de compra para esta cotización:</div>
+
+                {/* Supplier dropdown */}
+                <div style={{ marginBottom: 8 }}>
+                  <label style={ss.lbl}>Proveedor</label>
+                  <select
+                    value={selectedSupplierId}
+                    onChange={e => setSelectedSupplierId(e.target.value)}
+                    style={{ width: '100%', background: C.card, color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '6px 10px', fontSize: 12, boxSizing: 'border-box' }}
+                  >
+                    <option value="">Seleccionar proveedor...</option>
+                    {suppliersList.map(s => (
+                      <option key={s.id} value={s.id}>{s.company}{s.category ? ` — ${s.category}` : ''}</option>
+                    ))}
+                    {suppliersList.length === 0 && <option disabled>Sin proveedores registrados</option>}
+                  </select>
+                </div>
+
+                {/* Equipment list from quote */}
+                {(q.payload?.panel || q.payload?.inverter_model) && (
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={ss.lbl}>Equipos del proyecto</label>
+                    <div style={{ background: C.card, border: `1px solid ${C.border}33`, borderRadius: 5, padding: '8px 10px', fontSize: 11 }}>
+                      {q.payload?.panel && q.payload?.num_panels && (
+                        <div style={{ color: C.text, marginBottom: 3 }}>
+                          <span style={{ color: C.muted }}>Panel:</span> {q.payload.panel_brand || ''} {q.payload.panel_model || q.payload.panel || ''} × {q.payload.num_panels}
+                          {q.payload.panel_price ? <span style={{ color: C.teal, marginLeft: 8 }}>{fmtCOP((q.payload.num_panels||0) * q.payload.panel_price)}</span> : ''}
+                        </div>
+                      )}
+                      {q.payload?.inverter_model && (
+                        <div style={{ color: C.text }}>
+                          <span style={{ color: C.muted }}>Inversor:</span> {q.payload.inverter_brand || ''} {q.payload.inverter_model} × 1
+                          {q.payload.inverter_price ? <span style={{ color: C.teal, marginLeft: 8 }}>{fmtCOP(q.payload.inverter_price)}</span> : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Installation amount */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={ss.lbl}>Monto instalación (COP)</label>
+                  <input
+                    type="number"
+                    style={{ width: '100%', background: C.card, color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '6px 10px', fontSize: 12, boxSizing: 'border-box' }}
+                    placeholder={q.section_b_cop || q.total_cop || '0'}
+                    value={poInstallAmt}
+                    onChange={e => setPoInstallAmt(e.target.value)}
+                  />
+                </div>
+
+                {/* Financial breakdown */}
+                {(poInstallAmt || q.section_a_cop) && (
+                  <div style={{ background: C.card, border: `1px solid ${C.border}33`, borderRadius: 5, padding: '8px 10px', marginBottom: 10, fontSize: 10 }}>
+                    <div style={{ color: C.muted, fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Desglose financiero</div>
+                    {(() => {
+                      const equip = q.section_a_cop || 0;
+                      const install = parseInt(poInstallAmt || q.section_b_cop || 0, 10);
+                      const platformFee = Math.round(equip * 0.10);
+                      const supplierNet = equip - platformFee;
+                      const techEarnings = Math.round(install * 0.80);
+                      const shInstall = install - techEarnings;
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 12px' }}>
+                          <div style={{ color: C.muted }}>Equipo (bruto):</div><div style={{ color: C.text }}>{fmtCOP(equip)}</div>
+                          <div style={{ color: C.muted }}>Comisión plataforma (10%):</div><div style={{ color: C.yellow }}>{fmtCOP(platformFee)}</div>
+                          <div style={{ color: C.muted }}>Neto proveedor (90%):</div><div style={{ color: C.teal }}>{fmtCOP(supplierNet)}</div>
+                          <div style={{ color: C.muted }}>Instalación:</div><div style={{ color: C.text }}>{fmtCOP(install)}</div>
+                          <div style={{ color: C.muted }}>Ganancia técnico (80%):</div><div style={{ color: C.teal }}>{fmtCOP(techEarnings)}</div>
+                          <div style={{ color: C.muted }}>SolarHub instalación (20%):</div><div style={{ color: C.yellow }}>{fmtCOP(shInstall)}</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => handleCreatePO(q, Number(selectedSupplierId), parseInt(poInstallAmt || q.section_b_cop || 0, 10))}
+                  disabled={!selectedSupplierId || creatingPO}
+                  style={{ width: '100%', background: selectedSupplierId ? C.yellow : '#333', color: selectedSupplierId ? '#07090F' : '#fff', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 12, fontWeight: 700, cursor: selectedSupplierId ? 'pointer' : 'not-allowed' }}
+                >
+                  {creatingPO ? 'Creando orden...' : '🛒 Crear Orden de Compra'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
+                Disponible cuando la cotización esté en estado <strong>aprobado</strong> o <strong>asignado</strong>.
               </div>
             )}
           </div>
@@ -1192,6 +1335,35 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
                 </table>
               )}
             </div>
+
+            {/* Commission summary — calculates from quotes prop */}
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: C.yellow, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>💰 Comisiones SolarHub estimadas</div>
+              {(() => {
+                const equip = quotes.reduce((s,q)=>s+(q.section_a_cop||0),0);
+                const platformEquip = Math.round(equip * 0.10);
+                const install = quotes.reduce((s,q)=>s+(q.section_b_cop||0),0);
+                const platformInstall = Math.round(install * 0.20);
+                const totalPlatform = platformEquip + platformInstall;
+                return (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px,1fr))', gap:10 }}>
+                    {[
+                      ['Cotizaciones', quotes.length, C.muted, ''],
+                      ['Equip. (10%)', `$${Math.round(platformEquip/1000)}K`, C.teal, ''],
+                      ['Instal. (20%)', `$${Math.round(platformInstall/1000)}K`, '#FFB800', ''],
+                      ['Total plataforma', `$${Math.round(totalPlatform/1000000)}M`, C.yellow, '(est.)'],
+                    ].map(([l,v,col,note])=>(
+                      <div key={l} style={{ background:C.dark, borderRadius:8, padding:'10px 12px', border:`1px solid ${C.border}` }}>
+                        <div style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:0.5, marginBottom:3 }}>{l}</div>
+                        <div style={{ fontSize:16, fontWeight:700, color:col }}>{v}</div>
+                        {note && <div style={{ fontSize:9, color:C.muted }}>{note}</div>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize:9, color:C.muted, marginTop:10 }}>* Estimado sobre cotizaciones visibles. Las comisiones reales se registran al crear Órdenes de Compra (POs).</div>
+            </div>
           </div>
         )}
         {tab === 'panels' && <PanelsTab panels={panels} uP={uP} ss={ss} />}
@@ -1200,7 +1372,7 @@ export default function BackOffice({ tab, setTab, panels, uP, inverters, uI, bat
         {tab === 'loads' && <LoadsTab catalog={loadsCatalog} source={loadsSource} setCatalog={setLoadsCatalog} setSource={setLoadsSource} ss={ss} />}
         {tab === 'pricing' && <PriceMgr pricing={pricing} upd={uPr} ss={ss} />}
         {tab === 'operators' && <OperatorsMgr operators={operators} upd={uOp} ss={ss} />}
-        {tab === 'quotes' && <QuotesMgr quotes={quotes} ss={ss} />}
+        {tab === 'quotes' && <QuotesMgr quotes={quotes} suppliers={suppliers} ss={ss} />}
         {tab === 'installers' && <InstallersMgr installers={installers} ss={ss} />}
         {tab === 'suppliers' && <SuppliersMgr suppliers={suppliers} uSupp={uSupp} ss={ss} />}
       </main>
