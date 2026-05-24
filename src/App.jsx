@@ -103,7 +103,7 @@ export default function App() {
   const addSupp = s => { const n = [s, ...suppliers]; setSuppliers(n); sv('al:suppliers', n); };
   const uSupp = d => { setSuppliers(d); sv('al:suppliers', d); };
 
-  const logout = () => { storage.set('sh:admin','0'); setAdminAuth(false); setView('quoter'); };
+  const logout = () => { localStorage.removeItem('sh:admin'); setAdminAuth(false); setView('quoter'); };
 
   const NAV = [
     ['quoter', '☀', 'Cotizador Solar'],

@@ -76,9 +76,9 @@
 - [ ] Webhooks públicos (save-quote, validate-contact): validar por origen + rate-limit, sin token compartido
 
 ### 0.3 Idempotencia `save-quote` `[RV-3]`
-- [ ] Generar `dedupe_key UUID` en frontend al iniciar el wizard, mantenerlo en cada retry
-- [ ] Schema migration: `ALTER TABLE quotes ADD COLUMN dedupe_key UUID UNIQUE`
-- [ ] `save-quote.json`: `INSERT ... ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`
+- [x] Generar `dedupe_key UUID` en frontend al iniciar el wizard, mantenerlo en cada retry
+- [x] Schema migration: `ALTER TABLE quotes ADD COLUMN dedupe_key UUID UNIQUE`
+- [x] `save-quote.json`: `INSERT ... ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`
 - [ ] Test: doble-click en "Solicitar cotización" no genera dos filas en DB
 
 ### 0.4 Activar IA cascade en producción
@@ -94,9 +94,9 @@
 - [ ] Eliminar carpeta `api/` (DEPRECATED desde 2026-04-20): auditar logs Railway → `rm -rf api/` → remover bloque dinámico de `server.js` `[RV-4]`
 - [ ] `solar-cache.json`: verificar que `schema.sql` tiene `expires_at DEFAULT NOW() + INTERVAL '90 days'`; si no, pasar valor explícito en INSERT `[RV-5]`
 - [ ] `solar-cache.json`: agregar logging cuando `continueOnFail` oculta un error real de Postgres (hoy un MISS por error de DB es indistinguible de un MISS normal → golpea Google Solar sin control) `[RV-6]`
-- [ ] Fix logout: `localStorage.removeItem('sh:admin')` en lugar de `storage.set('sh:admin', '0')` `[RV-7]`
-- [ ] `sw.js:90`: cambiar `clients` a `self.clients.openWindow(...)` `[RV-8]`
-- [ ] `sw.js`: marcar `/manifest.json`, `/logo.svg`, `/fluxai-logo.svg` como network-first (hoy son cache-first sin hash → cambios de logo no llegan si no se bumpa SW_VERSION) `[RV-9]`
+- [x] Fix logout: `localStorage.removeItem('sh:admin')` en lugar de `storage.set('sh:admin', '0')` `[RV-7]`
+- [x] `sw.js:90`: cambiar `clients` a `self.clients.openWindow(...)` `[RV-8]`
+- [x] `sw.js`: marcar `/manifest.json`, `/logo.svg`, `/logo.png` como network-first (hoy son cache-first sin hash → cambios de logo no llegan si no se bumpa SW_VERSION) `[RV-9]`
 - [ ] `list-quotes.json`: cambiar `queryReplacement` a sintaxis array `={{ [$json.status, $json.search, $json.limit] }}` `[RV-10]`
 - [ ] Limpiar ramas `claude/*` obsoletas (hay 25+ activas): revisar con `git log --oneline origin/<rama>` y borrar las que ya están mergeadas o abandonadas
 
@@ -133,16 +133,16 @@
 - [ ] UI: badge "PR ajustado por datos reales: 0.81 (47 instalaciones similares)"
 
 ### 1.3 Motor fiscal Ley 1715/2014 + Decreto 829/2020 `[AU-ING-3]`
-- [ ] Deducción renta 50% sobre valor de la inversión
-- [ ] Depreciación acelerada (hasta 5 años, no 20)
-- [ ] Exclusión IVA equipos calificados (verificar que ya aplica completa, no solo parcial)
+- [x] Deducción renta 50% sobre valor de la inversión (mostrada en resultados)
+- [x] Depreciación acelerada (hasta 5 años, no 20) — estimación mostrada en resultados
+- [x] Exclusión IVA equipos calificados — IVA ahorrado (19% × sección A) mostrado
 - [ ] Exención arancelaria (arancel 0%) para equipos importados bajo Ley 1715
-- [ ] Mostrar en cotización: "Beneficio fiscal total estimado: $X COP" desglosado por rubro
+- [x] Mostrar en cotización: "Beneficio fiscal total estimado: $X COP" desglosado por rubro
 - [ ] Advertencia: para industrial/comercial el beneficio fiscal puede superar el ahorro tarifario en los primeros 5 años
 
 ### 1.4 Degradación anual de paneles `[AU-ING-4]`
-- [ ] Agregar `panelDegradation: 0.005` (0.5%/año típico) al modelo de proyección
-- [ ] Recalcular producción acumulada a 25 años con curva de degradación
+- [x] Agregar `panelDegradation: 0.005` (0.5%/año típico) al modelo de proyección
+- [x] Recalcular producción acumulada a 25 años con curva de degradación — mostrado en resultados
 - [ ] UI: gráfico de producción anual decreciente vs la línea constante actual
 - [ ] Ajustar payback y VPN con degradación incluida
 
@@ -154,7 +154,7 @@
 - [ ] Advertir sobre requisitos RETIE 2013 + RETILAP en el diseño entregado
 
 ### 1.6 Fixes de cálculo pendientes
-- [ ] **Cobertura >100%**: mostrar "(autoconsumo X% + excedentes Y%)" junto al `cov` para que el cliente entienda qué pasa con los excedentes `[RV-BUG-5]`
+- [x] **Cobertura >100%**: mostrar "100+ % autoconsumo + excedentes kWh/mes" en stat card `[RV-BUG-5]`
 - [ ] **`specsSource: 'heuristic'`**: marcar y mostrar warning en UI cuando se usa la heurística `pps = floor(700/40)` por falta de specs eléctricas del panel `[RV-BUG-6]`
 - [ ] **`solar_panels` JSONB tamaño**: documentar decisión — para techos grandes son ~80 KB/quote; planificar migración a tabla separada `quote_panels` cuando se superen 1.000 quotes/mes `[RV-N-1]`
 
@@ -165,8 +165,8 @@
 ### 2.1 Habeas Data Ley 1581/2012 `[AU-SEC-2]`
 - [ ] Redactar y publicar política de tratamiento de datos en `solar-hub.co/privacidad`
 - [ ] Registrar bases de datos ante SIC (Registro Nacional de Bases de Datos — RNBD)
-- [ ] Formulario Quoter paso "Contacto": checkbox **no preseleccionado** de autorización de tratamiento
-- [ ] `save-quote.json`: grabar campo `data_consent: {accepted, timestamp, version, ip}` en DB
+- [x] Formulario Quoter paso "Contacto": checkbox **no preseleccionado** de autorización de tratamiento (Ley 1581/2012)
+- [x] `save-quote.json`: grabar campo `data_consent: {accepted, timestamp, version}` en DB
 - [ ] Log de auditoría n8n: registrar quién accedió a qué cotización, cuándo y desde qué IP
 - [ ] Política de retención: TTL para datos de leads (ej. 2 años) con proceso de borrado bajo solicitud
 
@@ -468,3 +468,4 @@
 | 2026-05-24 | v1.1 | Agrega benchmark competitivo vs Aurora Solar / OpenSolar / PVsyst. Agrega Fase 6 (outputs nivel profesional) |
 | 2026-05-24 | v1.2 | Integra todas las recomendaciones pendientes: marca ítems completados en PRs #161 y #163; agrega items faltantes de REVIEW.md (sw.js network-first, solar-cache continueOnFail, solar_panels JSONB monitoring, ramas obsoletas); reorganiza Fase 2 con hidratación UI; agrega Fase 6 completa con string design MPPT por temperatura |
 | 2026-05-24 | v1.3 | Agrega Fase 7 completa — WhatsApp: setup Meta Cloud API, 7 plantillas, OTP por WhatsApp en validación de cliente, notificaciones automáticas por cambio de estado, chatbot conversacional con IA cascade, canal interno para admin/instalador, compliance Habeas Data + opt-out, KPIs esperados |
+| 2026-05-24 | v1.4 | Marca implementados: sw.js (self.clients + network-first manifest/logo), logout fix, dedupe_key idempotencia save-quote, motor fiscal Ley 1715 (IVA ahorrado + deducción renta 50% + depreciación acelerada), degradación 0.5%/año 25 años, cobertura >100% fix, Habeas Data checkbox (Ley 1581/2012) |

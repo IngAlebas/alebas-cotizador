@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS wa_conversations (
 );
 CREATE INDEX IF NOT EXISTS idx_wa_conversations_phone ON wa_conversations(phone);
 
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS dedupe_key        UUID UNIQUE;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified    BOOLEAN DEFAULT FALSE;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS verified_token    TEXT;

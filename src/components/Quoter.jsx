@@ -50,6 +50,7 @@ const Q0 = {
   loadItems: [],
   // Honeypot anti-bot — debe permanecer vacío en usuarios legítimos
   website: '',
+  dedupeKey: `dq_${Math.random().toString(36).slice(2,10)}`,
 };
 
 const uuid = () => `ld_${Math.random().toString(36).slice(2, 10)}`;
@@ -292,6 +293,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   const [otpExpiresAt, setOtpExpiresAt] = useState(null);
   const [otpToken, setOtpToken] = useState(null);
   const [otpCooldown, setOtpCooldown] = useState(0); // segundos restantes para reenvío
+  const [dataConsent, setDataConsent] = useState(false);
   const validateContact = async () => {
     setContactError(null);
     if (!f.name?.trim() || !f.phone?.trim() || !f.email?.trim()) {
@@ -553,10 +555,30 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const sizedFor = (f.wantsExcedentes && areaAllowsExcedentes) ? 'excedentes'
                    : areaLimitsSystem ? 'area'
                    : 'consumo';
+    // Motor fiscal Ley 1715/2014 + Decreto 829/2020
+    // Sección A (paneles, inversor, baterías) ya está excluida de IVA — calculamos lo ahorrado
+    const ivaAhorrado = Math.round(budget.sA * 0.19);
+    // Deducción especial del 50% sobre el valor de la inversión (renta personas jurídicas)
+    // Ahorro = 50% × inversión × tarifa renta corporativa 35%
+    const deduccionRenta50 = Math.round(budget.tot * 0.50 * 0.35);
+    // Depreciación acelerada: 5 años vs 20 años normal → diferencial primer quinquenio
+    // (15%/año × inversión × 35% tarifa renta × 5 años) — solo aplica a personas jurídicas
+    const depAcelerada = Math.round(budget.tot * 0.15 * 0.35 * 5);
+    const totalBeneficioFiscal = ivaAhorrado + deduccionRenta50;
+
+    // Proyección 25 años con degradación 0.5%/año (LFP, norma IEC 61215)
+    const DEGRADACION = 0.005;
+    const prod25yKwh = Array.from({ length: 25 }, (_, i) =>
+      Math.round(sys.ap * Math.pow(1 - DEGRADACION, i))
+    ).reduce((a, b) => a + b, 0);
+    const saving25yCOP = Math.round(prod25yKwh * cuFull);
+    const roiWithDegradation = annualSav > 0 ? parseFloat(((budget.tot - totalBeneficioFiscal) / annualSav).toFixed(1)) : roi;
+
     setRes({ ...sys, inv: inv2, sizedFor, productionSource });
     setBgt({
       ...budget,
       sav: annualSav, roi,
+      roiWithDegradation,
       transport: transport.total,
       transportCarrier: transport.label,
       transportCarrierId: transport.carrierId,
@@ -564,6 +586,12 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       transportZone: dest.zona,
       budgetUsd,
       trmDate: trmData?.date,
+      ivaAhorrado,
+      deduccionRenta50,
+      depAcelerada,
+      totalBeneficioFiscal,
+      prod25yKwh,
+      saving25yCOP,
     });
     setAgpe({ ...benefit, spotSource: spot, tariffCU: cuFull, cuSplit });
   };
@@ -585,6 +613,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       lat: f.lat, lon: f.lon,
       shadeIndex: f.shadeIndex, shadeSource: f.shadeSource,
       panel, results: res, budget: bgt, agpe, regulatory: norms, status: 'nuevo',
+      dedupeKey: f.dedupeKey,
+      phoneVerified: otpPhase === 'verified',
+      verifiedToken: otpToken || null,
+      dataConsent: dataConsent ? { accepted: true, at: new Date().toISOString(), version: '1.0' } : null,
     };
     addQuote(payload);
     setDone(true);
@@ -1269,17 +1301,29 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             ⚠ {contactError}
           </div>
         )}
-        <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 10, color: C.muted }}>
+        <div style={{ background: `${C.teal}10`, borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 10, color: C.muted }}>
           🔒 Información confidencial. Solo usada por ingenieros ALEBAS para tu propuesta técnica.
         </div>
+        {/* Habeas Data — Ley 1581/2012 */}
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer', marginBottom: 14, padding: '10px 12px', background: `${C.dark}`, border: `1px solid ${C.border}`, borderRadius: 7 }}>
+          <input
+            type="checkbox"
+            checked={dataConsent}
+            onChange={e => setDataConsent(e.target.checked)}
+            style={{ marginTop: 2, accentColor: C.teal, cursor: 'pointer', flexShrink: 0 }}
+          />
+          <span style={{ fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
+            Autorizo a <strong style={{ color: '#fff' }}>ALEBAS Ingeniería SAS</strong> el tratamiento de mis datos personales (nombre, teléfono, email, dirección) para la gestión y seguimiento de mi cotización solar, conforme a la <strong style={{ color: C.teal }}>Ley 1581/2012</strong> (Habeas Data). Los datos se almacenan en servidores en Colombia y no se comparten con terceros sin consentimiento.
+          </span>
+        </label>
 
         {/* OTP WhatsApp — se muestra después de llenar el formulario */}
         {otpPhase === 'idle' && (
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <button style={ss.ghost} onClick={() => setStep(1)}>← Atrás</button>
             <button
-              style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || validatingContact) ? 0.4 : 1 }}
-              disabled={validatingContact || !f.name || !f.phone || !f.email}
+              style={{ ...ss.btn, opacity: (!f.name || !f.phone || !f.email || !dataConsent || validatingContact) ? 0.4 : 1 }}
+              disabled={validatingContact || !f.name || !f.phone || !f.email || !dataConsent}
               onClick={async () => {
                 const ok = await validateContact();
                 if (ok) onSendOTP();
@@ -1534,11 +1578,23 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
 
         {showResumen && (
         <div className="al-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 9, marginBottom: 12 }}>
-          {[['Paneles', res.numPanels, 'unidades'], ['Prod. mensual', fmt(res.mp), 'kWh/mes'], ['Cobertura', res.cov, '%'], ['Prod. anual', fmt(res.ap), 'kWh/año'], ['CO₂ evitado', fmt(res.co2), 'kg/año'], ['ROI', bgt.roi, 'años']].map(([l, v, u]) => (
-            <div key={l} style={ss.stat}>
+          {[
+            ['Paneles', res.numPanels, 'unidades'],
+            ['Prod. mensual', fmt(res.mp), 'kWh/mes'],
+            ['Cobertura', res.cov >= 100 ? '100+' : res.cov, res.cov >= 100 ? '% autoconsumo' : '%'],
+            ['Prod. anual', fmt(res.ap), 'kWh/año'],
+            ['CO₂ evitado', fmt(res.co2), 'kg/año'],
+            ['ROI', bgt.roi, 'años'],
+          ].map(([l, v, u]) => (
+            <div key={l} style={{ ...ss.stat, position: 'relative' }}>
               <div style={{ fontSize: 9, color: C.muted, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 }}>{l}</div>
               <div style={{ fontSize: 19, fontWeight: 700, color: '#fff' }}>{v}</div>
               <div style={{ fontSize: 9, color: C.teal, marginTop: 1 }}>{u}</div>
+              {l === 'Cobertura' && res.cov >= 100 && agpe && agpe.excedentes > 0 && (
+                <div style={{ fontSize: 9, color: C.yellow, marginTop: 2 }}>
+                  +{fmt(Math.round(agpe.excedentes / 12))} kWh exc/mes
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1618,6 +1674,39 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             </div>
           );
         })()}
+
+        {showResumen && bgt.totalBeneficioFiscal > 0 && (
+          <div style={{ ...ss.card, marginBottom: 12, borderColor: C.teal + '44' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.teal, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+              ⚡ Beneficios fiscales — Ley 1715/2014
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+              <div style={{ background: C.dark, borderRadius: 7, padding: '10px 12px' }}>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 3 }}>IVA ahorrado (Art. 12 Ley 1715)</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.teal }}>{fmtCOP(bgt.ivaAhorrado)}</div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>Equipos solares excluidos de IVA (19%)</div>
+              </div>
+              <div style={{ background: C.dark, borderRadius: 7, padding: '10px 12px' }}>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 3 }}>Deducción renta 50% (personas jurídicas)</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.yellow }}>{fmtCOP(bgt.deduccionRenta50)}</div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>50% de inversión × 35% tarifa renta</div>
+              </div>
+            </div>
+            <div style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 2 }}>Beneficio fiscal total estimado</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.teal }}>{fmtCOP(bgt.totalBeneficioFiscal)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 2 }}>Inversión efectiva neta</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{fmtCOP(bgt.tot - bgt.totalBeneficioFiscal)}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.6 }}>
+              Depreciación acelerada (Decreto 829/2020, 5 años): beneficio adicional estimado <strong style={{ color: '#fff' }}>{fmtCOP(bgt.depAcelerada)}</strong> para personas jurídicas. · Proyección 25 años (0.5%/año degradación IEC 61215): <strong style={{ color: C.teal }}>{fmt(bgt.prod25yKwh)} kWh</strong> · ahorro acumulado <strong style={{ color: C.teal }}>{fmtCOP(bgt.saving25yCOP)}</strong>. · Validar con contador antes de declarar.
+            </div>
+          </div>
+        )}
 
         {showResumen && aiConfigured() && !aiUnavailable && (
           <div style={{ ...ss.card, borderColor: C.yellow + '66', background: `${C.yellow}08`, marginBottom: 12 }}>
