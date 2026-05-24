@@ -70,8 +70,18 @@ export function tariffCU(op, voltageLevel = 'N1') {
   return splitCU(op, voltageLevel).total;
 }
 
-// Precio de remuneración de excedentes AGPE Menor = CU − G (CREG 174/2021 art. 7).
-// Incluye T + D + Cv + PR + R; excluye generación.
+// Precio de remuneración del excedente exportado a la red bajo CREG 174/2021
+// art. 23 (AGPE Tipo 1, ≤ 100 kW). Corresponde a CU − G del comercializador:
+// componentes T + D + Cv + PR + R de Res. CREG 119/2007. Excluye generación.
+//
+// IMPORTANTE — NO escalar por estrato. El subsidio/contribución (factor ESTRATO)
+// solo aplica sobre la energía IMPORTADA neta del periodo (consumo facturado),
+// nunca sobre el crédito del kWh exportado:
+//   - E1/E2/E3 con factor < 1: subsidiar al usuario por VENDER energía no está
+//     contemplado en Ley 142/1994 art. 99.6 (subsidio cubre consumo ≤ CBS).
+//   - E5/E6 con factor 1.20: cobrar contribución sobre un crédito que el
+//     comercializador paga al usuario es regulatoriamente incoherente.
+// Refs: CREG 174/2021 art. 23 + Concepto CREG 6730/2020 + Ley 142/1994 art. 99.6.
 export function excedentePriceFor(op, voltageLevel = 'N1') {
   const c = splitCU(op, voltageLevel);
   return c.T + c.D + c.Cv + c.PR + c.R;
