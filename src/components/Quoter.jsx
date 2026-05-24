@@ -5,7 +5,8 @@ import {
   calcSystem, calcTransport, calcBudget, pickBestTransport, selectCompatibleInverter,
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
   tariffCU, excedentePriceFor, splitCU,
-  panelRoofAreaM2, DEFAULT_PACKING_FACTOR
+  panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
+  getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchPVWatts } from '../services/pvwatts';
@@ -21,6 +22,7 @@ import { getApplicableNormativa } from '../data/normativa';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
+  estrato: 'E4',
   panelId: '', battId: '', battQty: 2,
   destId: 'villavicencio', address: '',
   availableArea: '', wantsExcedentes: false,
@@ -542,7 +544,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
     const budget = calcBudget(sys, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, pricing, transport.total);
-    const cuFull = tariffCU(operator);
+    const cuFull = getEffectiveTariff(operator, f.estrato);
     const cuMinusG = excedentePriceFor(operator);
     const cuSplit = splitCU(operator);
     const benefit = calcAGPEBenefit(sys.ap, kwh, cuFull, spot?.cop_per_kwh || 0, sys.actKwp,
@@ -574,7 +576,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const saving25yCOP = Math.round(prod25yKwh * cuFull);
     const roiWithDegradation = annualSav > 0 ? parseFloat(((budget.tot - totalBeneficioFiscal) / annualSav).toFixed(1)) : roi;
 
-    setRes({ ...sys, inv: inv2, sizedFor, productionSource });
+    setRes({ ...sys, inv: inv2, sizedFor, productionSource, specsSource: sys.specsSource || 'heuristic' });
     setBgt({
       ...budget,
       sav: annualSav, roi,
@@ -906,6 +908,40 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
             Tarifa: <span style={{ color: C.teal }}>{operator.tariff} COP/kWh</span> · PSH: <span style={{ color: C.teal }}>{operator.psh} h/día</span>
           </div>
+        </div>
+        <div style={{ marginBottom: 13 }}>
+          <label style={ss.lbl}>Estrato / tipo de usuario</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, flexWrap: 'wrap' }}>
+            {Object.entries(ESTRATO_LABELS).map(([key, label]) => {
+              const active = f.estrato === key;
+              const factor = ESTRATO_FACTORS[key];
+              const col = factor < 1 ? C.green : factor > 1 ? C.orange : C.teal;
+              return (
+                <button key={key} type="button" onClick={() => u('estrato', key)}
+                  style={{ padding: '7px 6px', borderRadius: 6,
+                           border: `2px solid ${active ? col : C.border}`,
+                           background: active ? `${col}22` : 'transparent',
+                           color: active ? col : C.muted, cursor: 'pointer',
+                           fontSize: 10, fontWeight: active ? 700 : 500, textAlign: 'center', lineHeight: 1.3 }}>
+                  <div>{label.split(' — ')[0]}</div>
+                  <div style={{ fontSize: 9, opacity: 0.8 }}>{label.split(' — ')[1] || ''}</div>
+                </button>
+              );
+            })}
+          </div>
+          {(() => {
+            const eff = getEffectiveTariff(operator, f.estrato);
+            const factor = ESTRATO_FACTORS[f.estrato] ?? 1;
+            const diff = factor !== 1;
+            const col = factor < 1 ? C.green : factor > 1 ? C.orange : C.teal;
+            return (
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 5, lineHeight: 1.5 }}>
+                Tarifa efectiva: <span style={{ color: col, fontWeight: 700 }}>{eff} COP/kWh</span>
+                {diff && <> ({factor < 1 ? `subsidio ${Math.round((1 - factor) * 100)}%` : `contribución ${Math.round((factor - 1) * 100)}%`} sobre tarifa base {operator.tariff} COP/kWh)</>}
+                {' · '}Fuente: CREG 2024 — referencia. La tarifa real puede variar por resolución del {operator.name}.
+              </div>
+            );
+          })()}
         </div>
         <div style={{ marginBottom: 13 }}>
           <label style={ss.lbl}>Acometida / fases de la carga (RETIE 240)</label>
@@ -1468,7 +1504,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
         <div style={{ ...ss.card, textAlign: 'center', padding: '22px', borderColor: C.teal }}>
           <div style={{ fontSize: 9, color: C.teal, letterSpacing: 3, fontWeight: 700, marginBottom: 5, textTransform: 'uppercase' }}>Pre-dimensionamiento</div>
           <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginBottom: 3 }}>{res.actKwp} <span style={{ color: C.yellow }}>kWp</span></div>
-          <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · PSH {psh} h/día · {dest.city}, {dest.dept}</div>
+          <div style={{ color: C.muted, fontSize: 12 }}>{f.systemType} · {operator.name} · {ESTRATO_LABELS[f.estrato] || f.estrato} · PSH {psh} h/día · {dest.city}, {dest.dept}</div>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
             {/* Fuente de producción — preferencia: PVWatts > PVGIS > PSH */}
             {res.productionSource === 'PVWatts' && (
@@ -1857,6 +1893,17 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           </div>
         )}
 
+        {showTecnico && res.specsSource === 'heuristic' && (
+          <div style={{ background: `${C.orange}12`, border: `1px solid ${C.orange}55`, borderRadius: 9, padding: '12px 16px', marginBottom: 12, fontSize: 11 }}>
+            <div style={{ fontWeight: 700, color: C.orange, marginBottom: 4 }}>
+              ⚠ Dimensionamiento de strings: estimación heurística
+            </div>
+            <div style={{ color: C.muted, lineHeight: 1.6 }}>
+              El panel seleccionado no tiene especificaciones eléctricas completas (Voc, Vmp, Isc). Se usó la heurística <code style={{ color: C.orange, fontFamily: 'monospace' }}>pps = floor(700V / 40V) = {Math.floor(700/40)}</code> paneles por string. Para un diseño de strings preciso con validación MPPT, selecciona un panel con specs eléctricas del catálogo CEC.
+            </div>
+          </div>
+        )}
+
         {showTecnico && (
         <div style={ss.card}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 12 }}>▣ Preview del layout y strings</div>
@@ -2020,6 +2067,59 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               {v.warnings.map((w, i) => (
                 <div key={`w${i}`} style={{ fontSize: 12, color: C.yellow, padding: '6px 0', display: 'flex', gap: 7 }}><span>⚠</span><span style={{ flex: 1 }}>{w}</span></div>
               ))}
+            </div>
+          );
+        })()}
+
+        {showTecnico && res.inv && res.specsSource !== 'heuristic' && (() => {
+          const inv = res.inv;
+          const p = panel; // panel object from outer scope
+          const ns = res.ns;
+          const ppss = res.ppss;
+          // Voc correction by temperature (already calculated in calcSystem → sizeStrings)
+          const tcVoc = p.tempCoeffVoc ?? -0.28;
+          const tcPmax = p.tempCoeffPmax ?? -0.35;
+          const coldTempC = nasaData?.cellTempCold ?? 10;
+          const hotTempC = nasaData?.cellTempHot ?? 65;
+          const vocCold = p.voc ? p.voc * (1 + (tcVoc / 100) * (coldTempC - 25)) : null;
+          const vmpHot = p.vmp ? p.vmp * (1 + (tcPmax / 100) * (hotTempC - 25)) : null;
+          const stringVocCold = vocCold ? vocCold * ppss : null;
+          const stringVmpHot = vmpHot ? vmpHot * ppss : null;
+          const vocOk = stringVocCold && inv.vocMax ? stringVocCold <= inv.vocMax * 0.95 : true;
+          const mpptOk = stringVmpHot && inv.mpptVmax && inv.mpptVmin
+            ? (stringVmpHot <= inv.mpptVmax * 0.97 && stringVmpHot >= inv.mpptVmin * 1.05)
+            : true;
+          const allOk = vocOk && mpptOk;
+          return (
+            <div style={{ background: allOk ? `${C.teal}08` : `${C.orange}08`, border: `1px solid ${allOk ? C.teal : C.orange}44`, borderRadius: 9, padding: '14px 16px', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: allOk ? C.teal : C.orange, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 10 }}>
+                {allOk ? '✓' : '⚠'} Validación eléctrica de strings
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, fontSize: 11, marginBottom: 10 }}>
+                <div style={{ background: C.dark, borderRadius: 7, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 3 }}>Voc string en frío ({coldTempC}°C)</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: vocOk ? '#fff' : C.orange }}>
+                    {stringVocCold ? `${stringVocCold.toFixed(0)} V` : 'N/A'}
+                  </div>
+                  <div style={{ fontSize: 9, color: vocOk ? C.muted : C.orange, marginTop: 2 }}>
+                    {inv.vocMax ? `Límite Vdc_max: ${inv.vocMax} V (seguro ≤ ${Math.round(inv.vocMax * 0.95)} V)` : ''}
+                    {vocOk ? ' ✓' : ' ⚠ EXCEDE'}
+                  </div>
+                </div>
+                <div style={{ background: C.dark, borderRadius: 7, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vmp string en caliente ({hotTempC}°C)</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: mpptOk ? '#fff' : C.orange }}>
+                    {stringVmpHot ? `${stringVmpHot.toFixed(0)} V` : 'N/A'}
+                  </div>
+                  <div style={{ fontSize: 9, color: mpptOk ? C.muted : C.orange, marginTop: 2 }}>
+                    {inv.mpptVmin && inv.mpptVmax ? `Ventana MPPT: ${inv.mpptVmin}–${inv.mpptVmax} V` : ''}
+                    {mpptOk ? ' ✓' : ' ⚠ FUERA DE VENTANA'}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.6 }}>
+                Config: <strong style={{ color: '#fff' }}>{ns} string(s) × {ppss} paneles</strong> · {p.brand} {p.model} ({p.wp} Wp) + {inv.brand} {inv.model} ({inv.kw} kW) · Temperatura celda: <strong style={{ color: C.yellow }}>{coldTempC}°C/{hotTempC}°C</strong> {nasaData ? '(NASA POWER)' : '(default NEC 690.7)'}
+              </div>
             </div>
           );
         })()}

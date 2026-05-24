@@ -97,6 +97,41 @@ export const OPERATORS = [
   { sic: '',     name: 'No sé / Otro',   fullName: '',                                            region: '', tariff: 670, psh: 4.5 },
 ];
 
+// ==================== TARIFA POR ESTRATO (CREG 2024) ====================
+// Factores sobre la tarifa CU base del operador.
+// Estratos 1-3: subsidio (pagan menos); Estratos 5-6: contribución (pagan más).
+// Fuente: CREG 2024 — actualizar con resolución mensual del operador.
+export const ESTRATO_FACTORS = {
+  'E1':   0.50,  // Estrato 1 — subsidio 50%
+  'E2':   0.60,  // Estrato 2 — subsidio 40%
+  'E3':   0.85,  // Estrato 3 — subsidio 15%
+  'E4':   1.00,  // Estrato 4 — tarifa plena
+  'E5':   1.20,  // Estrato 5 — contribución 20%
+  'E6':   1.20,  // Estrato 6 — contribución 20%
+  'COM':  1.00,  // Comercial NT1 — tarifa plena sin subsidio
+  'IND2': 0.90,  // Industrial NT2 — estructura diferente, aprox
+  'IND3': 0.85,  // Industrial NT3 — mayor tensión, menor distribución
+};
+
+export const ESTRATO_LABELS = {
+  'E1':   'Estrato 1 — Subsidio 50%',
+  'E2':   'Estrato 2 — Subsidio 40%',
+  'E3':   'Estrato 3 — Subsidio 15%',
+  'E4':   'Estrato 4 — Tarifa plena',
+  'E5':   'Estrato 5 — Contribución 20%',
+  'E6':   'Estrato 6 — Contribución 20%',
+  'COM':  'Comercial / NT1',
+  'IND2': 'Industrial NT2',
+  'IND3': 'Industrial NT3 (alta tensión)',
+};
+
+// Retorna la tarifa CU efectiva del usuario (COP/kWh) según su estrato.
+export function getEffectiveTariff(operator, estrato = 'E4') {
+  const base = tariffCU(operator);
+  const factor = ESTRATO_FACTORS[estrato] ?? 1.0;
+  return Math.round(base * factor);
+}
+
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
 // Zonas desde Bogotá D.C. como origen
 // Cap regulatorio: AGPE Mayor (CREG 174/2021) hasta 1 MW; usamos 500 kW como
@@ -577,7 +612,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
   const numPanelsIdeal = Math.ceil(kwpN * 1000 / panel.wp);
   // sizeStrings may cap ns when Idc_max would be exceeded; actualPanels reflects
   // the true number that can be wired. We use it for all energy/financial calcs.
-  const { pps, ns, ppss, actualPanels, currentLimited } = sizeStrings(panel, invObj, numPanelsIdeal, coldTempC, hotTempC);
+  const { pps, ns, ppss, actualPanels, currentLimited, specsSource } = sizeStrings(panel, invObj, numPanelsIdeal, coldTempC, hotTempC);
   const numPanels = currentLimited ? actualPanels : numPanelsIdeal;
   const actKwp = parseFloat(((numPanels * panel.wp) / 1000).toFixed(2));
 
@@ -610,7 +645,7 @@ export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) 
     + (bUnit && bQty ? bQty * (bUnit.kg || 37) : 0)
     + (8 + numPanels * 0.3); // accesorios
   const dataSource = usingPVGIS ? 'PVGIS' : 'PSH';
-  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited };
+  return { numPanels, actKwp, dp, mp, ap, cov, dca, co2, ns, ppss, roof, tB, aut, kgTotal, dataSource, cappedByRegulation, currentLimited, specsSource };
 }
 
 export function calcTransport(zonas, zona, kgTotal, valorDec) {
