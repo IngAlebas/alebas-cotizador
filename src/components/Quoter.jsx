@@ -21,6 +21,7 @@ import { sendWhatsAppOTP, verifyWhatsAppOTP, isValidColombianPhone, formatColomb
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
 import UnifileGenerator from './UnifileGenerator';
+import { generateMemoriaTecnica } from '../services/memoriaGenerator';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
@@ -635,6 +636,56 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     setDone(true);
     // Persistencia remota (Postgres vía n8n) — best-effort, no bloquea la UX.
     saveQuoteRemote(payload).catch(() => {});
+  };
+
+  // Genera y abre la Memoria Técnica Eléctrica (RETIE/NTC 2050/CREG 174/2021)
+  const handleMemoriaTecnica = () => {
+    if (!res) return;
+    let unifilarSvg = null;
+    if (unifilarRef.current) {
+      const svgEl = unifilarRef.current.querySelector('svg');
+      if (svgEl) {
+        try { unifilarSvg = new XMLSerializer().serialize(svgEl); } catch (_) {}
+      }
+    }
+    const acometida = f.acometida;
+    const gridVoltage =
+      acometida === 'trifasico' || acometida === 'trifasica-4h' || acometida === 'trifasica-3h' ? 440 : 220;
+    generateMemoriaTecnica({
+      client: {
+        name:    f.name,
+        company: f.company,
+        email:   f.email,
+        phone:   f.phone,
+        address: f.address,
+        city:    dest.city,
+        dept:    dest.dept,
+      },
+      location: {
+        city:    dest.city,
+        dept:    dest.dept,
+        address: f.address,
+        lat:     f.lat,
+        lon:     f.lon,
+      },
+      date:       new Date(),
+      revision:   'A',
+      systemType: f.systemType,
+      actKwp:     res.actKwp,
+      numPanels:  res.numPanels,
+      ns:         res.ns,
+      ppss:       res.ppss,
+      panel:      panel,
+      inverter:   res.inv || {},
+      gridVoltage,
+      coldTempC:  nasaData?.cellTempCold  ?? 10,
+      hotTempC:   nasaData?.cellTempHot   ?? 70,
+      nasaGHI:    nasaData?.ghi ?? (pvwData?.solradAnnual ? pvwData.solradAnnual * 365 : null),
+      results:    res,
+      budget:     bgt,
+      monthlyKwh: parseFloat(f.monthlyKwh) || 0,
+      unifilarSvgDC: unifilarSvg,
+    });
   };
 
   const ss = {
@@ -2482,6 +2533,23 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               Solicitar propuesta detallada →
             </button>
           )}
+          {/* Botón Memoria Técnica — visible en cualquier tab de resultado */}
+          <button
+            onClick={handleMemoriaTecnica}
+            title="Generar Memoria Técnica Eléctrica (RETIE / NTC 2050 / CREG 174/2021)"
+            style={{
+              background: C.card,
+              color: C.teal,
+              border: `1px solid ${C.teal}`,
+              borderRadius: 8,
+              padding: '10px 18px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            📋 Memoria Técnica
+          </button>
         </div>
         {(showNormativo || showObservaciones) && (
           <div style={{ textAlign: 'center', padding: '0 0 20px' }}>
