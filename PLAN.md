@@ -337,6 +337,115 @@
 
 ---
 
+## FASE 7 — WhatsApp: OTP, notificaciones y chatbot
+> **Plazo objetivo:** mes 1–3 · Transversal: refuerza Fase 0 (anti-fraude/Habeas Data), Fase 2 (validación), Fase 4 (CRM), Fase 6 (pipeline)  
+> **Provider recomendado:** Meta WhatsApp Cloud API (oficial, sin BSP intermedio, free tier 1.000 conversaciones/mes)  
+> **Alternativa local:** Yalo (BSP colombiano) o Twilio si se prefiere abstracción
+
+### 7.0 Setup infraestructura WhatsApp
+- [ ] Crear Meta Business Account verificado (NIT 901.992.450-5)
+- [ ] Crear WhatsApp Business Account (WABA) asociado a ALEBAS Ingeniería SAS
+- [ ] Verificar número de teléfono comercial (sugerido: `+57 1 XXX XXXX` corporativo, no celular personal)
+- [ ] Generar `WHATSAPP_PHONE_NUMBER_ID` + `WHATSAPP_ACCESS_TOKEN` (system user permanente, no temporal de 24h)
+- [ ] Configurar webhook de inbound: `https://api.solar-hub.co/webhook/wa-inbound` con `WHATSAPP_VERIFY_TOKEN`
+- [ ] Railway env vars: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` (para validar firma de Meta)
+- [ ] Documentar costos: free tier + ~$0.005-0.01 USD por business-initiated conversation en Colombia
+
+### 7.1 Plantillas WhatsApp (Meta debe aprobarlas, 24-48h)
+- [ ] `solar_otp` — categoría AUTHENTICATION — "Tu código SolarHub es {{1}}. Válido por 5 minutos. No lo compartas con nadie."
+- [ ] `quote_received` — categoría UTILITY — "Hola {{1}}, recibimos tu solicitud de cotización solar. Te contactamos en máximo 2 horas hábiles. Sigue tu cotización aquí: {{2}}"
+- [ ] `quote_ready` — UTILITY — "{{1}}, tu cotización solar está lista. Sistema de {{2}} kWp, ahorro estimado ${{3}} COP/mes. Ver propuesta: {{4}}"
+- [ ] `quote_approved` — UTILITY — "Excelente {{1}}, recibimos la aprobación de tu cotización. Tu instalador {{2}} te contactará en 48h para coordinar visita técnica."
+- [ ] `installation_scheduled` — UTILITY — "{{1}}, tu instalación solar está agendada para el {{2}}. Instalador: {{3}}. Cualquier cambio responde a este mensaje."
+- [ ] `installation_completed` — UTILITY — "¡Felicidades {{1}}! Tu sistema solar está instalado y produciendo. Monitorea tu energía aquí: {{2}}"
+- [ ] `post_install_review` — MARKETING — "{{1}}, han pasado 30 días con tu sistema solar. ¿Cómo ha sido tu experiencia? Califica a tu instalador: {{2}}"
+
+### 7.2 OTP por WhatsApp en validación de cliente `[Crítico]`
+- [ ] Schema migration: tabla `otp_codes (id, phone, code_hash, expires_at, attempts, ip, consumed_at)` + índice en `(phone, expires_at)`
+- [ ] Workflow `n8n/wa-send-otp.json`:
+  - Recibe `{phone, ip}` → valida formato E.164 colombiano (`+57XXXXXXXXXX`)
+  - Rate-limit: máximo 3 OTPs por teléfono/hora, 5 por IP/hora
+  - Genera código 6 dígitos numérico, hash con bcrypt
+  - Inserta en `otp_codes` con `expires_at = NOW() + INTERVAL '5 minutes'`
+  - Llama Meta API: `POST /v18.0/{PHONE_ID}/messages` con plantilla `solar_otp`
+  - Devuelve `{ok: true, expiresAt}` o `{ok: false, reason: 'rate_limit'|'invalid_phone'}`
+- [ ] Workflow `n8n/wa-verify-otp.json`:
+  - Recibe `{phone, code}` → busca `otp_codes` no consumido, no expirado
+  - Incrementa `attempts`; bloquea después de 3 intentos fallidos
+  - Si match: marca `consumed_at = NOW()`, marca el lead/contacto como `phone_verified = true`
+  - Devuelve JWT corto (TTL 30 min) firmado para que el frontend continúe el wizard
+- [ ] Frontend `Quoter.jsx`: nuevo paso "Verificación" después de "Contacto"
+  - Input teléfono con máscara `+57 XXX XXX XXXX` y país preseleccionado Colombia
+  - Botón "Enviar código por WhatsApp" → llama `wa-send-otp`
+  - Input 6 dígitos con auto-focus y validación visual (verde si correcto, rojo si error)
+  - Botón "Reenviar código" deshabilitado por 60s (cooldown)
+  - Aceptar cualquier desviación: "¿No te llegó? Intenta de nuevo o contáctanos al +57 1 XXX XXXX"
+- [ ] Schema: agregar `phone_verified BOOLEAN DEFAULT FALSE` y `phone_verified_at TIMESTAMPTZ` a tabla `quotes`
+- [ ] `save-quote.json`: solo aceptar cotizaciones con `phone_verified = true` (validar JWT del OTP)
+- [ ] Consentimiento Habeas Data: aclarar en el paso "Verificación" que el número se usa para OTP + notificaciones de la cotización
+- [ ] Bypass admin: el back office puede crear cotizaciones sin OTP (para leads que entran por llamada/email)
+
+### 7.3 Notificaciones automáticas en cambios de estado
+- [ ] Workflow `n8n/wa-notify-quote.json`: trigger en `update-quote` cuando cambia `status`
+  - `nueva` → `quote_received` (al cliente)
+  - `propuesta_enviada` → `quote_ready` (al cliente, con link de tracking)
+  - `aprobada` → `quote_approved` (al cliente + notificación interna al instalador asignado)
+  - `en_instalación` → `installation_scheduled` (al cliente con fecha)
+  - `ganada` → `installation_completed` + 30 días después → `post_install_review`
+- [ ] Tabla `wa_messages (id, phone, quote_id, template, direction, content, status, sent_at, read_at)` para auditoría
+- [ ] Manejo de fallas: si Meta API devuelve error, reintentar 3 veces con backoff exponencial, registrar en log
+- [ ] Si el cliente bloqueó/eliminó el chat: marcar `wa_messages.status = 'failed'` y fallback a email (workflow `send-quote-email.json` ya existe)
+- [ ] BackOffice: pestaña "Mensajes WhatsApp" mostrando historial por cotización (enviados + recibidos + leídos)
+
+### 7.4 Chatbot conversacional con IA
+- [ ] Workflow `n8n/wa-inbound.json`: webhook que Meta llama cuando un cliente envía mensaje
+  - Verifica firma con `WHATSAPP_APP_SECRET` (HMAC-SHA256)
+  - Identifica al cliente por `phone` → busca cotización activa en `quotes`
+  - Si no hay cotización: oferta "¿Quieres iniciar una cotización solar? Responde *SI*"
+  - Si hay cotización: contexto cargado para la IA
+- [ ] Tabla `wa_conversations (phone, state, context_json, last_message_at)` — máquina de estados:
+  - `initial` → respondiendo saludo
+  - `qualifying` → preguntando consumo / dirección
+  - `quote_in_progress` → guiando wizard via WhatsApp (alternativa al cotizador web)
+  - `quote_sent` → esperando aprobación
+  - `installation_coordinated` → ya pasó a instalador
+  - `escalated_human` → un agente humano tomó el control
+- [ ] Integración con cascade IA existente (`ai-recommend.json`):
+  - Reutilizar Groq llama-3.3-70b para responder en lenguaje natural
+  - Prompt system: "Eres asesor solar de SolarHub Colombia. Solo respondes preguntas sobre energía solar, cotizaciones, normativa CREG, financiamiento, instalación. Si preguntan otra cosa, redirige al tema. Si la pregunta requiere acción humana, di '[ESCALAR]'."
+  - Respuestas máximo 3 frases (WhatsApp no es para párrafos largos)
+- [ ] Intents detectados con keywords (fallback rápido sin llamar IA):
+  - "precio", "cuánto cuesta" → resumen económico + link a cotizador
+  - "tiempo", "demora", "cuánto se demora" → tiempos típicos por capacidad
+  - "garantía" → garantías de panel/inversor/instalación
+  - "financiación", "crédito" → opciones de financiamiento
+  - "hablar con asesor", "humano" → marca `state = escalated_human`, notifica admin
+- [ ] Botones interactivos de WhatsApp (cuando aplica): "Ver cotización", "Hablar con asesor", "Agendar visita"
+- [ ] Horario: respuestas automáticas siempre; escalaciones a humano solo L-V 8am-6pm Colombia (fuera de horario: "Te respondemos el próximo día hábil")
+
+### 7.5 Notificaciones al instalador y admin (canal interno)
+- [ ] Crear segundo número WhatsApp Business para canal interno (o usar Slack/Telegram)
+- [ ] Workflow `n8n/wa-notify-internal.json`:
+  - Nueva cotización con consumo >500 kWh/mes → notifica admin (lead caliente)
+  - Cotización ganada → notifica instalador asignado
+  - Cliente respondió chatbot con `[ESCALAR]` → notifica admin con link al historial
+  - Cliente no respondió en 48h tras `propuesta_enviada` → notifica admin para seguimiento
+
+### 7.6 Cumplimiento legal y operacional
+- [ ] Política de privacidad actualizada: WhatsApp como canal de comunicación + Meta como sub-procesador
+- [ ] Opt-out: comando "BAJA" o "STOP" en cualquier mensaje → marca `wa_opt_out = true`, no se envían más mensajes
+- [ ] Ventana de 24h Meta: solo enviar plantillas pre-aprobadas fuera de la ventana de 24h tras último mensaje del cliente
+- [ ] Métricas de salud: tasa de entrega, tasa de lectura, tasa de respuesta, tasa de opt-out (alerta si opt-out > 5%)
+- [ ] Auditoría: logs `wa_messages` con TTL 2 años (Habeas Data + soporte de disputas)
+
+### 7.7 KPIs esperados (referencia mercado Colombia)
+- Tasa de conversión lead → cotización con OTP vs sin OTP: +30-50% (filtra falsos)
+- Tasa de apertura plantillas utilitarias: 85-95%
+- Tasa de respuesta del chatbot: 60-70% de leads completan calificación inicial
+- Ahorro en costos de SMS: $0 (WhatsApp gratis vs SMS ~$50 COP/mensaje en Colombia)
+
+---
+
 ## Backlog / ideas futuras (sin fecha)
 
 - **Soiling regional**: factor de suciedad estacional (Caribe seco vs Andes lluvioso vs Llanos)
@@ -358,3 +467,4 @@
 | 2026-05-24 | v1.0 | Creación del plan maestro (consolida AUDIT.md + REVIEW.md + ROADMAP-FLUXAI.md + sesiones de desarrollo) |
 | 2026-05-24 | v1.1 | Agrega benchmark competitivo vs Aurora Solar / OpenSolar / PVsyst. Agrega Fase 6 (outputs nivel profesional) |
 | 2026-05-24 | v1.2 | Integra todas las recomendaciones pendientes: marca ítems completados en PRs #161 y #163; agrega items faltantes de REVIEW.md (sw.js network-first, solar-cache continueOnFail, solar_panels JSONB monitoring, ramas obsoletas); reorganiza Fase 2 con hidratación UI; agrega Fase 6 completa con string design MPPT por temperatura |
+| 2026-05-24 | v1.3 | Agrega Fase 7 completa — WhatsApp: setup Meta Cloud API, 7 plantillas, OTP por WhatsApp en validación de cliente, notificaciones automáticas por cambio de estado, chatbot conversacional con IA cascade, canal interno para admin/instalador, compliance Habeas Data + opt-out, KPIs esperados |
