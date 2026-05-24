@@ -7,6 +7,7 @@ import Quoter from './components/Quoter';
 import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
+import TechnicianPortal from './components/TechnicianPortal';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import logo from './logo.svg';
 
@@ -41,7 +42,7 @@ function AdminLogin({ onSuccess }) {
 }
 
 
-export default function App() {
+function AppShell() {
   const [view, setView] = useState('quoter');
   const [adminAuth, setAdminAuth] = React.useState(false);
   const [boTab, setBoTab] = useState('dashboard');
@@ -289,4 +290,14 @@ export default function App() {
       </footer>
     </div>
   );
+}
+
+export default function App() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlView = urlParams.get('view');
+  if (urlView === 'tecnico') {
+    const token = urlParams.get('token');
+    return <TechnicianPortal token={token} />;
+  }
+  return <AppShell />;
 }

@@ -190,9 +190,43 @@ function PriceMgr({ pricing, upd, ss }) {
 
 function QuotesMgr({ quotes, ss }) {
   const [sel, setSel] = useState(null);
+  const [assignTechId, setAssignTechId] = useState('');
+  const [assigning, setAssigning] = useState(false);
+  // Local overrides for tech assignment state (reflects optimistic updates without needing prop setter)
+  const [techOverrides, setTechOverrides] = useState({});
+
+  const handleAssignTech = async (selectedQuote) => {
+    if (!assignTechId || !selectedQuote?.id) return;
+    setAssigning(true);
+    try {
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      const res = await fetch(`${base}/assign-technician`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteId: selectedQuote.id, technicianId: Number(assignTechId) }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setTechOverrides(prev => ({
+          ...prev,
+          [selectedQuote.id]: { doc_status: 'en_revision', status: 'asignado', tech_token: data.techToken },
+        }));
+      } else {
+        alert('Error al asignar técnico. Intente de nuevo.');
+      }
+    } catch (e) {
+      console.error('assign tech error', e);
+      alert('Error de red al asignar técnico.');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   if (sel) {
-    const q = quotes.find(x => x.id === sel);
-    if (!q) { setSel(null); return null; }
+    const qBase = quotes.find(x => x.id === sel);
+    if (!qBase) { setSel(null); return null; }
+    // Merge local tech assignment overrides with base quote data
+    const q = techOverrides[sel] ? { ...qBase, ...techOverrides[sel] } : qBase;
     return (
       <div>
         <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setSel(null)}>← Volver</button>
@@ -208,6 +242,54 @@ function QuotesMgr({ quotes, ss }) {
                 <div style={{ fontSize: 11, color: '#fff', fontWeight: 500, marginTop: 1 }}>{v}</div>
               </div>
             ))}
+          </div>
+
+          {/* ── Technician Assignment ── */}
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.teal}22` }}>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600 }}>ASIGNACIÓN TÉCNICA</div>
+
+            <select
+              value={assignTechId}
+              onChange={e => setAssignTechId(e.target.value)}
+              style={{ width: '100%', background: C.card, color: C.text, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }}
+            >
+              <option value="">Seleccionar técnico...</option>
+              <option value="1">Técnico 1 — Bogotá</option>
+              <option value="2">Técnico 2 — Medellín</option>
+              <option value="3">Técnico 3 — Cali</option>
+            </select>
+
+            <button
+              onClick={() => handleAssignTech(q)}
+              disabled={!assignTechId || assigning}
+              style={{ width: '100%', background: assignTechId ? C.teal : '#333', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: assignTechId ? 'pointer' : 'not-allowed', marginBottom: 8 }}
+            >
+              {assigning ? 'Asignando...' : '⚙ Asignar técnico y generar documentos'}
+            </button>
+
+            {q.tech_token && (
+              <div style={{ fontSize: 11, color: C.teal, background: `${C.teal}11`, padding: '6px 10px', borderRadius: 5, marginBottom: 8 }}>
+                🔗 Portal técnico: {window.location.origin}/?view=tecnico&token={q.tech_token}
+                <button
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/?view=tecnico&token=${q.tech_token}`)}
+                  style={{ marginLeft: 8, fontSize: 10, color: C.yellow, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Copiar
+                </button>
+              </div>
+            )}
+
+            {q.doc_status && q.doc_status !== 'pendiente' && (
+              <div style={{ marginTop: 6, fontSize: 11, padding: '4px 10px', borderRadius: 20, display: 'inline-block',
+                background: q.doc_status === 'aprobado' ? `${C.teal}22` : `${C.orange || '#FF8C00'}22`,
+                color: q.doc_status === 'aprobado' ? C.teal : C.orange || '#FF8C00',
+                border: `1px solid ${q.doc_status === 'aprobado' ? C.teal : C.orange || '#FF8C00'}44`,
+              }}>
+                {q.doc_status === 'aprobado' ? '✓ Documentos aprobados por técnico' :
+                 q.doc_status === 'en_revision' ? '🔄 En revisión técnica' :
+                 q.doc_status === 'cambios_solicitados' ? '↩ Técnico solicitó cambios' : q.doc_status}
+              </div>
+            )}
           </div>
         </div>
       </div>
