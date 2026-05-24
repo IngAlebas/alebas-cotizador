@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import logo from '../logo.png';
 import {
   C, fmt, fmtCOP, DEPTS, DESTINOS_COURIER, INTER_ZONAS, CARRIERS, ZONA_LABEL,
@@ -6,7 +6,8 @@ import {
   calcAGPEBenefit, MAX_KWP_AGPE, validateLayout,
   tariffCU, excedentePriceFor, splitCU,
   panelRoofAreaM2, DEFAULT_PACKING_FACTOR,
-  getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS
+  getEffectiveTariff, ESTRATO_FACTORS, ESTRATO_LABELS,
+  getPR, DEPT_PR
 } from '../constants';
 import { fetchPVProduction } from '../services/pvgis';
 import { fetchPVWatts } from '../services/pvwatts';
@@ -19,6 +20,7 @@ import { validateContactRemote, saveQuoteRemote } from '../services/quotes';
 import { sendWhatsAppOTP, verifyWhatsAppOTP, isValidColombianPhone, formatColombianPhone } from '../services/whatsapp';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from '../services/loads';
 import { getApplicableNormativa } from '../data/normativa';
+import UnifileGenerator from './UnifileGenerator';
 
 const Q0 = {
   systemType: 'on-grid', monthlyKwh: '', operatorId: 0,
@@ -99,6 +101,7 @@ const AI_STEPS = [
 ];
 
 export default function Quoter({ panels, inverters, batteries, pricing, operators, addQuote, loadsCatalog }) {
+  const unifilarRef = useRef(null);
   const [step, setStep] = useState(0);
   const [f, setF] = useState(Q0);
   const [res, setRes] = useState(null);
@@ -433,7 +436,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
   // Dimensionamiento base: por consumo (cobertura ~100%). Si el cliente
   // quiere excedentes Y tiene área disponible superior a la requerida,
   // sobredimensionamos al kWp que cabe en el techo (limitado por área).
-  const consumptionKwp = f.monthlyKwh ? (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78) : 0;
+  const regionalPR = getPR(dest?.dept);
+  const consumptionKwp = f.monthlyKwh ? (parseFloat(f.monthlyKwh) / 30) / (psh * regionalPR) : 0;
   const areaVal = parseFloat(f.availableArea);
   const hasArea = !!areaVal && areaVal > 0;
   // Área por panel real (huella módulo ÷ packing factor residencial/industrial)
@@ -483,7 +487,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     // Fase 1 — sizing rápido con temperaturas default para determinar actKwp.
     const sizingKwp = targetKwp || consumptionKwp;
     const inv = selectCompatibleInverter(panel, sizingKwp, f.systemType, inverters, { phases: phasesForAcometida(f.acometida) });
-    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp });
+    const pr = getPR(dest?.dept);
+    const sysBase = calcSystem(kwh, panel, inv, needsB ? batt : null, needsB ? f.battQty : 0, psh, { targetKwp, pr });
 
     let pvgisAnnualKwh = null;
     let pvwattsAnnualKwh = null;
@@ -539,7 +544,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const inv2 = selectCompatibleInverter(panel, sysBase.actKwp, f.systemType, inverters, { ...temps, phases: phasesForAcometida(f.acometida) });
     const shadeIndex = (f.shadeIndex != null && Number(f.shadeIndex) > 0) ? Number(f.shadeIndex) : null;
     const sys = calcSystem(kwh, panel, inv2, needsB ? batt : null, needsB ? f.battQty : 0, psh,
-      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, ...temps });
+      { pvgisAnnualKwh: bestAnnualKwh, targetKwp, shadeIndex, pr, ...temps });
 
     const transportPick = pickBestTransport(dest.zona, sys.kgTotal, 0);
     const transport = transportPick.best || { total: 0, flete: 0, sf: 0, label: '-', carrierId: '-' };
@@ -567,6 +572,10 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     // (15%/año × inversión × 35% tarifa renta × 5 años) — solo aplica a personas jurídicas
     const depAcelerada = Math.round(budget.tot * 0.15 * 0.35 * 5);
     const totalBeneficioFiscal = ivaAhorrado + deduccionRenta50;
+    // Exención arancelaria Ley 1715 — aplica solo a equipos importados con resolución UPME
+    // Estimación conservadora: 5% sobre valor de equipos (sección A)
+    const arancelAhorrado = Math.round((budget.sA || 0) * 0.05);
+    const totalBeneficioFiscalConArancel = totalBeneficioFiscal + arancelAhorrado;
 
     // Proyección 25 años con degradación 0.5%/año (LFP, norma IEC 61215)
     const DEGRADACION = 0.005;
@@ -576,7 +585,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
     const saving25yCOP = Math.round(prod25yKwh * cuFull);
     const roiWithDegradation = annualSav > 0 ? parseFloat(((budget.tot - totalBeneficioFiscal) / annualSav).toFixed(1)) : roi;
 
-    setRes({ ...sys, inv: inv2, sizedFor, productionSource, specsSource: sys.specsSource || 'heuristic' });
+    setRes({ ...sys, inv: inv2, sizedFor, productionSource, specsSource: sys.specsSource || 'heuristic', pr });
     setBgt({
       ...budget,
       sav: annualSav, roi,
@@ -592,6 +601,8 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
       deduccionRenta50,
       depAcelerada,
       totalBeneficioFiscal,
+      arancelAhorrado,
+      totalBeneficioFiscalConArancel,
       prod25yKwh,
       saving25yCOP,
     });
@@ -1066,7 +1077,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
           )}
         </div>
         {f.monthlyKwh && (() => {
-          const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * 0.78);
+          const reqKwp = (parseFloat(f.monthlyKwh) / 30) / (psh * regionalPR);
           const reqPanels = Math.ceil(reqKwp * 1000 / panel.wp);
           const reqArea = reqPanels * m2PerPanel;
           const area = parseFloat(f.availableArea);
@@ -1728,14 +1739,21 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
                 <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>50% de inversión × 35% tarifa renta</div>
               </div>
             </div>
-            <div style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${C.teal}22` }}>
+              <div style={{ fontSize: 12, color: C.muted }}>Exención arancelaria (importados)</div>
+              <div style={{ fontSize: 12, color: C.yellow, fontWeight: 600 }}>
+                ~ {bgt.arancelAhorrado ? `$${bgt.arancelAhorrado.toLocaleString('es-CO')} COP` : '—'}
+                <span style={{ fontSize: 10, color: C.muted, marginLeft: 4 }}>*si aplica</span>
+              </div>
+            </div>
+            <div style={{ background: `${C.teal}12`, border: `1px solid ${C.teal}33`, borderRadius: 7, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8, marginTop: 8 }}>
               <div>
                 <div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 2 }}>Beneficio fiscal total estimado</div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: C.teal }}>{fmtCOP(bgt.totalBeneficioFiscal)}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.teal }}>{fmtCOP(bgt.totalBeneficioFiscalConArancel || bgt.totalBeneficioFiscal)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 9, color: C.muted, marginBottom: 2 }}>Inversión efectiva neta</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{fmtCOP(bgt.tot - bgt.totalBeneficioFiscal)}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{fmtCOP(bgt.tot - (bgt.totalBeneficioFiscalConArancel || bgt.totalBeneficioFiscal))}</div>
               </div>
             </div>
             <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.6 }}>
@@ -2200,6 +2218,7 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
               ['Acometida', `${ACOMETIDA_INFO[f.acometida].label} (${ACOMETIDA_INFO[f.acometida].hilos} · ${ACOMETIDA_INFO[f.acometida].volts})`], ['Tipo sistema', f.systemType],
               ['Strings', `${res.ns} × ${res.ppss} paneles`], ['Ratio DC/AC', res.dca],
               ['Área techo', `${res.roof} m²`], ['Peso sistema', `${fmt(res.kgTotal)} kg`],
+              ['PR regional', `${res.pr != null ? (res.pr * 100).toFixed(0) : '78'}% (${dest?.dept || 'N/A'})`], ['Fuente prod.', res.productionSource],
               ...(needsB ? [
                 ['Baterías', `${f.battQty} × ${batt.brand} ${batt.model}`],
                 ['Config. banco', `${bankSeries}S × ${bankParallel}P · ${bankSeries * batt.voltage}V bus`],
@@ -2470,6 +2489,21 @@ export default function Quoter({ panels, inverters, batteries, pricing, operator
             <div style={{ fontSize: 10, color: C.teal }}>info@alebas.co · Villavicencio, Meta</div>
           </div>
         )}
+
+        {/* Hidden UnifileGenerator — off-screen mount for PDF SVG capture */}
+        <div ref={unifilarRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 1100, overflow: 'hidden' }}>
+          <UnifileGenerator
+            mode="technical"
+            showTitle={true}
+            system={{ systemType: f.systemType, numPanels: res.numPanels, ns: res.ns, ppss: res.ppss, kwp: res.actKwp }}
+            panel={panel}
+            inverter={res.inv}
+            battery={needsB ? batt : null}
+            results={{ actKwp: res.actKwp, numPanels: res.numPanels, ns: res.ns, ppss: res.ppss, mp: bgt.mp || res.mp, cov: res.cov }}
+            location={{ city: dest.city, dept: dest.dept, address: f.address }}
+            client={{ name: f.name, company: f.company }}
+          />
+        </div>
       </div>
     );
   }

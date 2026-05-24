@@ -1,6 +1,6 @@
 # PLAN MAESTRO — SolarHub / ALEBAS Ingeniería SAS
 
-> **Versión:** 1.2 · **Fecha:** 24 mayo 2026  
+> **Versión:** 1.5 · **Fecha:** 24 mayo 2026  
 > **Autor del plan:** Claude Code (Opus 4.7) — consolida AUDIT.md + REVIEW.md + ROADMAP-FLUXAI.md + análisis competitivo + sesiones de desarrollo  
 > **Repo:** `github.com/IngAlebas/alebas-cotizador` · rama `main`  
 > **Deploy:** `solar-hub.co` via Vercel · Backend: `api.solar-hub.co` via Railway n8n
@@ -97,7 +97,7 @@
 - [x] Fix logout: `localStorage.removeItem('sh:admin')` en lugar de `storage.set('sh:admin', '0')` `[RV-7]`
 - [x] `sw.js:90`: cambiar `clients` a `self.clients.openWindow(...)` `[RV-8]`
 - [x] `sw.js`: marcar `/manifest.json`, `/logo.svg`, `/logo.png` como network-first (hoy son cache-first sin hash → cambios de logo no llegan si no se bumpa SW_VERSION) `[RV-9]`
-- [ ] `list-quotes.json`: cambiar `queryReplacement` a sintaxis array `={{ [$json.status, $json.search, $json.limit] }}` `[RV-10]`
+- [x] `list-quotes.json`: cambiar `queryReplacement` a sintaxis array `={{ [$json.status, $json.search, $json.limit] }}` `[RV-10]`
 - [ ] Limpiar ramas `claude/*` obsoletas (hay 25+ activas): revisar con `git log --oneline origin/<rama>` y borrar las que ya están mergeadas o abandonadas
 
 ### ~~0.6 Bugs de cálculo~~ ✅ Resueltos en PR #161
@@ -120,31 +120,32 @@
 ### 1.1 Tarifa CREG real por estrato y operador `[AU-ING-1]`
 - [ ] Activar workflow `tarifas-sync.json` en n8n con cron mensual (fuente: CREG / XM)
 - [ ] Poblar DB con componentes reales G+T+D+C+P+R por operador
-- [ ] UI Quoter: selector de tipo de usuario — "Estrato 1–6 / Comercial NT1 / Industrial NT2 / Industrial NT3"
-- [ ] `calcBudget`: consumir tarifa real desde DB en lugar del promedio hardcoded `720 COP/kWh`
+- [x] UI Quoter: selector de estrato — "Estrato 1–6 / Comercial NT1 / Industrial NT2 / Industrial NT3" con factores CREG 2024
+- [x] `getEffectiveTariff(operator, estrato)`: tarifa CU real por estrato — subsidio E1-E3, plena E4, contribución E5-E6
+- [ ] `calcBudget`: consumir tarifa real desde DB en lugar del promedio hardcoded
 - [ ] Mostrar tarifa usada + fuente + fecha de actualización junto al ROI
-- [ ] Impacto en ROI/payback: re-validar (puede variar ±15–30% vs promedio)
 
 ### 1.2 Performance Ratio calibrado por región `[AU-ING-2]`
-- [ ] Eliminar `PR = 0.78` constante en `calcSystem`
-- [ ] Consumir PR estimado de PVGIS/PVWatts por región, tilt, azimuth, temp coefficient
-- [ ] Tabla `yield_calibration` en Postgres: `(region, dept, inverter_brand, panel_brand, quarter, expected_kwh_per_kwp, actual_kwh_per_kwp, sample_size, last_updated)`
-- [ ] Función `getCalibratedPR(dept, brand)`: usa tabla si N ≥ 10, fallback 0.78
-- [ ] UI: badge "PR ajustado por datos reales: 0.81 (47 instalaciones similares)"
+- [x] Eliminar `PR = 0.78` constante en `calcSystem` — ahora usa `opts.pr ?? 0.78`
+- [x] `DEPT_PR`: tabla 33 departamentos colombianos (PR 0.73–0.83 según zona climática IDEAM)
+- [x] `getPR(dept)`: función lookup con fallback 0.78 — usado en `consumptionKwp` y `calcSystem`
+- [x] Tab Técnico: badge "PR regional: X%" con fuente PVGIS/IDEAM
+- [ ] `yield_calibration` en Postgres: calibración con datos reales de instalaciones (largo plazo)
+- [ ] UI: badge "PR calibrado por datos reales: 0.81 (N instalaciones)"
 
 ### 1.3 Motor fiscal Ley 1715/2014 + Decreto 829/2020 `[AU-ING-3]`
 - [x] Deducción renta 50% sobre valor de la inversión (mostrada en resultados)
 - [x] Depreciación acelerada (hasta 5 años, no 20) — estimación mostrada en resultados
 - [x] Exclusión IVA equipos calificados — IVA ahorrado (19% × sección A) mostrado
-- [ ] Exención arancelaria (arancel 0%) para equipos importados bajo Ley 1715
+- [x] Exención arancelaria (arancel 0%) para equipos importados bajo Ley 1715 — `arancelAhorrado ≈ 5% × sA` con nota "*si aplica"
 - [x] Mostrar en cotización: "Beneficio fiscal total estimado: $X COP" desglosado por rubro
 - [ ] Advertencia: para industrial/comercial el beneficio fiscal puede superar el ahorro tarifario en los primeros 5 años
 
 ### 1.4 Degradación anual de paneles `[AU-ING-4]`
 - [x] Agregar `panelDegradation: 0.005` (0.5%/año típico) al modelo de proyección
 - [x] Recalcular producción acumulada a 25 años con curva de degradación — mostrado en resultados
-- [ ] UI: gráfico de producción anual decreciente vs la línea constante actual
-- [ ] Ajustar payback y VPN con degradación incluida
+- [x] UI: gráfico SVG de producción anual decreciente en PDF (barras con línea de referencia plana + marca ROI)
+- [x] ROI ajustado con degradación incluida (`roiWithDegradation`)
 
 ### 1.5 Compliance CREG 174/2021 + 175/2021 `[AU-CREG]`
 - [ ] Diferenciación clara AGPE (≤100 kW) vs AGGE (>100 kW) en resultados
@@ -155,7 +156,7 @@
 
 ### 1.6 Fixes de cálculo pendientes
 - [x] **Cobertura >100%**: mostrar "100+ % autoconsumo + excedentes kWh/mes" en stat card `[RV-BUG-5]`
-- [ ] **`specsSource: 'heuristic'`**: marcar y mostrar warning en UI cuando se usa la heurística `pps = floor(700/40)` por falta de specs eléctricas del panel `[RV-BUG-6]`
+- [x] **`specsSource: 'heuristic'`**: banner naranja en tab Técnico cuando se usa la heurística `pps = floor(700/40)` por falta de specs eléctricas del panel `[RV-BUG-6]`
 - [ ] **`solar_panels` JSONB tamaño**: documentar decisión — para techos grandes son ~80 KB/quote; planificar migración a tabla separada `quote_panels` cuando se superen 1.000 quotes/mes `[RV-N-1]`
 
 ---
@@ -303,11 +304,12 @@
 ## FASE 6 — Mes 3–4: igualar OpenSolar — outputs de nivel profesional
 
 ### 6.1 Plano unifilar eléctrico automático
-- [ ] Generar diagrama unifilar (SVG) a partir de la configuración: paneles → string boxes → inversor → protecciones → medidor → red
-- [ ] Especificaciones por componente: capacidad de fusibles, calibre de cable, rating de breakers
-- [ ] Simbología RETIE Colombia (NTC 1340) — validado con ingeniero eléctrico
-- [ ] Para AGPE: incluir punto de conexión a la red del OR y medidor bidireccional
-- [ ] Vista previa en el cotizador y exportado dentro del PDF
+- [x] `UnifileGenerator.jsx` (830 líneas): unifilar SVG puro RETIE/IEC 60617 (`mode='technical'`) — fusibles, combinadora, interruptores DC/AC, SPD DC/AC, inversor/cargador, BMS, baterías, medidor bidireccional, tablero, acometida OR
+- [x] Layout simplificado cliente (`mode='client'`) — bloques íconos ☀⚡🔋🏠🔌 con flujo energético
+- [x] `onExportSVG` callback + captura via XMLSerializer para embeber en PDF
+- [x] Integrado en `TechnicianPortal.jsx` (vista técnica) y `QuoteTracking.jsx` (vista cliente)
+- [ ] Validar simbología con ingeniero eléctrico certificado RETIE antes de usar en trámites OR
+- [ ] Especificaciones por componente: calibre de cable AWG, rating exacto de breakers (depende de Isc real)
 
 ### 6.2 Análisis de sombreado hora por hora
 - [ ] Usar `SunPathDiagram.jsx` (ya existe) + obstáculos del techo identificados en Google Solar
@@ -316,21 +318,22 @@
 - [ ] Mostrar "pérdidas estimadas por sombreado: X% (Y kWh/año)"
 
 ### 6.3 Propuesta comercial PDF de nivel profesional
-- [ ] Rediseñar PDF: de ~5 páginas actuales a ~15–20 páginas (estilo Aurora Solar / OpenSolar)
-- [ ] Secciones: resumen ejecutivo · especificaciones técnicas · layout del techo con paneles reales · plano unifilar · análisis financiero 25 años con degradación · beneficio fiscal Ley 1715 · normativa aplicable (CREG, RETIE) · perfil del instalador asignado
-- [ ] Tabla mes a mes: producción esperada, ahorro en factura, flujo de caja acumulado
-- [ ] Gráfico comparativo: factura con sistema vs sin sistema mes a mes durante 25 años
-- [ ] Versión ejecutiva de 2 páginas para presentar a financiadores o juntas directivas
+- [x] `pdfGenerator.js`: PDF ~15 páginas con portada, resumen ejecutivo, specs técnicas, unifilar RETIE embebido, análisis financiero mes a mes, proyección 25 años con gráfico SVG de degradación, beneficio fiscal Ley 1715 desglosado, normativa, próximos pasos
+- [ ] Layout del techo con paneles reales (imagen Google Solar) — integración pendiente
+- [ ] Versión ejecutiva de 2 páginas para financiadores
 
 ### 6.4 CRM con pipeline de ventas
-- [ ] Pipeline: `nueva` → `en_contacto` → `propuesta_enviada` → `en_negociación` → `aprobada` → `en_instalación` → `ganada` → `perdida`
-- [ ] BackOffice: vista kanban o tabla con filtros por estado, instalador, departamento, potencia (kWp)
-- [ ] Automatización: recordatorio por email si un lead lleva >7 días sin actividad
-- [ ] Métricas: tasa conversión por etapa, tiempo promedio de ciclo de venta, valor promedio por departamento y tipo de proyecto
+- [x] BackOffice: vista kanban 5 columnas (Nuevo / Asignado / En revisión / Aprobado / Ganado) + toggle lista/kanban
+- [x] BackOffice: "↓ Exportar CSV" con 15 columnas — compatible Excel con BOM UTF-8
+- [x] Pipeline técnico: `assign-technician.json` → `tech-review.json` → aprobación → `doc_status` tracking
+- [ ] Automatización: recordatorio por email si lead lleva >7 días sin actividad
+- [ ] Métricas: tasa conversión por etapa, tiempo promedio ciclo de venta
 
 ### 6.5 String design con validación MPPT + temperatura
-- [ ] Extender `validateLayout()` para múltiples strings en paralelo con distintas orientaciones
-- [ ] Voc corregido por temperatura mínima del sitio (datos NASA POWER ya disponibles en n8n)
+- [x] Voc-frío y Vmp-caliente corregidos por temperatura (NASA POWER o defaults NEC 690.7)
+- [x] Verificación ventana MPPT del inversor — card color-coded verde/naranja en tab Técnico
+- [x] Banner heurístico cuando panel no tiene specs eléctricas CEC
+- [ ] Extender para múltiples strings con distintas orientaciones (orientación mixta E/O)
 - [ ] Vmp validado dentro del rango MPPT en temperatura máxima
 - [ ] Advertencia explícita si cualquier string queda fuera de la ventana MPPT del inversor
 - [ ] Output claro: "String 1: 10 paneles · Voc=420 V · Vmp=352 V ✅ dentro de MPPT 200–480 V"
@@ -469,3 +472,4 @@
 | 2026-05-24 | v1.2 | Integra todas las recomendaciones pendientes: marca ítems completados en PRs #161 y #163; agrega items faltantes de REVIEW.md (sw.js network-first, solar-cache continueOnFail, solar_panels JSONB monitoring, ramas obsoletas); reorganiza Fase 2 con hidratación UI; agrega Fase 6 completa con string design MPPT por temperatura |
 | 2026-05-24 | v1.3 | Agrega Fase 7 completa — WhatsApp: setup Meta Cloud API, 7 plantillas, OTP por WhatsApp en validación de cliente, notificaciones automáticas por cambio de estado, chatbot conversacional con IA cascade, canal interno para admin/instalador, compliance Habeas Data + opt-out, KPIs esperados |
 | 2026-05-24 | v1.4 | Marca implementados: sw.js (self.clients + network-first manifest/logo), logout fix, dedupe_key idempotencia save-quote, motor fiscal Ley 1715 (IVA ahorrado + deducción renta 50% + depreciación acelerada), degradación 0.5%/año 25 años, cobertura >100% fix, Habeas Data checkbox (Ley 1581/2012) |
+| 2026-05-24 | v1.5 | Fase 6 avanzada: DEPT_PR 33 departamentos + getPR() reemplaza 0.78 constante; aranceles Ley 1715 (5% estimado); UnifileGenerator.jsx RETIE/IEC + layout cliente; TechnicianPortal.jsx + BackOffice asignación técnico + kanban pipeline + CSV export; QuoteTracking layout cliente lazy-load; pdfGenerator.js 15 páginas completo con unifilar, gráfico 25 años, motor fiscal, normativa; string design Voc-frío/Vmp-caliente NEC 690.7; n8n assign-technician + tech-review; schema technicians |

@@ -194,6 +194,7 @@ function QuotesMgr({ quotes, ss }) {
   const [assigning, setAssigning] = useState(false);
   // Local overrides for tech assignment state (reflects optimistic updates without needing prop setter)
   const [techOverrides, setTechOverrides] = useState({});
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
 
   const handleAssignTech = async (selectedQuote) => {
     if (!assignTechId || !selectedQuote?.id) return;
@@ -220,6 +221,38 @@ function QuotesMgr({ quotes, ss }) {
     } finally {
       setAssigning(false);
     }
+  };
+
+  const handleExportCSV = () => {
+    if (!quotes || quotes.length === 0) return;
+    const headers = ['ID', 'Fecha', 'Estado', 'Nombre', 'Email', 'Teléfono', 'Empresa', 'Departamento', 'kWp', 'Paneles', 'Total COP', 'Ahorro anual COP', 'ROI años', 'Tipo sistema', 'Doc. estado'];
+    const rows = quotes.map(q => [
+      q.id,
+      q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('es-CO') : ''),
+      q.status || '',
+      q.name || '',
+      q.email || '',
+      q.phone || '',
+      q.company || '',
+      q.dept || '',
+      q.results?.actKwp || q.kwp || '',
+      q.results?.numPanels || q.num_panels || '',
+      q.budget?.tot || q.total_cop || '',
+      q.budget?.sav || q.annual_sav_cop || '',
+      q.budget?.roi || q.roi_years || '',
+      q.systemType || q.system_type || '',
+      q.doc_status || '',
+    ]);
+    const csvContent = [headers, ...rows].map(row =>
+      row.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cotizaciones_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (sel) {
@@ -295,12 +328,93 @@ function QuotesMgr({ quotes, ss }) {
       </div>
     );
   }
+
+  const KANBAN_COLS = [
+    { key: 'nuevo',       label: 'Nuevo',       color: C.muted },
+    { key: 'asignado',    label: 'Asignado',    color: C.yellow },
+    { key: 'en_revision', label: 'En revisión', color: C.orange },
+    { key: 'aprobado',    label: 'Aprobado',    color: C.teal },
+    { key: 'ganado',      label: 'Ganado ✓',    color: '#4ade80' },
+  ];
+
   return (
     <div>
-      <div style={ss.h2}>Cotizaciones ({quotes.length})</div>
+      {/* Header row: title + controls */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+        <div style={ss.h2}>Cotizaciones ({quotes.length})</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            onClick={handleExportCSV}
+            style={{
+              background: 'none', border: `1px solid ${C.teal}66`, color: C.teal,
+              borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            ↓ Exportar CSV
+          </button>
+          <button
+            onClick={() => setViewMode(m => m === 'list' ? 'kanban' : 'list')}
+            style={{
+              background: viewMode === 'kanban' ? `${C.teal}22` : 'none',
+              border: `1px solid ${C.teal}66`, color: C.teal,
+              borderRadius: 6, padding: '6px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {viewMode === 'list' ? '⬛ Kanban' : '≡ Lista'}
+          </button>
+        </div>
+      </div>
+
       {quotes.length === 0 ? (
         <div style={{ ...ss.card, textAlign: 'center', padding: '44px', color: C.muted }}>Las cotizaciones del portal aparecerán aquí automáticamente.</div>
+      ) : viewMode === 'kanban' ? (
+        /* ── Kanban / Pipeline view ── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, padding: '0 0 16px', overflowX: 'auto' }}>
+          {KANBAN_COLS.map(({ key, label, color }) => {
+            const colQuotes = quotes.filter(q => (q.status || 'nuevo') === key);
+            return (
+              <div key={key} style={{ background: C.card, borderRadius: 8, border: `1px solid ${color}44`, minHeight: 200 }}>
+                {/* Column header */}
+                <div style={{ padding: '8px 12px', borderBottom: `2px solid ${color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
+                  <div style={{ fontSize: 11, color: C.muted, background: `${color}22`, borderRadius: 10, padding: '1px 7px' }}>{colQuotes.length}</div>
+                </div>
+                {/* Cards */}
+                <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {colQuotes.slice(0, 10).map(q => (
+                    <div
+                      key={q.id}
+                      onClick={() => setSel(q.id)}
+                      style={{ background: '#07090F', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', border: `1px solid ${color}22`, transition: 'border-color 0.2s' }}
+                      onMouseOver={e => { e.currentTarget.style.borderColor = color; }}
+                      onMouseOut={e => { e.currentTarget.style.borderColor = `${color}22`; }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 600, color: C.text, marginBottom: 2 }}>{q.name || q.email}</div>
+                      <div style={{ fontSize: 10, color: C.muted }}>
+                        {q.results?.actKwp ? `${q.results.actKwp} kWp` : q.kwp ? `${q.kwp} kWp` : ''}
+                        {(q.dept || q.results?.actKwp || q.kwp) && q.dept ? ` · ${q.dept}` : ''}
+                      </div>
+                      <div style={{ fontSize: 10, color, marginTop: 3 }}>
+                        {q.budget?.tot
+                          ? `$${Number(q.budget.tot).toLocaleString('es-CO')}`
+                          : q.total_cop
+                          ? `$${Number(q.total_cop).toLocaleString('es-CO')}`
+                          : '—'}
+                      </div>
+                    </div>
+                  ))}
+                  {colQuotes.length > 10 && (
+                    <div style={{ fontSize: 10, color: C.muted, textAlign: 'center', padding: 4 }}>
+                      +{colQuotes.length - 10} más
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
+        /* ── List view (unchanged) ── */
         <div style={ss.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['Fecha', 'Cliente', 'Operador', 'Sistema', 'kWp', 'Inversión', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>

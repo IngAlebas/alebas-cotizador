@@ -132,6 +132,50 @@ export function getEffectiveTariff(operator, estrato = 'E4') {
   return Math.round(base * factor);
 }
 
+// ==================== PR REGIONAL (Performance Ratio por zona climática) ====================
+// Reemplaza el 0.78 constante nacional. Fuente: análisis PVGIS + datos IDEAM Colombia.
+// Zona Andina alta (>2000 msnm): temperaturas bajas → menores pérdidas térmicas → PR alto.
+// Zona Caribe/Pacífico/Orinoquía: temperaturas altas → más pérdidas térmicas → PR bajo.
+export const DEPT_PR = {
+  'Amazonas':            0.73,
+  'Antioquia':           0.81,
+  'Arauca':              0.76,
+  'Atlántico':           0.75,
+  'Bogotá D.C.':         0.83,
+  'Bolívar':             0.75,
+  'Boyacá':              0.83,
+  'Caldas':              0.81,
+  'Caquetá':             0.74,
+  'Casanare':            0.76,
+  'Cauca':               0.80,
+  'Cesar':               0.76,
+  'Chocó':               0.73,
+  'Córdoba':             0.75,
+  'Cundinamarca':        0.82,
+  'Guainía':             0.73,
+  'Guaviare':            0.74,
+  'Huila':               0.79,
+  'La Guajira':          0.74,
+  'Magdalena':           0.75,
+  'Meta':                0.76,
+  'Nariño':              0.80,
+  'Norte de Santander':  0.78,
+  'Putumayo':            0.74,
+  'Quindío':             0.81,
+  'Risaralda':           0.81,
+  'San Andrés y Providencia': 0.76,
+  'Santander':           0.80,
+  'Sucre':               0.75,
+  'Tolima':              0.79,
+  'Valle del Cauca':     0.81,
+  'Vaupés':              0.73,
+  'Vichada':             0.75,
+};
+
+export function getPR(dept) {
+  return DEPT_PR[dept] ?? 0.78;
+}
+
 // ==================== TRANSPORT (Interrapidísimo 2025-2026) ====================
 // Zonas desde Bogotá D.C. como origen
 // Cap regulatorio: AGPE Mayor (CREG 174/2021) hasta 1 MW; usamos 500 kW como
@@ -601,7 +645,7 @@ export function sizeStrings(panel, inverter, numPanels, coldTempC = 10, hotTempC
 export function calcSystem(monthlyKwh, panel, inv, bUnit, bQty, psh, opts = {}) {
   const invObj = (typeof inv === 'object' && inv !== null) ? inv : { kw: inv };
   const invKw = invObj.kw;
-  const PR = 0.78;
+  const PR = opts.pr ?? 0.78;
   const daily = monthlyKwh / 30;
   const consumptionKwp = daily / (psh * PR);
   const rawTarget = opts.targetKwp && opts.targetKwp > 0 ? opts.targetKwp : consumptionKwp;

@@ -8,6 +8,7 @@ import InstallerReg from './components/InstallerReg';
 import BackOffice from './components/BackOffice';
 import SupplierPortal from './components/SupplierPortal';
 import TechnicianPortal from './components/TechnicianPortal';
+import QuoteTracking from './components/QuoteTracking';
 import { fetchLoadsCatalog, DEFAULT_LOADS_CATALOG } from './services/loads';
 import logo from './logo.svg';
 
@@ -298,6 +299,10 @@ export default function App() {
   if (urlView === 'tecnico') {
     const token = urlParams.get('token');
     return <TechnicianPortal token={token} />;
+  }
+  if (urlView === 'seguimiento') {
+    const token = urlParams.get('token');
+    return <QuoteTracking token={token} />;
   }
   return <AppShell />;
 }
