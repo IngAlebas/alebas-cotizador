@@ -64,6 +64,10 @@ export default function QuoteTracking({ token }) {
   const [quote, setQuote] = useState(null);
   const [UnifilarComp, setUnifilarComp] = useState(null);
   const [showLayout, setShowLayout] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   // Fetch quote data
   useEffect(() => {
@@ -97,6 +101,28 @@ export default function QuoteTracking({ token }) {
       .then(m => setUnifilarComp(() => m.default))
       .catch(() => {});
   }, []);
+
+  async function handleSubmitReview() {
+    if (!reviewRating) return;
+    setSubmittingReview(true);
+    try {
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      await fetch(`${base}/installer-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: 'POST',
+          quote_id: quote.id,
+          installer_id: quote.technician_id,
+          rating: reviewRating,
+          comment: reviewComment,
+          client_name: quote.client_name || 'Cliente SolarHub'
+        })
+      });
+      setReviewSubmitted(true);
+    } catch(e) { console.error(e); }
+    setSubmittingReview(false);
+  }
 
   // ── Loading ──
   if (loading) {
@@ -287,6 +313,44 @@ export default function QuoteTracking({ token }) {
           <div style={{ background: C.card, border: `1px solid ${C.teal}22`, borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Observaciones</div>
             <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{quote.notes}</div>
+          </div>
+        )}
+
+        {/* ── Review section (appears when installation complete) ── */}
+        {quote.status === 'ganada' && quote.technician_id && !reviewSubmitted && (
+          <div style={{ marginTop: 32, background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.teal}33`, marginBottom: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 4 }}>
+              ¿Cómo fue tu experiencia con la instalación?
+            </div>
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>
+              Tu opinión ayuda a otros clientes a elegir un buen instalador
+            </div>
+            {/* Star rating */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {[1,2,3,4,5].map(s => (
+                <span key={s} onClick={() => setReviewRating(s)}
+                  style={{ fontSize: 28, cursor: 'pointer', color: s <= reviewRating ? C.amber : C.muted, transition: 'color 0.15s' }}>★</span>
+              ))}
+            </div>
+            <textarea
+              placeholder="Cuéntanos sobre el proceso de instalación, el instalador, y cómo funciona tu sistema..."
+              value={reviewComment} onChange={e => setReviewComment(e.target.value)}
+              style={{ width: '100%', background: C.dark, border: `1px solid ${C.teal}33`, borderRadius: 10,
+                color: C.text, padding: '10px 12px', fontSize: 14, fontFamily: 'Outfit', minHeight: 80,
+                resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }}
+            />
+            <button onClick={handleSubmitReview} disabled={reviewRating === 0 || submittingReview}
+              style={{ background: reviewRating > 0 ? C.teal : C.muted, color: '#fff', border: 'none',
+                borderRadius: 10, padding: '10px 24px', fontWeight: 600, cursor: reviewRating > 0 ? 'pointer' : 'default',
+                fontSize: 15, fontFamily: 'Outfit' }}>
+              {submittingReview ? 'Enviando...' : 'Enviar calificación'}
+            </button>
+          </div>
+        )}
+        {reviewSubmitted && (
+          <div style={{ marginTop: 24, background: `${'#4ade80'}15`, border: `1px solid ${'#4ade80'}40`, borderRadius: 12,
+            padding: 20, color: '#4ade80', textAlign: 'center', fontWeight: 600, marginBottom: 16 }}>
+            ✓ ¡Gracias por tu calificación! Tu opinión ayuda a la comunidad solar.
           </div>
         )}
 

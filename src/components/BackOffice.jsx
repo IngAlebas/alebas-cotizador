@@ -194,6 +194,8 @@ function QuotesMgr({ quotes, suppliers: suppliersList = [], ss }) {
   const [assigning, setAssigning] = useState(false);
   // Local overrides for tech assignment state (reflects optimistic updates without needing prop setter)
   const [techOverrides, setTechOverrides] = useState({});
+  const [matchSuggestions, setMatchSuggestions] = useState([]);
+  const [loadingMatch, setLoadingMatch] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
   const [creatingPO, setCreatingPO] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
@@ -222,6 +224,22 @@ function QuotesMgr({ quotes, suppliers: suppliersList = [], ss }) {
       if (data.ok) { alert(`✓ Orden ${data.po_number} creada`); /* refresh */ }
       else { alert('Error: ' + data.error); }
     } catch(e) { alert('Error de red'); } finally { setCreatingPO(false); }
+  };
+
+  const handleFindMatches = async (quote) => {
+    setLoadingMatch(true);
+    setMatchSuggestions([]);
+    try {
+      const base = process.env.REACT_APP_N8N_BASE_URL;
+      const res = await fetch(`${base}/matching-installer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quote_id: quote.id, dept: quote.dept, kwp: quote.kwp || quote.results?.actKwp || 5 })
+      });
+      const data = await res.json();
+      setMatchSuggestions(data.matches || []);
+    } catch(e) { console.error('matching error', e); }
+    setLoadingMatch(false);
   };
 
   const handleAssignTech = async (selectedQuote) => {
@@ -307,7 +325,41 @@ function QuotesMgr({ quotes, suppliers: suppliersList = [], ss }) {
 
           {/* ── Technician Assignment ── */}
           <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.teal}22` }}>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 8, fontWeight: 600 }}>ASIGNACIÓN TÉCNICA</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>ASIGNACIÓN TÉCNICA</div>
+              <button
+                onClick={() => handleFindMatches(q)}
+                disabled={loadingMatch}
+                style={{ fontSize: 11, fontWeight: 600, color: C.teal, background: `${C.teal}18`, border: `1px solid ${C.teal}44`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+              >
+                {loadingMatch ? 'Buscando...' : '🔍 Sugerir instaladores'}
+              </button>
+            </div>
+
+            {matchSuggestions.length > 0 && (
+              <div style={{ background: C.dark, border: `1px solid ${C.teal}22`, borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Mejores coincidencias</div>
+                {matchSuggestions.slice(0, 3).map((m, i) => (
+                  <div key={m.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: i < 2 ? `1px solid ${C.teal}11` : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>{m.name}</div>
+                      <div style={{ fontSize: 10, color: C.muted }}>
+                        {'★'.repeat(Math.round(parseFloat(m.rating_avg) || 0))} {m.rating_avg ? parseFloat(m.rating_avg).toFixed(1) : 'N/A'} · {m.active_jobs || 0} activos
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: C.teal, background: `${C.teal}18`, borderRadius: 12, padding: '2px 8px' }}>{m.score}</span>
+                      <button
+                        onClick={() => setAssignTechId(String(m.id))}
+                        style={{ fontSize: 10, fontWeight: 600, color: C.yellow, background: `${C.yellow}18`, border: `1px solid ${C.yellow}44`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                      >
+                        Asignar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <select
               value={assignTechId}

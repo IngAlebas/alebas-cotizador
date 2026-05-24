@@ -319,3 +319,47 @@ CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS supplier_stock_updated_at ON supplier_stock;
 CREATE TRIGGER supplier_stock_updated_at BEFORE UPDATE ON supplier_stock FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- FASE MARKETPLACE: matching, reviews, reputación instaladores
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS installer_matches (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quote_id     UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  installer_id INTEGER REFERENCES technicians(id),
+  score        NUMERIC(5,2),
+  reason       TEXT,
+  status       TEXT DEFAULT 'suggested' CHECK (status IN ('suggested','notified','accepted','declined','assigned')),
+  notified_at  TIMESTAMPTZ,
+  responded_at TIMESTAMPTZ,
+  assigned_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_installer_matches_quote ON installer_matches(quote_id);
+CREATE INDEX IF NOT EXISTS idx_installer_matches_installer ON installer_matches(installer_id);
+
+CREATE TABLE IF NOT EXISTS installer_reviews (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  installer_id   INTEGER NOT NULL REFERENCES technicians(id),
+  quote_id       UUID REFERENCES quotes(id),
+  client_name    TEXT,
+  rating         SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment        TEXT,
+  response       TEXT,
+  response_at    TIMESTAMPTZ,
+  verified       BOOLEAN DEFAULT FALSE,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_installer ON installer_reviews(installer_id);
+-- Ensure one review per client per installer
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_unique ON installer_reviews(quote_id, installer_id);
+
+-- Add rating fields to technicians if not present
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS rating_avg   NUMERIC(3,2) DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS rating_count INTEGER DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS coverage_depts TEXT[];  -- e.g. '{Cundinamarca,Boyacá}'
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS max_kwp_month NUMERIC(8,2) DEFAULT 100; -- capacity
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS active_jobs   INTEGER DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS retie_expires DATE;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS dept         TEXT;
