@@ -628,14 +628,211 @@ function QuotesMgr({ quotes, suppliers: suppliersList = [], ss }) {
   );
 }
 
+const CRED_STATUS_BADGE = {
+  pendiente:   { bg: `${C.muted}22`,   color: C.muted,  icon: '🟡' },
+  en_revision: { bg: '#01708B22',       color: C.teal,   icon: '🔵' },
+  aprobado:    { bg: '#4ade8022',       color: '#4ade80', icon: '✅' },
+  rechazado:   { bg: '#f8717122',       color: '#f87171', icon: '❌' },
+  vencido:     { bg: '#FFB80022',       color: C.amber,  icon: '⏰' },
+};
+
+function CredReviewPanel({ inst, onClose, ss }) {
+  const [credData, setCredData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const base = process.env.REACT_APP_N8N_BASE_URL;
+
+  const loadCreds = async () => {
+    if (!inst.id) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${base}/installer-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'GET', technician_id: inst.id }),
+      });
+      const data = await res.json();
+      setCredData(data);
+    } catch (e) {
+      setCredData({ ok: false, error: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-load on mount (empty deps intentional — run once)
+  React.useEffect(() => { loadCreds(); }, []); // eslint-disable-line
+
+  const review = async (status) => {
+    setSaving(true);
+    try {
+      await fetch(`${base}/installer-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: 'REVIEW',
+          technician_id: inst.id,
+          status,
+          notes: rejectReason || null,
+          verified_by: 'admin',
+        }),
+      });
+      setResult(status);
+      setShowReject(false);
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDoc = (doc) => {
+    if (!doc.file_data_b64) return;
+    const ext = doc.file_name?.split('.').pop()?.toLowerCase() || 'pdf';
+    const mime = ext === 'pdf' ? 'application/pdf' : `image/${ext}`;
+    const byteChars = atob(doc.file_data_b64);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], { type: mime });
+    window.open(URL.createObjectURL(blob), '_blank');
+  };
+
+  const docs = credData?.documents || [];
+  const credStatus = result || credData?.status || inst.credential_status || 'pendiente';
+  const badge = CRED_STATUS_BADGE[credStatus] || CRED_STATUS_BADGE.pendiente;
+
+  return (
+    <div style={{ marginTop: 16, background: '#111f35', borderRadius: 12, padding: 18, border: `1px solid ${C.border}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+          🛡 Verificación RETIE — {inst.name}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
+            {badge.icon} {credStatus}
+          </span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+      </div>
+
+      {loading && <div style={{ color: C.muted, fontSize: 12, textAlign: 'center', padding: '20px 0' }}>Cargando documentos...</div>}
+
+      {!loading && credData?.ok === false && (
+        <div style={{ color: '#f87171', fontSize: 12 }}>Error cargando datos: {credData.error || 'sin datos'}</div>
+      )}
+
+      {!loading && credData?.ok && (
+        <>
+          {/* Credential number */}
+          {(credData.copnia_number || credData.conte_number) && (
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>
+              {credData.installer_type === 'ingeniero'
+                ? `COPNIA: ${credData.copnia_number}`
+                : `CONTE: ${credData.conte_number}`}
+              {' · '}{credData.installer_type === 'ingeniero' ? 'Ingeniero' : 'Técnico Electricista'}
+            </div>
+          )}
+
+          {/* Document list */}
+          {docs.length === 0 ? (
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Sin documentos subidos aún.</div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              {docs.map((doc, idx) => (
+                <div key={doc.id || idx} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
+                  background: C.dark, borderRadius: 8, padding: '8px 12px',
+                }}>
+                  <span style={{ fontSize: 16 }}>📄</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: C.text }}>{doc.file_name}</div>
+                    <div style={{ fontSize: 10, color: C.muted }}>{doc.doc_type} · {doc.file_size_kb} KB</div>
+                  </div>
+                  {doc.file_data_b64 && (
+                    <button onClick={() => openDoc(doc)} style={{
+                      background: C.teal, color: '#fff', border: 'none', borderRadius: 6,
+                      padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'Outfit',
+                    }}>Ver</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Admin notes */}
+          {credData.credential_notes && (
+            <div style={{ background: '#f8717118', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#f87171', marginBottom: 12 }}>
+              Razón rechazo anterior: {credData.credential_notes}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {result ? (
+            <div style={{ color: result === 'aprobado' ? '#4ade80' : '#f87171', fontSize: 13, fontWeight: 600 }}>
+              {result === 'aprobado' ? '✅ Credenciales aprobadas' : '❌ Credenciales rechazadas'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <button onClick={() => review('aprobado')} disabled={saving} style={{
+                background: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8044',
+                borderRadius: 8, padding: '7px 16px', fontSize: 12, cursor: 'pointer',
+                fontFamily: 'Outfit', fontWeight: 600, opacity: saving ? 0.5 : 1,
+              }}>✅ Aprobar</button>
+              {!showReject && (
+                <button onClick={() => setShowReject(true)} style={{
+                  background: '#f8717122', color: '#f87171', border: '1px solid #f8717144',
+                  borderRadius: 8, padding: '7px 16px', fontSize: 12, cursor: 'pointer',
+                  fontFamily: 'Outfit', fontWeight: 600,
+                }}>❌ Rechazar</button>
+              )}
+              {showReject && (
+                <div style={{ flex: '1 1 100%' }}>
+                  <textarea
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    placeholder="Motivo del rechazo (ej: documento ilegible, COPNIA no verificada)..."
+                    rows={2}
+                    style={{
+                      width: '100%', background: C.dark, border: `1px solid ${C.border}`, borderRadius: 8,
+                      color: C.text, padding: '8px 10px', fontSize: 12, fontFamily: 'Outfit',
+                      boxSizing: 'border-box', resize: 'vertical', marginBottom: 8,
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => review('rechazado')} disabled={saving || !rejectReason.trim()} style={{
+                      background: '#f8717122', color: '#f87171', border: '1px solid #f8717144',
+                      borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer',
+                      fontFamily: 'Outfit', fontWeight: 600, opacity: (!rejectReason.trim() || saving) ? 0.4 : 1,
+                    }}>Confirmar rechazo</button>
+                    <button onClick={() => setShowReject(false)} style={{
+                      background: 'none', color: C.muted, border: `1px solid ${C.border}`,
+                      borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit',
+                    }}>Cancelar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function InstallersMgr({ installers, ss }) {
   const [sel, setSel] = useState(null);
+  const [credReview, setCredReview] = useState(null);
+
   if (sel) {
     const inst = installers.find(x => x.id === sel);
     if (!inst) { setSel(null); return null; }
     return (
       <div>
-        <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => setSel(null)}>← Volver</button>
+        <button style={{ ...ss.btn, marginBottom: 12, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }} onClick={() => { setSel(null); setCredReview(null); }}>← Volver</button>
         <div style={ss.card}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{inst.name}</div>
           <div style={{ color: C.muted, fontSize: 11, marginBottom: 14 }}>{inst.company && `${inst.company} · `}{inst.dept} · {inst.date}</div>
@@ -647,10 +844,33 @@ function InstallersMgr({ installers, ss }) {
               </div>
             ))}
           </div>
+          {/* Credential review toggle */}
+          <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+            {credReview !== inst.id ? (
+              <button onClick={() => setCredReview(inst.id)} style={{
+                background: `${C.teal}18`, color: C.teal, border: `1px solid ${C.teal}44`,
+                borderRadius: 8, padding: '7px 16px', fontSize: 12, cursor: 'pointer',
+                fontFamily: 'Outfit', fontWeight: 600,
+              }}>🛡 Verificar credenciales RETIE</button>
+            ) : (
+              <CredReviewPanel inst={inst} onClose={() => setCredReview(null)} ss={ss} />
+            )}
+          </div>
         </div>
       </div>
     );
   }
+
+  const credBadge = (inst) => {
+    const cs = inst.credential_status || 'pendiente';
+    const b = CRED_STATUS_BADGE[cs] || CRED_STATUS_BADGE.pendiente;
+    return (
+      <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 9, background: b.bg, color: b.color, marginLeft: 4 }}>
+        {b.icon} {cs}
+      </span>
+    );
+  };
+
   return (
     <div>
       <div style={ss.h2}>Instaladores ({installers.length})</div>
@@ -659,11 +879,12 @@ function InstallersMgr({ installers, ss }) {
       ) : (
         <div style={ss.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Fecha', 'Nombre', 'Departamento', 'RETIE', 'Estado', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Fecha', 'Nombre', 'Departamento', 'RETIE', 'Estado', 'Credenciales', ''].map(h => <th key={h} style={ss.th}>{h}</th>)}</tr></thead>
             <tbody>{installers.map(i => (
               <tr key={i.id}>
                 <td style={ss.td}>{i.date}</td><td style={ss.td}>{i.name}</td><td style={ss.td}>{i.dept}</td><td style={ss.td}>{i.retie}</td>
                 <td style={ss.td}><span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 9, background: `${C.yellow}22`, color: C.yellow }}>{i.status}</span></td>
+                <td style={ss.td}>{credBadge(i)}</td>
                 <td style={ss.td}><button style={{ ...ss.btn, padding: '2px 9px' }} onClick={() => setSel(i.id)}>Ver →</button></td>
               </tr>
             ))}</tbody>
