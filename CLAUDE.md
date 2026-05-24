@@ -13,14 +13,13 @@
 | Doc | Cuándo leerlo |
 |---|---|
 | [`CLAUDE.md`](./CLAUDE.md) (este) | Onboarding rápido, estado general |
-| [`AUDIT.md`](./AUDIT.md) | Auditoría estratégica del producto (compliance, marketplace, madurez) |
-| [`REVIEW.md`](./REVIEW.md) | Bugs y deuda línea-a-línea contra `main@0cdaf18` |
-| [`ROADMAP-FLUXAI.md`](./ROADMAP-FLUXAI.md) | Integración SolarHub ↔ FluxAI (5 capas con criterios de aceptación) |
+| [`PLAN.md`](./PLAN.md) | **Plan maestro unificado** — hoja de ruta completa con checkboxes, fases y prioridades |
 | [`SECURITY-HEADERS.md`](./SECURITY-HEADERS.md) | Política CSP/HSTS/etc., rationale, deuda y rollback |
 | [`DEPLOY.md`](./DEPLOY.md) | Setup Postgres + n8n en Railway |
 | [`DEPLOY-ADMIN-AUTH.md`](./DEPLOY-ADMIN-AUTH.md) | (en branch `claude/admin-auth-server-side`, vendrá al merge de #162) Bootstrap del admin con bcrypt + JWT |
 
-**Tracking issues:** [#160](https://github.com/IngAlebas/alebas-cotizador/issues/160) — checklist de las 5 capas FluxAI.
+> AUDIT.md, REVIEW.md y ROADMAP-FLUXAI.md han sido consolidados en **PLAN.md** (24 mayo 2026).  
+> **Tracking issues:** [#160](https://github.com/IngAlebas/alebas-cotizador/issues/160) — checklist de las 5 capas FluxAI.
 
 ---
 
@@ -366,21 +365,23 @@ Revisar con `git log --oneline origin/<rama>` antes de mergear.
 
 ## Próximos pasos (estado al 2026-05-24)
 
-### 🔴 Bloqueado por infra — PR #162 abierto
-1. **Auth admin server-side** ([#162](https://github.com/IngAlebas/alebas-cotizador/pull/162)). Pasos en `DEPLOY-ADMIN-AUTH.md` (en branch). Hasta que se haga, la pwd admin sigue pública en el bundle.
+> El plan completo con checkboxes está en **[PLAN.md](./PLAN.md)**.  
+> Aquí solo se listan los ítems más urgentes.
 
-### 🟡 Pendiente de acción — operacional
-2. **Agregar API keys IA en Railway** (ver sección Variables de entorno): `GROQ_API_KEY`, `GOOGLE_AI_KEY`, `ANTHROPIC_API_KEY` + `N8N_RUNNERS_TASK_RUNNER_ALLOWED_ENV`. Sin esto el cascade IA falla en producción.
-3. **Reimportar `ai-recommend.json`** en n8n (versión con cascade Groq→Gemini→Claude + RD-1..RD-8). El JSON actual en el repo es la versión definitiva.
-4. **Idempotencia `save-quote`** (REVIEW.md bloqueante #4). Doble-click duplica leads. Schema migration (`dedupe_key UNIQUE`) + `ON CONFLICT DO NOTHING` en workflow.
-5. **JWT enforcement en `list-quotes` y `update-quote`** (cierra hilo de #162). Hoy aceptan `x-alebas-token` público.
-6. **Eliminar carpeta `api/`** (DEPRECATED desde 2026-04-20). Auditar logs Railway, luego `rm -rf api/` + remover bloque dinámico de `server.js`.
+### 🔴 Fase 0 — Esta semana (crítico)
+1. **Activar IA cascade en Railway**: agregar `GROQ_API_KEY`, `GOOGLE_AI_KEY`, `ANTHROPIC_API_KEY`, `N8N_RUNNERS_TASK_RUNNER_ALLOWED_ENV` + reimportar `ai-recommend.json` + mergear PR #164.
+2. **Auth admin server-side** (PR [#162](https://github.com/IngAlebas/alebas-cotizador/pull/162)): hoy la pwd admin está en el bundle público en base64. Pasos en `DEPLOY-ADMIN-AUTH.md`.
+3. **Idempotencia `save-quote`**: doble-click duplica leads en DB. `dedupe_key UNIQUE` + `ON CONFLICT DO NOTHING`.
+4. **JWT enforcement** en `list-quotes` y `update-quote` (cierra hilo de #162).
 
-### 🟢 Estratégico — `AUDIT.md` y `ROADMAP-FLUXAI.md`
-7. **Carril A — Compliance + Seguridad** (mes 1): política Habeas Data publicada, registro SIC, log de auditoría n8n. Detalle en `AUDIT.md`.
-8. **Carril B — Rigor de ingeniería** (mes 1-2): tarifa CREG real por estrato, PR calibrado por región/tilt vía PVGIS, motor fiscal Ley 1715 (deducción renta 50% + depreciación acelerada), degradación anual.
-9. **Carril C — Marketplace real** (mes 2-4): matching instalador↔lead, reviews, contratos digitales, escrow.
-10. **Integración FluxAI** (`ROADMAP-FLUXAI.md` + issue [#160](https://github.com/IngAlebas/alebas-cotizador/issues/160)): 5 capas, hoy en estado "logo + branding compartido" — sin flujo de datos.
+### 🟡 Fase 1 — Mes 1 (rigor de ingeniería solar)
+5. Tarifa CREG real por estrato/operador (hoy usa promedio ±30% off).
+6. PR calibrado por región vía PVGIS (hoy constante 0.78 para todo el país).
+7. Motor fiscal Ley 1715 (deducción renta 50%, depreciación acelerada, exención IVA completa).
+8. Degradación anual paneles (0.5%/año) en proyección 25 años.
+
+### 🟢 Fases 2-5 — Mes 2-6 (ver PLAN.md)
+- Compliance Habeas Data, marketplace real (matching/reviews/contratos/escrow), integración FluxAI.
 
 ---
 
